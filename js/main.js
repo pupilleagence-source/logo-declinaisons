@@ -18,6 +18,8 @@ const appState = {
     blackwhite: false,
     monochrome: false,
     monochromeColor: '#000000',
+    monochromeLight: false,
+    monochromeLightColor: '#ffffff',
     custom: false
   },
   customColors: {
@@ -94,6 +96,15 @@ function setupEventListeners() {
               updateUI();
           });
     }
+
+    // écouteur colorpicker monochromie light
+    const monochromeLightColorPicker = document.getElementById('light-color-picker');
+      if (monochromeLightColorPicker) {
+          monochromeLightColorPicker.addEventListener('input', (e) => {
+              appState.colorVariations.monochromeLightColor = e.target.value;
+              updateUI();
+          });
+    }
     // Checkboxes types d'artboard
     const fitCheckbox = document.getElementById('artboard-fit');
     const squareCheckbox = document.getElementById('artboard-square');
@@ -113,6 +124,11 @@ function setupEventListeners() {
     const monochromeCheckbox = document.getElementById('color-black'); // Checkbox pour monochromie
     if (monochromeCheckbox) {
         monochromeCheckbox.addEventListener('change', updateColorVariations);
+    }
+
+    const monochromeLightCheckbox = document.getElementById('color-light'); // Checkbox pour monochromie light
+    if (monochromeLightCheckbox) {
+        monochromeLightCheckbox.addEventListener('change', updateColorVariations);
     }
 
     const customCheckbox = document.getElementById('color-custom');
@@ -289,6 +305,8 @@ function updateColorVariations() {
     appState.colorVariations.blackwhite = bwCheckbox ? bwCheckbox.checked : false;
     const monochromeCheckbox = document.getElementById('color-black');
     appState.colorVariations.monochrome = monochromeCheckbox ? monochromeCheckbox.checked : false;
+    const monochromeLightCheckbox = document.getElementById('color-light');
+    appState.colorVariations.monochromeLight = monochromeLightCheckbox ? monochromeLightCheckbox.checked : false;
     const customCheckbox = document.getElementById('color-custom');
     appState.colorVariations.custom = customCheckbox ? customCheckbox.checked : false;
 
@@ -313,21 +331,39 @@ function updateUI() {
   const selectedCount = Object.values(appState.selections).filter(v => v).length;
   const typeCount     = Object.values(appState.artboardTypes).filter(v => v).length;
   const colorCount    = Object.values(appState.colorVariations).filter(v => v).length;
-  
+
   // Calcul du total d'artboards (sélections × types × couleurs)
-  const totalArtboards = selectedCount * typeCount * colorCount;
+  // Si monochromeLight est activée, on double le nombre d'artboards
+  let totalArtboards = selectedCount * typeCount * colorCount;
+  if (appState.colorVariations.monochromeLight) {
+    // monochromeLight génère 2 artboards au lieu de 1
+    const otherColors = colorCount - 1;
+    totalArtboards = selectedCount * typeCount * (otherColors + 2);
+  }
 
   // Mise à jour du résumé et du bouton
   const summaryEl = document.getElementById('summary');
   const countEl   = document.getElementById('artboard-count');
-  
+
   if (totalArtboards > 0) {
     summaryEl.style.display = 'block';
     countEl.textContent = totalArtboards;
+
+    // Avertissement si trop d'artboards
+    if (totalArtboards > 200) {
+      countEl.style.color = 'var(--error-color)';
+      countEl.title = '⚠️ Attention : Trop d\'artboards peuvent faire crasher Illustrator';
+    } else if (totalArtboards > 100) {
+      countEl.style.color = 'var(--warning-color)';
+      countEl.title = '⚠️ Attention : Nombre élevé d\'artboards';
+    } else {
+      countEl.style.color = 'var(--primary-color)';
+      countEl.title = '';
+    }
   } else {
     summaryEl.style.display = 'none';
   }
-  
+
   // Activer le bouton seulement si tous les critères sont remplis
   document.getElementById('generate-btn').disabled = !(selectedCount > 0 && typeCount > 0 && sizeCount > 0 && colorCount > 0);
 }

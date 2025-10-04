@@ -382,10 +382,13 @@ function generateArtboards(paramsJSON) {
         var artboardCount = 0;
         var currentX = 0;
         var currentY = 0;
-        var spacing = 100;
+        var spacing = 50; // Réduit de 100 à 50
         var maxHeight = 0;
         var created = [];
-        var artboardsPerRow = 4; // Limiter à 4 artboards par ligne
+        var artboardsPerRow = 4;
+
+        // Réduire la taille des artboards pour éviter le débordement
+        var artboardSize = 600; // Réduit de 1000 à 600
 
         var typesList = ['horizontal', 'vertical', 'icon', 'text'];
         var colorVariations = [];
@@ -401,6 +404,14 @@ function generateArtboards(paramsJSON) {
                 name: "monochrome",
                 suffix: "_monochrome",
                 rgb: hexToRGB(params.colorVariations.monochromeColor || "#000000")
+            });
+        }
+        if (params.colorVariations.monochromeLight) {
+            colorVariations.push({
+                name: "monochromeLight",
+                suffix: "_monochromeLight",
+                rgb: hexToRGB(params.colorVariations.monochromeLightColor || "#ffffff"),
+                needsBlackBg: true
             });
         }
         if (params.colorVariations.custom && params.customColors && params.customColors.mapping && params.customColors.mapping.length > 0) {
@@ -430,6 +441,14 @@ function generateArtboards(paramsJSON) {
                             tmpPaths[j].remove();
                         } catch (e) {}
                     }
+                } else if (colorVar.name === "monochromeLight") {
+                    var tmpPaths = [];
+                    convertToMonochrome(element, colorVar.rgb, tmpPaths);
+                    for (var j = tmpPaths.length - 1; j >= 0; j--) {
+                        try {
+                            tmpPaths[j].remove();
+                        } catch (e) {}
+                    }
                 } else if (colorVar.name === "custom") {
                     applyCustomColors(element, colorVar.mapping);
                 }
@@ -437,7 +456,7 @@ function generateArtboards(paramsJSON) {
                 if (params.artboardTypes.fit) {
                     try {
                         var nameFit = selType + "_fit" + colorVar.suffix;
-                        var h = createFitArtboard(doc, element, 1000, currentX, currentY, nameFit);
+                        var h = createFitArtboard(doc, element, artboardSize, currentX, currentY, nameFit, false);
                         maxHeight = Math.max(maxHeight, h);
                         artboardCount++;
                         created.push({ name: nameFit, type: selType, colorVariation: colorVar.name });
@@ -447,7 +466,24 @@ function generateArtboards(paramsJSON) {
                             currentX = 0;
                             maxHeight = 0;
                         } else {
-                            currentX += 1000 + spacing;
+                            currentX += artboardSize + spacing;
+                        }
+
+                        // Si monochromeLight, créer une version avec fond noir
+                        if (colorVar.needsBlackBg) {
+                            var nameFitBg = selType + "_fit" + colorVar.suffix + "_bg";
+                            var hBg = createFitArtboard(doc, element, artboardSize, currentX, currentY, nameFitBg, true);
+                            maxHeight = Math.max(maxHeight, hBg);
+                            artboardCount++;
+                            created.push({ name: nameFitBg, type: selType, colorVariation: colorVar.name });
+
+                            if (artboardCount % artboardsPerRow === 0) {
+                                currentY -= (maxHeight + spacing);
+                                currentX = 0;
+                                maxHeight = 0;
+                            } else {
+                                currentX += artboardSize + spacing;
+                            }
                         }
                     } catch (e) {
                         $.writeln("Erreur fit: " + e.toString());
@@ -457,8 +493,8 @@ function generateArtboards(paramsJSON) {
                 if (params.artboardTypes.square) {
                     try {
                         var nameSq = selType + "_square" + colorVar.suffix;
-                        createSquareArtboard(doc, element, 1000, currentX, currentY, nameSq);
-                        maxHeight = Math.max(maxHeight, 1000);
+                        createSquareArtboard(doc, element, artboardSize, currentX, currentY, nameSq, false);
+                        maxHeight = Math.max(maxHeight, artboardSize);
                         artboardCount++;
                         created.push({ name: nameSq, type: selType, colorVariation: colorVar.name });
 
@@ -467,7 +503,24 @@ function generateArtboards(paramsJSON) {
                             currentX = 0;
                             maxHeight = 0;
                         } else {
-                            currentX += 1000 + spacing;
+                            currentX += artboardSize + spacing;
+                        }
+
+                        // Si monochromeLight, créer une version avec fond noir
+                        if (colorVar.needsBlackBg) {
+                            var nameSqBg = selType + "_square" + colorVar.suffix + "_bg";
+                            createSquareArtboard(doc, element, artboardSize, currentX, currentY, nameSqBg, true);
+                            maxHeight = Math.max(maxHeight, artboardSize);
+                            artboardCount++;
+                            created.push({ name: nameSqBg, type: selType, colorVariation: colorVar.name });
+
+                            if (artboardCount % artboardsPerRow === 0) {
+                                currentY -= (maxHeight + spacing);
+                                currentX = 0;
+                                maxHeight = 0;
+                            } else {
+                                currentX += artboardSize + spacing;
+                            }
                         }
                     } catch (e) {
                         $.writeln("Erreur square: " + e.toString());
@@ -510,7 +563,7 @@ function generateArtboards(paramsJSON) {
                             exportArtboardWithPrefix(doc, art.name, fmtFolder.fsName, fmt, sz.size, sz.prefix);
                         }
                     } else {
-                        exportArtboard(doc, art.name, fmtFolder.fsName, fmt, 1000);
+                        exportArtboard(doc, art.name, fmtFolder.fsName, fmt, artboardSize);
                     }
                 }
             }
@@ -523,8 +576,17 @@ function generateArtboards(paramsJSON) {
     }
 }
 
+// Créer un rectangle de fond
+function createBackgroundRect(doc, x, y, width, height, color) {
+    var rect = doc.pathItems.rectangle(y, x, width, height);
+    rect.filled = true;
+    rect.stroked = false;
+    rect.fillColor = color;
+    return rect;
+}
+
 // Créer un artboard fit-content
-function createFitArtboard(doc, element, width, x, y, name) {
+function createFitArtboard(doc, element, width, x, y, name, withBlackBg) {
     try {
         var wasHidden = element.hidden;
         element.hidden = false;
@@ -549,6 +611,16 @@ function createFitArtboard(doc, element, width, x, y, name) {
         copy.resize(scaleFactor, scaleFactor, true, true, true, true, scaleFactor, Transformation.TOPLEFT);
         copy.position = [x, y];
 
+        // Ajouter fond noir en arrière-plan si demandé
+        if (withBlackBg) {
+            var blackColor = new RGBColor();
+            blackColor.red = 0;
+            blackColor.green = 0;
+            blackColor.blue = 0;
+            var bgRect = createBackgroundRect(doc, x, y, width, height, blackColor);
+            bgRect.zOrder(ZOrderMethod.SENDTOBACK);
+        }
+
         return height;
     } catch (e) {
         throw new Error("Erreur createFitArtboard: " + e.toString());
@@ -556,7 +628,7 @@ function createFitArtboard(doc, element, width, x, y, name) {
 }
 
 // Créer un artboard carré
-function createSquareArtboard(doc, element, size, x, y, name) {
+function createSquareArtboard(doc, element, size, x, y, name, withBlackBg) {
     try {
         var artboardRect = [x, y, x + size, y - size];
         var artboard = doc.artboards.add(artboardRect);
@@ -586,6 +658,16 @@ function createSquareArtboard(doc, element, size, x, y, name) {
         var centerX = x + (size - newWidth) / 2;
         var centerY = y - (size - newHeight) / 2;
         copy.position = [centerX, centerY];
+
+        // Ajouter fond noir en arrière-plan si demandé
+        if (withBlackBg) {
+            var blackColor = new RGBColor();
+            blackColor.red = 0;
+            blackColor.green = 0;
+            blackColor.blue = 0;
+            var bgRect = createBackgroundRect(doc, x, y, size, size, blackColor);
+            bgRect.zOrder(ZOrderMethod.SENDTOBACK);
+        }
 
         return size;
     } catch (e) {
