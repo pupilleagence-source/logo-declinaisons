@@ -93,7 +93,6 @@ function rgbToHex(rgbColor) {
 
 // Extraire les couleurs de la sélection actuelle
 function extractColors() {
-    $.writeln("=== Début extractColors ===");
     try {
         if (app.documents.length === 0) {
             return "ERROR: NO_DOCUMENT";
@@ -101,24 +100,18 @@ function extractColors() {
 
         var doc = app.activeDocument;
         if (!doc.selection || doc.selection.length === 0) {
-            $.writeln("Aucune sélection");
             return "ERROR: NO_SELECTION";
         }
 
-        $.writeln("Nombre d'éléments sélectionnés: " + doc.selection.length);
-
-        var colorSet = {}; // Utiliser un objet pour éviter les doublons
+        var colorSet = {};
         var maxColors = 10;
         var colorCount = 0;
 
         // Parcourir tous les éléments sélectionnés
         for (var i = 0; i < doc.selection.length; i++) {
-            $.writeln("Traitement élément " + i + " type: " + doc.selection[i].typename);
             colorCount = extractColorsRecursive(doc.selection[i], colorSet, colorCount);
             if (colorCount >= maxColors) break;
         }
-
-        $.writeln("Nombre de couleurs trouvées: " + colorCount);
 
         // Convertir en tableau et limiter à 10 couleurs
         var colors = [];
@@ -139,10 +132,8 @@ function extractColors() {
         }
         jsonString += ']';
 
-        $.writeln("Retour: COLORS:" + jsonString);
         return "COLORS:" + jsonString;
     } catch (e) {
-        $.writeln("ERREUR extractColors: " + e.toString());
         return "ERROR: " + e.toString();
     }
 }
@@ -151,80 +142,57 @@ function extractColorsRecursive(item, colorSet, colorCount) {
     if (colorCount >= 10) return colorCount;
 
     try {
-        $.writeln("  Type: " + item.typename);
-
         if (item.typename === "GroupItem") {
-            $.writeln("  GroupItem avec " + item.pageItems.length + " éléments");
             for (var i = 0; i < item.pageItems.length; i++) {
                 colorCount = extractColorsRecursive(item.pageItems[i], colorSet, colorCount);
                 if (colorCount >= 10) break;
             }
         } else if (item.typename === "CompoundPathItem") {
-            $.writeln("  CompoundPathItem avec " + item.pathItems.length + " paths");
             for (var i = 0; i < item.pathItems.length; i++) {
                 colorCount = extractColorsRecursive(item.pathItems[i], colorSet, colorCount);
                 if (colorCount >= 10) break;
             }
         } else if (item.typename === "PathItem") {
-            $.writeln("  PathItem - filled: " + item.filled + ", stroked: " + item.stroked);
-            if (item.filled) {
-                $.writeln("    fillColor.typename: " + item.fillColor.typename);
-                if (item.fillColor.typename === "RGBColor") {
-                    var hex = rgbToHex(item.fillColor);
-                    $.writeln("    Couleur fill trouvée: " + hex);
-                    if (!colorSet[hex]) {
-                        colorSet[hex] = true;
-                        colorCount++;
-                    }
+            if (item.filled && item.fillColor.typename === "RGBColor") {
+                var hex = rgbToHex(item.fillColor);
+                if (!colorSet[hex]) {
+                    colorSet[hex] = true;
+                    colorCount++;
                 }
             }
-            if (colorCount < 10 && item.stroked) {
-                $.writeln("    strokeColor.typename: " + item.strokeColor.typename);
-                if (item.strokeColor.typename === "RGBColor") {
-                    var hex = rgbToHex(item.strokeColor);
-                    $.writeln("    Couleur stroke trouvée: " + hex);
-                    if (!colorSet[hex]) {
-                        colorSet[hex] = true;
-                        colorCount++;
-                    }
+            if (colorCount < 10 && item.stroked && item.strokeColor.typename === "RGBColor") {
+                var hex = rgbToHex(item.strokeColor);
+                if (!colorSet[hex]) {
+                    colorSet[hex] = true;
+                    colorCount++;
                 }
             }
         } else if (item.typename === "TextFrame") {
-            $.writeln("  TextFrame");
             var textRange = item.textRange;
-            if (textRange.characterAttributes.fillColor) {
-                $.writeln("    fillColor.typename: " + textRange.characterAttributes.fillColor.typename);
-                if (textRange.characterAttributes.fillColor.typename === "RGBColor") {
-                    var hex = rgbToHex(textRange.characterAttributes.fillColor);
-                    $.writeln("    Couleur text fill trouvée: " + hex);
-                    if (!colorSet[hex]) {
-                        colorSet[hex] = true;
-                        colorCount++;
-                    }
+            if (textRange.characterAttributes.fillColor &&
+                textRange.characterAttributes.fillColor.typename === "RGBColor") {
+                var hex = rgbToHex(textRange.characterAttributes.fillColor);
+                if (!colorSet[hex]) {
+                    colorSet[hex] = true;
+                    colorCount++;
                 }
             }
-            if (colorCount < 10 && textRange.characterAttributes.strokeColor) {
-                $.writeln("    strokeColor.typename: " + textRange.characterAttributes.strokeColor.typename);
-                if (textRange.characterAttributes.strokeColor.typename === "RGBColor") {
-                    var hex = rgbToHex(textRange.characterAttributes.strokeColor);
-                    $.writeln("    Couleur text stroke trouvée: " + hex);
-                    if (!colorSet[hex]) {
-                        colorSet[hex] = true;
-                        colorCount++;
-                    }
+            if (colorCount < 10 && textRange.characterAttributes.strokeColor &&
+                textRange.characterAttributes.strokeColor.typename === "RGBColor") {
+                var hex = rgbToHex(textRange.characterAttributes.strokeColor);
+                if (!colorSet[hex]) {
+                    colorSet[hex] = true;
+                    colorCount++;
                 }
             }
         } else if (item.pageItems && item.pageItems.length > 0) {
-            $.writeln("  Autre type avec pageItems: " + item.pageItems.length);
             for (var i = 0; i < item.pageItems.length; i++) {
                 colorCount = extractColorsRecursive(item.pageItems[i], colorSet, colorCount);
                 if (colorCount >= 10) break;
             }
-        } else {
-            $.writeln("  Type non géré: " + item.typename);
         }
     } catch (e) {
-        $.writeln("Erreur extractColorsRecursive: " + e.toString());
+        // Erreur silencieuse pour éviter de bloquer le traitement
     }
 
     return colorCount;
@@ -244,7 +212,7 @@ function hexToRGB(hex) {
     };
 }
 
-function convertToBlack(element, rgbColor, tmpPaths) {
+function convertToMonochrome(element, rgbColor, tmpPaths) {
     try {
         var color = new RGBColor();
         color.red = rgbColor.r;
@@ -254,7 +222,7 @@ function convertToBlack(element, rgbColor, tmpPaths) {
         applyColorRecursive(element, color, tmpPaths);
         return true;
     } catch (e) {
-         $.writeln("Erreur dans convertToBlack : " + e.toString());
+         $.writeln("Erreur dans convertToMonochrome : " + e.toString());
         return false;
     }
 }
@@ -428,11 +396,11 @@ function generateArtboards(paramsJSON) {
         if (params.colorVariations.blackwhite) {
             colorVariations.push({ name: "blackwhite", suffix: "_nb" });
         }
-        if (params.colorVariations.black) {
+        if (params.colorVariations.monochrome) {
             colorVariations.push({
-                name: "black",
-                suffix: "_black",
-                rgb: hexToRGB(params.colorVariations.blackColor || "#000000")
+                name: "monochrome",
+                suffix: "_monochrome",
+                rgb: hexToRGB(params.colorVariations.monochromeColor || "#000000")
             });
         }
         if (params.colorVariations.custom && params.customColors && params.customColors.mapping && params.customColors.mapping.length > 0) {
@@ -454,9 +422,9 @@ function generateArtboards(paramsJSON) {
 
                 if (colorVar.name === "blackwhite") {
                     convertToGrayscale(element);
-                } else if (colorVar.name === "black") {
+                } else if (colorVar.name === "monochrome") {
                     var tmpPaths = [];
-                    convertToBlack(element, colorVar.rgb, tmpPaths);
+                    convertToMonochrome(element, colorVar.rgb, tmpPaths);
                     for (var j = tmpPaths.length - 1; j >= 0; j--) {
                         try {
                             tmpPaths[j].remove();

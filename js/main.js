@@ -16,8 +16,8 @@ const appState = {
   colorVariations: {
     original: true,
     blackwhite: false,
-    black: false,
-    blackColor: '#000000',
+    monochrome: false,
+    monochromeColor: '#000000',
     custom: false
   },
   customColors: {
@@ -86,11 +86,11 @@ function setupEventListeners() {
         verticalLayoutBtn.addEventListener('click', generateVerticalLayout);
     }
 
-    // écouteur colorpicker
-    const blackColorPicker = document.getElementById('black-color-picker');
-      if (blackColorPicker) {
-          blackColorPicker.addEventListener('input', (e) => {
-              appState.colorVariations.blackColor = e.target.value;
+    // écouteur colorpicker monochromie
+    const monochromeColorPicker = document.getElementById('black-color-picker');
+      if (monochromeColorPicker) {
+          monochromeColorPicker.addEventListener('input', (e) => {
+              appState.colorVariations.monochromeColor = e.target.value;
               updateUI();
           });
     }
@@ -110,9 +110,9 @@ function setupEventListeners() {
     if (bwCheckbox) {
         bwCheckbox.addEventListener('change', updateColorVariations);
     }
-    const blackCheckbox = document.getElementById('color-black'); // Nouvelle checkbox pour noir
-    if (blackCheckbox) {
-        blackCheckbox.addEventListener('change', updateColorVariations);
+    const monochromeCheckbox = document.getElementById('color-black'); // Checkbox pour monochromie
+    if (monochromeCheckbox) {
+        monochromeCheckbox.addEventListener('change', updateColorVariations);
     }
 
     const customCheckbox = document.getElementById('color-custom');
@@ -287,8 +287,8 @@ function updateArtboardTypes() {
 function updateColorVariations() {
     const bwCheckbox = document.getElementById('color-bw');
     appState.colorVariations.blackwhite = bwCheckbox ? bwCheckbox.checked : false;
-    const blackCheckbox = document.getElementById('color-black');
-    appState.colorVariations.black = blackCheckbox ? blackCheckbox.checked : false;
+    const monochromeCheckbox = document.getElementById('color-black');
+    appState.colorVariations.monochrome = monochromeCheckbox ? monochromeCheckbox.checked : false;
     const customCheckbox = document.getElementById('color-custom');
     appState.colorVariations.custom = customCheckbox ? customCheckbox.checked : false;
 
@@ -463,7 +463,6 @@ async function analyzeColors() {
 
     // Extraire les couleurs de la sélection
     const result = await evalExtendScript('extractColors');
-    console.log('Result from extractColors:', result);
 
     if (result && result.startsWith('COLORS:')) {
       const colorsJSON = result.substring(7);
@@ -477,7 +476,7 @@ async function analyzeColors() {
       // Initialiser le mapping avec les couleurs extraites
       appState.customColors.mapping = colors.map(c => ({
         original: c,
-        custom: c // Par défaut, la couleur custom = couleur originale
+        custom: c
       }));
 
       // Afficher les couleurs
@@ -485,14 +484,11 @@ async function analyzeColors() {
       showStatus(`${colors.length} couleur(s) détectée(s)`, 'success');
     } else if (result && result.startsWith('ERROR:')) {
       const errorMsg = result.substring(7);
-      console.error('ExtendScript error:', errorMsg);
       showStatus('Erreur: ' + errorMsg, 'error');
     } else {
-      console.error('Unexpected result:', result);
-      showStatus('Erreur lors de l\'analyse des couleurs: ' + result, 'error');
+      showStatus('Erreur lors de l\'analyse des couleurs', 'error');
     }
   } catch (e) {
-    console.error('Exception in analyzeColors:', e);
     showStatus('Erreur lors de l\'analyse des couleurs: ' + e.message, 'error');
   }
 }
