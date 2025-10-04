@@ -81,14 +81,14 @@
             <!-- Section 3: Couleurs -->
             <section class="panel">
                 <h2>3. Couleurs</h2>
-                
+
                 <div class="checkbox-group">
                     <label class="checkbox-label color-locked">
                         <input type="checkbox" id="color-original" checked disabled>
                         <span>Couleurs d'origine</span>
                         <span class="lock-icon">🔒</span>
                     </label>
-                    
+
                     <label class="checkbox-label">
                         <input type="checkbox" id="color-bw">
                         <span>Nuances de gris</span>
@@ -98,6 +98,16 @@
                         <span>Noir</span>
                         <input type="color" id="black-color-picker" value="#000000" style="margin-left: 0.5em;">
                     </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="color-custom">
+                        <span>Couleurs customs</span>
+                    </label>
+                </div>
+
+                <div id="custom-colors-section" style="display: none; margin-top: 1em;">
+                    <button id="analyze-colors-btn" class="btn-secondary btn-large">Analyser les couleurs</button>
+                    <div id="colors-mapping" style="margin-top: 1em;"></div>
                 </div>
             </section>
 

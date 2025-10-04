@@ -77,6 +77,159 @@ function storeSelection(type) {
     }
 }
 
+// Fonction utilitaire : convertir RGBColor en hexadécimal
+function rgbToHex(rgbColor) {
+    var r = Math.round(rgbColor.red);
+    var g = Math.round(rgbColor.green);
+    var b = Math.round(rgbColor.blue);
+
+    function componentToHex(c) {
+        var hex = c.toString(16);
+        return hex.length === 1 ? "0" + hex : hex;
+    }
+
+    return "#" + componentToHex(r) + componentToHex(g) + componentToHex(b);
+}
+
+// Extraire les couleurs de la sélection actuelle
+function extractColors() {
+    $.writeln("=== Début extractColors ===");
+    try {
+        if (app.documents.length === 0) {
+            return "ERROR: NO_DOCUMENT";
+        }
+
+        var doc = app.activeDocument;
+        if (!doc.selection || doc.selection.length === 0) {
+            $.writeln("Aucune sélection");
+            return "ERROR: NO_SELECTION";
+        }
+
+        $.writeln("Nombre d'éléments sélectionnés: " + doc.selection.length);
+
+        var colorSet = {}; // Utiliser un objet pour éviter les doublons
+        var maxColors = 10;
+        var colorCount = 0;
+
+        // Parcourir tous les éléments sélectionnés
+        for (var i = 0; i < doc.selection.length; i++) {
+            $.writeln("Traitement élément " + i + " type: " + doc.selection[i].typename);
+            colorCount = extractColorsRecursive(doc.selection[i], colorSet, colorCount);
+            if (colorCount >= maxColors) break;
+        }
+
+        $.writeln("Nombre de couleurs trouvées: " + colorCount);
+
+        // Convertir en tableau et limiter à 10 couleurs
+        var colors = [];
+        var count = 0;
+        for (var hex in colorSet) {
+            if (colorSet.hasOwnProperty(hex)) {
+                colors.push(hex);
+                count++;
+                if (count >= maxColors) break;
+            }
+        }
+
+        // Créer manuellement le JSON (ExtendScript n'a pas JSON.stringify)
+        var jsonString = '[';
+        for (var i = 0; i < colors.length; i++) {
+            if (i > 0) jsonString += ',';
+            jsonString += '"' + colors[i] + '"';
+        }
+        jsonString += ']';
+
+        $.writeln("Retour: COLORS:" + jsonString);
+        return "COLORS:" + jsonString;
+    } catch (e) {
+        $.writeln("ERREUR extractColors: " + e.toString());
+        return "ERROR: " + e.toString();
+    }
+}
+
+function extractColorsRecursive(item, colorSet, colorCount) {
+    if (colorCount >= 10) return colorCount;
+
+    try {
+        $.writeln("  Type: " + item.typename);
+
+        if (item.typename === "GroupItem") {
+            $.writeln("  GroupItem avec " + item.pageItems.length + " éléments");
+            for (var i = 0; i < item.pageItems.length; i++) {
+                colorCount = extractColorsRecursive(item.pageItems[i], colorSet, colorCount);
+                if (colorCount >= 10) break;
+            }
+        } else if (item.typename === "CompoundPathItem") {
+            $.writeln("  CompoundPathItem avec " + item.pathItems.length + " paths");
+            for (var i = 0; i < item.pathItems.length; i++) {
+                colorCount = extractColorsRecursive(item.pathItems[i], colorSet, colorCount);
+                if (colorCount >= 10) break;
+            }
+        } else if (item.typename === "PathItem") {
+            $.writeln("  PathItem - filled: " + item.filled + ", stroked: " + item.stroked);
+            if (item.filled) {
+                $.writeln("    fillColor.typename: " + item.fillColor.typename);
+                if (item.fillColor.typename === "RGBColor") {
+                    var hex = rgbToHex(item.fillColor);
+                    $.writeln("    Couleur fill trouvée: " + hex);
+                    if (!colorSet[hex]) {
+                        colorSet[hex] = true;
+                        colorCount++;
+                    }
+                }
+            }
+            if (colorCount < 10 && item.stroked) {
+                $.writeln("    strokeColor.typename: " + item.strokeColor.typename);
+                if (item.strokeColor.typename === "RGBColor") {
+                    var hex = rgbToHex(item.strokeColor);
+                    $.writeln("    Couleur stroke trouvée: " + hex);
+                    if (!colorSet[hex]) {
+                        colorSet[hex] = true;
+                        colorCount++;
+                    }
+                }
+            }
+        } else if (item.typename === "TextFrame") {
+            $.writeln("  TextFrame");
+            var textRange = item.textRange;
+            if (textRange.characterAttributes.fillColor) {
+                $.writeln("    fillColor.typename: " + textRange.characterAttributes.fillColor.typename);
+                if (textRange.characterAttributes.fillColor.typename === "RGBColor") {
+                    var hex = rgbToHex(textRange.characterAttributes.fillColor);
+                    $.writeln("    Couleur text fill trouvée: " + hex);
+                    if (!colorSet[hex]) {
+                        colorSet[hex] = true;
+                        colorCount++;
+                    }
+                }
+            }
+            if (colorCount < 10 && textRange.characterAttributes.strokeColor) {
+                $.writeln("    strokeColor.typename: " + textRange.characterAttributes.strokeColor.typename);
+                if (textRange.characterAttributes.strokeColor.typename === "RGBColor") {
+                    var hex = rgbToHex(textRange.characterAttributes.strokeColor);
+                    $.writeln("    Couleur text stroke trouvée: " + hex);
+                    if (!colorSet[hex]) {
+                        colorSet[hex] = true;
+                        colorCount++;
+                    }
+                }
+            }
+        } else if (item.pageItems && item.pageItems.length > 0) {
+            $.writeln("  Autre type avec pageItems: " + item.pageItems.length);
+            for (var i = 0; i < item.pageItems.length; i++) {
+                colorCount = extractColorsRecursive(item.pageItems[i], colorSet, colorCount);
+                if (colorCount >= 10) break;
+            }
+        } else {
+            $.writeln("  Type non géré: " + item.typename);
+        }
+    } catch (e) {
+        $.writeln("Erreur extractColorsRecursive: " + e.toString());
+    }
+
+    return colorCount;
+}
+
 function selectExportFolder() {
     var folder = Folder.selectDialog("Choisir le dossier de sortie");
     return folder ? folder.fsName : "";
@@ -145,6 +298,88 @@ function applyColorRecursive(item, color, tmpPaths) {
     }
 }
 
+// Appliquer un mapping de couleurs personnalisé à un élément
+function applyCustomColors(element, colorMapping) {
+    try {
+        applyCustomColorsRecursive(element, colorMapping);
+        return true;
+    } catch (e) {
+        $.writeln("Erreur dans applyCustomColors : " + e.toString());
+        return false;
+    }
+}
+
+function applyCustomColorsRecursive(item, colorMapping) {
+    try {
+        if (item.typename === "GroupItem") {
+            for (var i = 0; i < item.pageItems.length; i++) {
+                applyCustomColorsRecursive(item.pageItems[i], colorMapping);
+            }
+        } else if (item.typename === "CompoundPathItem") {
+            for (var i = 0; i < item.pathItems.length; i++) {
+                applyCustomColorsRecursive(item.pathItems[i], colorMapping);
+            }
+        } else if (item.typename === "PathItem") {
+            if (item.filled && item.fillColor.typename === "RGBColor") {
+                var hex = rgbToHex(item.fillColor);
+                var newHex = findCustomColor(hex, colorMapping);
+                if (newHex && newHex !== hex) {
+                    item.fillColor = hexToRGBColor(newHex);
+                }
+            }
+            if (item.stroked && item.strokeColor.typename === "RGBColor") {
+                var hex = rgbToHex(item.strokeColor);
+                var newHex = findCustomColor(hex, colorMapping);
+                if (newHex && newHex !== hex) {
+                    item.strokeColor = hexToRGBColor(newHex);
+                }
+            }
+        } else if (item.typename === "TextFrame") {
+            var textRange = item.textRange;
+            if (textRange.characterAttributes.fillColor &&
+                textRange.characterAttributes.fillColor.typename === "RGBColor") {
+                var hex = rgbToHex(textRange.characterAttributes.fillColor);
+                var newHex = findCustomColor(hex, colorMapping);
+                if (newHex && newHex !== hex) {
+                    textRange.characterAttributes.fillColor = hexToRGBColor(newHex);
+                }
+            }
+            if (textRange.characterAttributes.strokeColor &&
+                textRange.characterAttributes.strokeColor.typename === "RGBColor") {
+                var hex = rgbToHex(textRange.characterAttributes.strokeColor);
+                var newHex = findCustomColor(hex, colorMapping);
+                if (newHex && newHex !== hex) {
+                    textRange.characterAttributes.strokeColor = hexToRGBColor(newHex);
+                }
+            }
+        } else if (item.pageItems && item.pageItems.length > 0) {
+            for (var i = 0; i < item.pageItems.length; i++) {
+                applyCustomColorsRecursive(item.pageItems[i], colorMapping);
+            }
+        }
+    } catch (e) {
+        $.writeln("Erreur applyCustomColorsRecursive: " + e.toString());
+    }
+}
+
+function findCustomColor(originalHex, colorMapping) {
+    for (var i = 0; i < colorMapping.length; i++) {
+        if (colorMapping[i].original.toLowerCase() === originalHex.toLowerCase()) {
+            return colorMapping[i].custom;
+        }
+    }
+    return originalHex; // Si pas de mapping trouvé, retourner la couleur originale
+}
+
+function hexToRGBColor(hex) {
+    var rgb = hexToRGB(hex);
+    var color = new RGBColor();
+    color.red = rgb.r;
+    color.green = rgb.g;
+    color.blue = rgb.b;
+    return color;
+}
+
 
 // Convertir un élément en niveaux de gris
 function convertToGrayscale(element) {
@@ -200,6 +435,13 @@ function generateArtboards(paramsJSON) {
                 rgb: hexToRGB(params.colorVariations.blackColor || "#000000")
             });
         }
+        if (params.colorVariations.custom && params.customColors && params.customColors.mapping && params.customColors.mapping.length > 0) {
+            colorVariations.push({
+                name: "custom",
+                suffix: "_custom",
+                mapping: params.customColors.mapping
+            });
+        }
 
         for (var i = 0; i < typesList.length; i++) {
             var selType = typesList[i];
@@ -213,14 +455,15 @@ function generateArtboards(paramsJSON) {
                 if (colorVar.name === "blackwhite") {
                     convertToGrayscale(element);
                 } else if (colorVar.name === "black") {
-                    var tmpPaths = []; // Nouveau : tableau pour les temps
+                    var tmpPaths = [];
                     convertToBlack(element, colorVar.rgb, tmpPaths);
-                    // Nouveau : nettoyage des temps (la couleur stick maintenant)
                     for (var j = tmpPaths.length - 1; j >= 0; j--) {
                         try {
                             tmpPaths[j].remove();
                         } catch (e) {}
                     }
+                } else if (colorVar.name === "custom") {
+                    applyCustomColors(element, colorVar.mapping);
                 }
 
                 if (params.artboardTypes.fit) {

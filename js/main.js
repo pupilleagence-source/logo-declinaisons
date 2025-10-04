@@ -17,7 +17,12 @@ const appState = {
     original: true,
     blackwhite: false,
     black: false,
-    blackColor: '#000000'
+    blackColor: '#000000',
+    custom: false
+  },
+  customColors: {
+    enabled: false,
+    mapping: [] // [{original: '#ffffff', custom: '#000000'}, ...]
   },
   artboardSize: 1000,
   exportFormats: {
@@ -108,6 +113,17 @@ function setupEventListeners() {
     const blackCheckbox = document.getElementById('color-black'); // Nouvelle checkbox pour noir
     if (blackCheckbox) {
         blackCheckbox.addEventListener('change', updateColorVariations);
+    }
+
+    const customCheckbox = document.getElementById('color-custom');
+    if (customCheckbox) {
+        customCheckbox.addEventListener('change', updateColorVariations);
+    }
+
+    // Bouton d'analyse des couleurs
+    const analyzeColorsBtn = document.getElementById('analyze-colors-btn');
+    if (analyzeColorsBtn) {
+        analyzeColorsBtn.addEventListener('click', analyzeColors);
     }
     
     //  parametre d'export
@@ -272,7 +288,16 @@ function updateColorVariations() {
     const bwCheckbox = document.getElementById('color-bw');
     appState.colorVariations.blackwhite = bwCheckbox ? bwCheckbox.checked : false;
     const blackCheckbox = document.getElementById('color-black');
-    appState.colorVariations.black = blackCheckbox ? blackCheckbox.checked : false; // Mise à jour pour la nouvelle option
+    appState.colorVariations.black = blackCheckbox ? blackCheckbox.checked : false;
+    const customCheckbox = document.getElementById('color-custom');
+    appState.colorVariations.custom = customCheckbox ? customCheckbox.checked : false;
+
+    // Afficher/masquer la section custom colors
+    const customSection = document.getElementById('custom-colors-section');
+    if (customSection) {
+        customSection.style.display = appState.colorVariations.custom ? 'block' : 'none';
+    }
+
     updateUI();
 }
 
@@ -310,28 +335,29 @@ function updateUI() {
 async function handleGenerate() {
     try {
         showStatus('Génération en cours...', 'warning');
-        
+
         // Préparer les paramètres
         const params = {
         selections: appState.selections,
         artboardTypes: appState.artboardTypes,
-        colorVariations: appState.colorVariations, // Inclut maintenant black
+        colorVariations: appState.colorVariations,
+        customColors: appState.customColors, // Nouveau: mapping des couleurs customs
         exportFormats: appState.exportFormats,
         exportSizes: appState.exportSizes,
         customSizeEnabled: appState.customSizeEnabled,
         customSize: appState.customSize,
         outputFolder: appState.outputFolder
         };
-        
+
         console.log('Generate params:', params);
-        
+
         // Appeler la fonction de génération
         const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)]);
-        
+
         if (result && result.startsWith('SUCCESS')) {
             const count = result.split(':')[1];
             showStatus(`${count} plans de travail créés avec succès !`, 'success');
-            
+
             // Réinitialiser les sélections
             resetSelections();
         } else if (result && result.startsWith('ERROR')) {
@@ -340,7 +366,7 @@ async function handleGenerate() {
         } else {
             showStatus('Erreur lors de la génération', 'error');
         }
-        
+
     } catch (error) {
         console.error('Generate error:', error);
         showStatus('Erreur lors de la génération: ' + error.message, 'error');
@@ -422,6 +448,117 @@ function updateExportFormats() {
   appState.exportFormats.ai  = document.getElementById('export-ai').checked;
   appState.exportFormats.pdf = document.getElementById('export-pdf').checked;
   updateUI();
+}
+
+async function analyzeColors() {
+  try {
+    showStatus('Analyse des couleurs en cours...', 'warning');
+
+    // Vérifier qu'un élément est sélectionné
+    const selectionInfo = await evalExtendScript('getSelectionInfo');
+    if (selectionInfo === 'NO_SELECTION') {
+      showStatus('Veuillez sélectionner un élément pour analyser ses couleurs', 'warning');
+      return;
+    }
+
+    // Extraire les couleurs de la sélection
+    const result = await evalExtendScript('extractColors');
+    console.log('Result from extractColors:', result);
+
+    if (result && result.startsWith('COLORS:')) {
+      const colorsJSON = result.substring(7);
+      const colors = JSON.parse(colorsJSON);
+
+      if (colors.length === 0) {
+        showStatus('Aucune couleur trouvée dans la sélection', 'warning');
+        return;
+      }
+
+      // Initialiser le mapping avec les couleurs extraites
+      appState.customColors.mapping = colors.map(c => ({
+        original: c,
+        custom: c // Par défaut, la couleur custom = couleur originale
+      }));
+
+      // Afficher les couleurs
+      displayColorMapping();
+      showStatus(`${colors.length} couleur(s) détectée(s)`, 'success');
+    } else if (result && result.startsWith('ERROR:')) {
+      const errorMsg = result.substring(7);
+      console.error('ExtendScript error:', errorMsg);
+      showStatus('Erreur: ' + errorMsg, 'error');
+    } else {
+      console.error('Unexpected result:', result);
+      showStatus('Erreur lors de l\'analyse des couleurs: ' + result, 'error');
+    }
+  } catch (e) {
+    console.error('Exception in analyzeColors:', e);
+    showStatus('Erreur lors de l\'analyse des couleurs: ' + e.message, 'error');
+  }
+}
+
+function displayColorMapping() {
+  const container = document.getElementById('colors-mapping');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  appState.customColors.mapping.forEach((colorMap, index) => {
+    const item = document.createElement('div');
+    item.className = 'color-mapping-item';
+
+    // Couleur originale
+    const originalPreview = document.createElement('div');
+    originalPreview.className = 'color-preview';
+    originalPreview.style.backgroundColor = colorMap.original;
+    originalPreview.title = colorMap.original;
+
+    const originalInfo = document.createElement('div');
+    originalInfo.className = 'color-info';
+    const originalLabel = document.createElement('div');
+    originalLabel.className = 'color-label';
+    originalLabel.textContent = 'Original';
+    const originalValue = document.createElement('div');
+    originalValue.className = 'color-value';
+    originalValue.textContent = colorMap.original;
+    originalInfo.appendChild(originalLabel);
+    originalInfo.appendChild(originalValue);
+
+    // Flèche
+    const arrow = document.createElement('div');
+    arrow.className = 'color-arrow';
+    arrow.textContent = '→';
+
+    // Couleur custom
+    const customPreview = document.createElement('input');
+    customPreview.type = 'color';
+    customPreview.className = 'color-preview';
+    customPreview.value = colorMap.custom;
+    customPreview.addEventListener('change', (e) => {
+      appState.customColors.mapping[index].custom = e.target.value;
+      customValue.textContent = e.target.value;
+    });
+
+    const customInfo = document.createElement('div');
+    customInfo.className = 'color-info';
+    const customLabel = document.createElement('div');
+    customLabel.className = 'color-label';
+    customLabel.textContent = 'Custom';
+    const customValue = document.createElement('div');
+    customValue.className = 'color-value';
+    customValue.textContent = colorMap.custom;
+    customInfo.appendChild(customLabel);
+    customInfo.appendChild(customValue);
+
+    // Assembler
+    item.appendChild(originalPreview);
+    item.appendChild(originalInfo);
+    item.appendChild(arrow);
+    item.appendChild(customPreview);
+    item.appendChild(customInfo);
+
+    container.appendChild(item);
+  });
 }
 
 async function browseFolder() {
