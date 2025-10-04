@@ -1,0 +1,237 @@
+/* Reset et variables */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --bg-color: #323232;
+    --panel-bg: #262626;
+    --text-color: #cccccc;
+    --primary-color: #4b9ff2;
+    --success-color: #7fb069;
+    --error-color: #e34850;
+    --warning-color: #f4b643;
+    --border-color: #464646;
+    --hover-bg: #3a3a3a;
+}
+
+/* Base */
+body {
+    font-family: 'Adobe Clean', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 12px;
+    color: var(--text-color);
+    background-color: var(--bg-color);
+    line-height: 1.4;
+}
+
+.container {
+    padding: 12px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header */
+header {
+    text-align: center;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+h1 {
+    font-size: 16px;
+    font-weight: 300;
+    color: var(--primary-color);
+    margin-bottom: 4px;
+}
+
+.subtitle {
+    font-size: 11px;
+    color: #999;
+}
+
+/* Main */
+main {
+    flex: 1;
+    overflow-y: auto;
+}
+
+/* Panels */
+.panel {
+    background: var(--panel-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 16px;
+    margin-bottom: 12px;
+}
+
+.panel h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary-color);
+    margin-bottom: 12px;
+}
+
+/* Selection items */
+.logo-selection {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.selection-item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.selection-item label {
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.selection-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.selection-status {
+    flex: 1;
+    padding: 6px 10px;
+    background: var(--bg-color);
+    border-radius: 3px;
+    font-size: 11px;
+    color: #999;
+}
+
+.selection-status.selected {
+    color: var(--success-color);
+    font-weight: 500;
+}
+
+/* Checkbox group */
+.checkbox-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 3px;
+    transition: background-color 0.2s;
+}
+
+.checkbox-label:hover {
+    background: var(--hover-bg);
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+}
+
+.checkbox-label span {
+    user-select: none;
+}
+
+/* Buttons */
+.btn-select {
+    padding: 6px 12px;
+    background: var(--bg-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 11px;
+    transition: all 0.2s;
+}
+
+.btn-select:hover {
+    background: var(--hover-bg);
+    border-color: var(--primary-color);
+}
+
+.btn-primary {
+    padding: 8px 16px;
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background-color: #3d8fe6;
+}
+
+.btn-primary:active:not(:disabled) {
+    transform: scale(0.98);
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.btn-large {
+    width: 100%;
+    padding: 12px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+/* Actions panel */
+.actions-panel {
+    background: var(--panel-bg);
+    position: sticky;
+    bottom: 0;
+}
+
+/* Summary */
+.summary {
+    margin-top: 12px;
+    padding: 10px;
+    background: var(--bg-color);
+    border-radius: 3px;
+    text-align: center;
+    font-size: 11px;
+}
+
+.summary strong {
+    color: var(--primary-color);
+}
+
+/* Status */
+.status-message {
+    padding: 12px;
+    background-color: var(--panel-bg);
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    text-align: center;
+    margin-top: 12px;
+}
+
+.status-message.success {
+    color: var(--success-color);
+    border-color: var(--success-color);
+}
+
+.status-message.error {
+    color: var(--error-color);
+    border-color: var(--error-color);
+}
+
+.status-message.warning {
+    color: var(--warning-color);
+    border-color: var(--warning-color);
+}

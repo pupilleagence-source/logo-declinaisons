@@ -1,0 +1,177 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logo Déclinaisons</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="lib/CSInterface.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Logo Déclinaisons</h1>
+            <p class="subtitle">Générateur de plans de travail</p>
+        </header>
+        
+        <main>
+            <!-- Section 1: Sélection des éléments -->
+               <section class="panel">
+                    <h2>1. Sélection des éléments</h2>
+                    
+                    <div class="logo-selection">
+                         <!-- Icône seule -->
+                        <div class="selection-item">
+                        <label>Icône seule</label>
+                        <div class="selection-controls">
+                            <span class="selection-status" id="status-icon">Non sélectionné</span>
+                            <button class="btn-select" data-type="icon">Sélectionner</button>
+                        </div>
+                        </div>
+                        
+                        <!-- Typographie seule -->
+                        <div class="selection-item">
+                        <label>Typographie seule</label>
+                        <div class="selection-controls">
+                            <span class="selection-status" id="status-text">Non sélectionné</span>
+                            <button class="btn-select" data-type="text">Sélectionner</button>
+                        </div>
+                        </div>
+                        <!-- Version horizontale -->
+                        <div class="selection-item">
+                        <label>Version horizontale</label>
+                        <div class="selection-controls">
+                               <button id="generate-vertical-layout" class="btn-secondary btn-large">Générer automatiquement</button>
+                            <span class="selection-status" id="status-horizontal">Non sélectionné</span>
+                            <button class="btn-select" data-type="horizontal">Sélectionner</button>
+                        </div>
+                        </div>
+                        
+                        <!-- Version verticale -->
+                        <div class="selection-item">
+                        <label>Version verticale</label>
+                        <div class="selection-controls">
+                             <button id="generate-horizontal-layout" class="btn-secondary btn-large">Générer automatiquement</button>
+                            <span class="selection-status" id="status-vertical">Non sélectionné</span>
+                            <button class="btn-select" data-type="vertical">Sélectionner</button>
+                        </div>
+                        </div>
+                    </div>
+                </section>
+
+
+            <!-- Section 2: Type de plans de travail -->
+            <section class="panel">
+                <h2>2. Types de plans de travail</h2>
+                
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="artboard-fit" checked>
+                        <span>Fit-content (adapté au contenu)</span>
+                    </label>
+                    
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="artboard-square" checked>
+                        <span>Carré (avec marges 10%)</span>
+                    </label>
+                </div>
+            </section>
+
+            <!-- Section 3: Couleurs -->
+            <section class="panel">
+                <h2>3. Couleurs</h2>
+                
+                <div class="checkbox-group">
+                    <label class="checkbox-label color-locked">
+                        <input type="checkbox" id="color-original" checked disabled>
+                        <span>Couleurs d'origine</span>
+                        <span class="lock-icon">🔒</span>
+                    </label>
+                    
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="color-bw">
+                        <span>Nuances de gris</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="color-black">
+                        <span>Noir</span>
+                        <input type="color" id="black-color-picker" value="#000000" style="margin-left: 0.5em;">
+                    </label>
+                </div>
+            </section>
+
+            <!-- Section Export -->
+                <section class="panel" id="export-section">
+                <h2>4. Export</h2>
+                <div class="export-options">
+                    <label><input type="checkbox" id="export-png"> PNG</label>
+                    <label><input type="checkbox" id="export-jpg"> JPG</label>
+                    <label><input type="checkbox" id="export-svg"> SVG</label>
+                    <label><input type="checkbox" id="export-ai"> AI</label>
+                    <label><input type="checkbox" id="export-pdf"> PDF</label>
+                </div>
+                <div class="export-path">
+                    <label for="output-folder">Dossier de sortie :</label>
+                    <input type="text" id="output-folder" readonly placeholder="Choisir un dossier...">
+                    <button id="browse-folder">Parcourir</button>
+                </div>
+                <div class="export-sizes">
+                    <label>Tailles d'export (PNG & JPG) :</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="size-small" value="1000" checked>
+                            <span>Petit (1000 px)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="size-medium" value="2000">
+                            <span>Moyen (2000 px)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="size-large" value="4000">
+                            <span>Grand (4000 px)</span>
+                        </label>
+                    </div>
+                    <div class="custom-size">
+                        <label class="checkbox-label">
+                        <input type="checkbox" id="custom-size-enable">
+                        <span>Personnalisé</span>
+                        </label>
+                        <div id="custom-size-inputs" style="display: none; margin-top: 0.5em;">
+                        <label for="custom-width">Largeur (px) :</label>
+                        <input type="number" id="custom-width" value="1000" min="1" style="width:5em">
+                        <label for="custom-height" style="margin-left:1em">Hauteur (px) :</label>
+                        <input type="number" id="custom-height" value="1000" min="1" style="width:5em">
+                        </div>
+                    </div>
+                    <div class="custom-size-lock" style="margin-top:0.5em">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="lock-aspect-ratio"  checked>
+                        <span>Conserver le ratio</span>
+                    </label>
+                    </div>
+
+                </div>
+
+                </section>
+
+            
+            <!-- Section 5: Actions -->
+            <section class="panel actions-panel">
+                <button id="generate-btn" class="btn-primary btn-large" disabled>
+                    Générer les plans de travail
+                </button>
+                
+                <div class="summary" id="summary" style="display: none;">
+                    <p>Plans de travail à créer : <strong id="artboard-count">0</strong></p>
+                </div>
+            </section>
+            
+            <!-- Zone de status -->
+            <div class="status-message" id="status" style="display: none;"></div>
+        </main>
+    </div>
+    
+    <script src="js/main.js"></script>
+<script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'96a0ae773ad22503',t:'MTc1NDMzODA1MS4wMDAwMDA='};var a=document.createElement('script');a.nonce='';a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body>
+</html>
