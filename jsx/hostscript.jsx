@@ -10,6 +10,114 @@ var storedSelections = {
     text: null
 };
 
+/**
+ * Constantes pour les limites d'Illustrator
+ */
+var ILLUSTRATOR_MAX_CANVAS = 16383; // Points (227 inches)
+var ILLUSTRATOR_MIN_CANVAS = -16383;
+
+/**
+ * Valide qu'un élément est utilisable pour la génération
+ * @param {PageItem} item - L'élément à valider
+ * @return {Object} {valid: boolean, error: string}
+ */
+function validateElement(item) {
+    if (!item) {
+        return {valid: false, error: "Élément inexistant"};
+    }
+
+    if (!item.typename) {
+        return {valid: false, error: "Type d'élément invalide"};
+    }
+
+    if (item.locked) {
+        return {valid: false, error: "Élément verrouillé"};
+    }
+
+    try {
+        var bounds = item.visibleBounds;
+        var width = bounds[2] - bounds[0];
+        var height = bounds[1] - bounds[3];
+
+        if (width <= 0 || height <= 0) {
+            return {valid: false, error: "Dimensions invalides (L:" + width.toFixed(1) + ", H:" + height.toFixed(1) + ")"};
+        }
+
+        if (width > 20000 || height > 20000) {
+            return {valid: false, error: "Élément trop grand (max 20000px)"};
+        }
+
+        // ✨ NOUVEAU: Vérifier que les bounds ne sont pas à des positions extrêmes
+        var left = bounds[0];
+        var top = bounds[1];
+        var right = bounds[2];
+        var bottom = bounds[3];
+
+        // Si les bounds sont très éloignés du centre, avertir
+        var maxCoord = 50000; // Limite raisonnable pour éviter problèmes
+        if (Math.abs(left) > maxCoord || Math.abs(top) > maxCoord ||
+            Math.abs(right) > maxCoord || Math.abs(bottom) > maxCoord) {
+            $.writeln("⚠️ Élément a des coordonnées extrêmes: L=" + left.toFixed(0) + ", T=" + top.toFixed(0) + ", R=" + right.toFixed(0) + ", B=" + bottom.toFixed(0));
+            $.writeln("   L'élément sera repositionné pour éviter des erreurs");
+        }
+
+    } catch (e) {
+        return {valid: false, error: "Erreur lecture dimensions: " + e.toString()};
+    }
+
+    return {valid: true, error: ""};
+}
+
+/**
+ * Valide et corrige les dimensions d'un rectangle d'artboard
+ * @param {Array} rect - [left, top, right, bottom]
+ * @return {Object} {valid: boolean, rect: Array, error: string}
+ */
+function validateArtboardRect(rect) {
+    var left = rect[0];
+    var top = rect[1];
+    var right = rect[2];
+    var bottom = rect[3];
+
+    // Vérifier que top > bottom (Illustrator coordinate system)
+    if (top <= bottom) {
+        return {valid: false, rect: rect, error: "Hauteur invalide (top:" + top.toFixed(1) + " <= bottom:" + bottom.toFixed(1) + ")"};
+    }
+
+    // Vérifier que right > left
+    if (right <= left) {
+        return {valid: false, rect: rect, error: "Largeur invalide (right:" + right.toFixed(1) + " <= left:" + left.toFixed(1) + ")"};
+    }
+
+    var width = right - left;
+    var height = top - bottom;
+
+    // Dimensions minimum
+    if (width < 1 || height < 1) {
+        return {valid: false, rect: rect, error: "Artboard trop petit (min 1pt)"};
+    }
+
+    // Dimensions maximum
+    if (width > 16383 || height > 16383) {
+        return {valid: false, rect: rect, error: "Artboard trop grand (max 16383pt / 227 inches)"};
+    }
+
+    // Vérifier limites canvas Illustrator
+    if (left < ILLUSTRATOR_MIN_CANVAS || right > ILLUSTRATOR_MAX_CANVAS ||
+        bottom < ILLUSTRATOR_MIN_CANVAS || top > ILLUSTRATOR_MAX_CANVAS) {
+
+        // Essayer de recadrer dans les limites
+        left = Math.max(ILLUSTRATOR_MIN_CANVAS, Math.min(left, ILLUSTRATOR_MAX_CANVAS - width));
+        right = left + width;
+        top = Math.min(ILLUSTRATOR_MAX_CANVAS, Math.max(top, ILLUSTRATOR_MIN_CANVAS + height));
+        bottom = top - height;
+
+        $.writeln("⚠️ Artboard recadré dans les limites du canvas");
+    }
+
+    return {valid: true, rect: [left, top, right, bottom], error: ""};
+}
+
 // Vérifier si un document est ouvert
 function hasOpenDocument() {
     try {
@@ -43,15 +151,15 @@ function storeSelection(type) {
         if (app.documents.length === 0) {
             return "NO_DOCUMENT";
         }
-        
+
         var doc = app.activeDocument;
         if (!doc.selection || doc.selection.length === 0) {
             return "NO_SELECTION";
         }
-        
+
         var selection = doc.selection[0];
         var elementToStore;
-        
+
         if (doc.selection.length > 1) {
             elementToStore = doc.groupItems.add();
             for (var i = doc.selection.length - 1; i >= 0; i--) {
@@ -60,17 +168,29 @@ function storeSelection(type) {
         } else {
             elementToStore = selection.duplicate();
         }
-        
+
+        // ✨ VALIDATION de l'élément avant stockage
+        var validation = validateElement(elementToStore);
+        if (!validation.valid) {
+            try { elementToStore.remove(); } catch(e) {}
+            return "ERROR: " + validation.error;
+        }
+
         elementToStore.hidden = true;
-        
+
+        // Nettoyer l'ancienne sélection si elle existe
         if (storedSelections[type]) {
             try {
                 storedSelections[type].remove();
-            } catch (e) {}
+                $.writeln("✓ Ancienne sélection '" + type + "' supprimée");
+            } catch (e) {
+                $.writeln("⚠️ Erreur suppression ancienne sélection '" + type + "': " + e.toString());
+            }
         }
-        
+
         storedSelections[type] = elementToStore;
-        
+        $.writeln("✓ Sélection '" + type + "' stockée avec succès");
+
         return "OK";
     } catch (e) {
         return "ERROR: " + e.toString();
@@ -262,7 +382,8 @@ function applyColorRecursive(item, color, tmpPaths) {
             applyColorRecursive(item.pageItems[i], color, tmpPaths);
         }
     } else {
-        alert("Type non géré dans applyColorRecursive: " + item.typename);
+        // ✨ CORRECTION: Remplacer alert() par $.writeln()
+        $.writeln("⚠️ Type non géré dans applyColorRecursive: " + item.typename);
     }
 }
 
@@ -391,6 +512,19 @@ function generateArtboards(paramsJSON) {
         var artboardSize = 600; // Réduit de 1000 à 600
 
         var typesList = ['horizontal', 'vertical', 'icon', 'text'];
+
+        // ✨ VALIDATION des sélections stockées
+        for (var i = 0; i < typesList.length; i++) {
+            var selType = typesList[i];
+            if (params.selections[selType] && storedSelections[selType]) {
+                var validation = validateElement(storedSelections[selType]);
+                if (!validation.valid) {
+                    $.writeln("⚠️ Sélection '" + selType + "' invalide: " + validation.error);
+                    return "ERROR: Sélection '" + selType + "' invalide: " + validation.error;
+                }
+            }
+        }
+
         var colorVariations = [];
 
         if (params.colorVariations.original) {
@@ -465,6 +599,14 @@ function generateArtboards(paramsJSON) {
                             currentY -= (maxHeight + spacing);
                             currentX = 0;
                             maxHeight = 0;
+
+                            // ✨ PROTECTION: Vérifier qu'on ne dépasse pas les limites du canvas
+                            if (currentY - artboardSize < ILLUSTRATOR_MIN_CANVAS) {
+                                $.writeln("⚠️ Limite canvas atteinte, arrêt de la génération (trop d'artboards)");
+                                element.remove();
+                                cleanupHiddenElements();
+                                return "ERROR: Trop d'artboards - Limite canvas atteinte. Réduisez le nombre de variations.";
+                            }
                         } else {
                             currentX += artboardSize + spacing;
                         }
@@ -502,6 +644,14 @@ function generateArtboards(paramsJSON) {
                             currentY -= (maxHeight + spacing);
                             currentX = 0;
                             maxHeight = 0;
+
+                            // ✨ PROTECTION: Vérifier qu'on ne dépasse pas les limites du canvas
+                            if (currentY - artboardSize < ILLUSTRATOR_MIN_CANVAS) {
+                                $.writeln("⚠️ Limite canvas atteinte, arrêt de la génération (trop d'artboards)");
+                                element.remove();
+                                cleanupHiddenElements();
+                                return "ERROR: Trop d'artboards - Limite canvas atteinte. Réduisez le nombre de variations.";
+                            }
                         } else {
                             currentX += artboardSize + spacing;
                         }
@@ -531,6 +681,7 @@ function generateArtboards(paramsJSON) {
             }
         }
 
+        // ✨ NETTOYAGE GARANTI
         cleanupHiddenElements();
 
         if (params.exportFormats && params.exportSizes) {
@@ -569,9 +720,17 @@ function generateArtboards(paramsJSON) {
             }
         }
 
+        $.writeln("✅ Génération complétée: " + artboardCount + " artboards créés");
         return "SUCCESS:" + artboardCount;
 
     } catch (e) {
+        $.writeln("❌ Erreur critique dans generateArtboards: " + e.toString());
+        // ✨ NETTOYAGE MÊME EN CAS D'ERREUR
+        try {
+            cleanupHiddenElements();
+        } catch (cleanupError) {
+            $.writeln("❌ Erreur lors du nettoyage après erreur: " + cleanupError.toString());
+        }
         return "ERROR: " + e.toString();
     }
 }
@@ -588,12 +747,14 @@ function createBackgroundRect(doc, x, y, width, height, color) {
 // Créer un artboard fit-content
 function createFitArtboard(doc, element, width, x, y, name, withBlackBg) {
     try {
-        var wasHidden = element.hidden;
-        element.hidden = false;
-        var bounds = element.visibleBounds;
+        // ✨ DUPLICATION ET MESURE D'ABORD (élément peut avoir des coords extrêmes)
+        var copy = element.duplicate();
+        copy.hidden = false;
+
+        // Mesurer les dimensions RÉELLES de l'élément
+        var bounds = copy.visibleBounds;
         var elementWidth = bounds[2] - bounds[0];
         var elementHeight = bounds[1] - bounds[3];
-        element.hidden = wasHidden;
 
         if (elementWidth <= 0) elementWidth = 1;
         if (elementHeight <= 0) elementHeight = 1;
@@ -601,15 +762,50 @@ function createFitArtboard(doc, element, width, x, y, name, withBlackBg) {
         var ratio = elementHeight / elementWidth;
         var height = width * ratio;
 
-        var artboardRect = [x, y, x + width, y - height];
+        // ✨ SÉCURITÉ: Limiter la hauteur max pour éviter débordement
+        var maxAllowedHeight = 16000; // Bien en dessous de 16383
+        if (height > maxAllowedHeight) {
+            $.writeln("⚠️ Hauteur artboard trop grande (" + height.toFixed(0) + "), limitée à " + maxAllowedHeight);
+            height = maxAllowedHeight;
+            width = height / ratio;
+        }
+
+        // ✨ CONSTRUCTION du rectangle artboard (toujours en coordonnées sûres)
+        var left = x;
+        var top = y;
+        var right = x + width;
+        var bottom = y - height;
+
+        var artboardRect = [left, top, right, bottom];
+
+        // ✨ VALIDATION CRITIQUE avant création
+        var validation = validateArtboardRect(artboardRect);
+        if (!validation.valid) {
+            $.writeln("❌ Artboard fit invalide pour '" + name + "': " + validation.error);
+            $.writeln("   Dimensions originales: W=" + elementWidth.toFixed(1) + ", H=" + elementHeight.toFixed(1));
+            $.writeln("   Artboard calculé: L=" + left + ", T=" + top + ", R=" + right + ", B=" + bottom);
+            copy.remove(); // Nettoyer
+            throw new Error("Artboard invalide: " + validation.error);
+        }
+
+        // Utiliser le rectangle validé (potentiellement corrigé)
+        artboardRect = validation.rect;
+
+        // Recalculer dimensions finales
+        var finalWidth = artboardRect[2] - artboardRect[0];
+        var finalHeight = artboardRect[1] - artboardRect[3];
+
+        // Créer l'artboard
         var artboard = doc.artboards.add(artboardRect);
         artboard.name = name;
 
-        var copy = element.duplicate();
-        copy.hidden = false;
-        var scaleFactor = (width / elementWidth) * 100;
+        // ✨ REPOSITIONNER et REDIMENSIONNER la copie
+        // Calculer le scale factor basé sur la largeur finale
+        var scaleFactor = (finalWidth / elementWidth) * 100;
         copy.resize(scaleFactor, scaleFactor, true, true, true, true, scaleFactor, Transformation.TOPLEFT);
-        copy.position = [x, y];
+
+        // Positionner au coin supérieur gauche de l'artboard
+        copy.position = [artboardRect[0], artboardRect[1]];
 
         // Ajouter fond noir en arrière-plan si demandé
         if (withBlackBg) {
@@ -617,12 +813,13 @@ function createFitArtboard(doc, element, width, x, y, name, withBlackBg) {
             blackColor.red = 0;
             blackColor.green = 0;
             blackColor.blue = 0;
-            var bgRect = createBackgroundRect(doc, x, y, width, height, blackColor);
+            var bgRect = createBackgroundRect(doc, artboardRect[0], artboardRect[1], finalWidth, finalHeight, blackColor);
             bgRect.zOrder(ZOrderMethod.SENDTOBACK);
         }
 
-        return height;
+        return finalHeight;
     } catch (e) {
+        $.writeln("❌ Erreur createFitArtboard: " + e.toString());
         throw new Error("Erreur createFitArtboard: " + e.toString());
     }
 }
@@ -630,33 +827,70 @@ function createFitArtboard(doc, element, width, x, y, name, withBlackBg) {
 // Créer un artboard carré
 function createSquareArtboard(doc, element, size, x, y, name, withBlackBg) {
     try {
-        var artboardRect = [x, y, x + size, y - size];
+        // ✨ SÉCURITÉ: Limiter la taille max
+        var maxAllowedSize = 16000; // Bien en dessous de 16383
+        if (size > maxAllowedSize) {
+            $.writeln("⚠️ Taille artboard trop grande (" + size + "), limitée à " + maxAllowedSize);
+            size = maxAllowedSize;
+        }
+
+        // ✨ CONSTRUCTION du rectangle artboard
+        var left = x;
+        var top = y;
+        var right = x + size;
+        var bottom = y - size;
+
+        var artboardRect = [left, top, right, bottom];
+
+        // ✨ VALIDATION CRITIQUE avant création
+        var validation = validateArtboardRect(artboardRect);
+        if (!validation.valid) {
+            $.writeln("❌ Artboard square invalide pour '" + name + "': " + validation.error);
+            $.writeln("   Dimensions: L=" + left + ", T=" + top + ", R=" + right + ", B=" + bottom);
+            throw new Error("Artboard invalide: " + validation.error);
+        }
+
+        // Utiliser le rectangle validé (potentiellement corrigé)
+        artboardRect = validation.rect;
+
+        // Recalculer la taille finale (peut avoir été ajustée)
+        var finalSize = Math.min(
+            artboardRect[2] - artboardRect[0],
+            artboardRect[1] - artboardRect[3]
+        );
+
+        // Créer l'artboard
         var artboard = doc.artboards.add(artboardRect);
         artboard.name = name;
 
-        var wasHidden = element.hidden;
-        element.hidden = false;
-        var bounds = element.visibleBounds;
+        // ✨ DUPLICATION ET MESURE
+        var copy = element.duplicate();
+        copy.hidden = false;
+
+        var bounds = copy.visibleBounds;
         var elementWidth = bounds[2] - bounds[0];
         var elementHeight = bounds[1] - bounds[3];
-        element.hidden = wasHidden;
 
         if (elementWidth <= 0) elementWidth = 1;
         if (elementHeight <= 0) elementHeight = 1;
 
-        var maxSize = size * 0.8;
+        // Calculer le scale pour que l'élément tienne dans 80% de l'artboard
+        var maxSize = finalSize * 0.8;
         var scaleX = maxSize / elementWidth;
         var scaleY = maxSize / elementHeight;
         var scaleFactor = Math.min(scaleX, scaleY) * 100;
 
-        var copy = element.duplicate();
-        copy.hidden = false;
+        // Redimensionner
         copy.resize(scaleFactor, scaleFactor, true, true, true, true, scaleFactor, Transformation.TOPLEFT);
+
+        // Mesurer après resize
         var newBounds = copy.visibleBounds;
         var newWidth = newBounds[2] - newBounds[0];
         var newHeight = newBounds[1] - newBounds[3];
-        var centerX = x + (size - newWidth) / 2;
-        var centerY = y - (size - newHeight) / 2;
+
+        // Centrer dans l'artboard
+        var centerX = artboardRect[0] + (finalSize - newWidth) / 2;
+        var centerY = artboardRect[1] - (finalSize - newHeight) / 2;
         copy.position = [centerX, centerY];
 
         // Ajouter fond noir en arrière-plan si demandé
@@ -665,30 +899,65 @@ function createSquareArtboard(doc, element, size, x, y, name, withBlackBg) {
             blackColor.red = 0;
             blackColor.green = 0;
             blackColor.blue = 0;
-            var bgRect = createBackgroundRect(doc, x, y, size, size, blackColor);
+            var bgRect = createBackgroundRect(doc, artboardRect[0], artboardRect[1], finalSize, finalSize, blackColor);
             bgRect.zOrder(ZOrderMethod.SENDTOBACK);
         }
 
-        return size;
+        return finalSize;
     } catch (e) {
+        $.writeln("❌ Erreur createSquareArtboard: " + e.toString());
         throw new Error("Erreur createSquareArtboard: " + e.toString());
     }
 }
 
 // Nettoyer les éléments cachés temporaires
 function cleanupHiddenElements() {
+    var cleaned = 0;
+    var errors = 0;
+    var skipped = 0;
+
+    $.writeln("🧹 Début du nettoyage des éléments cachés...");
+
     try {
         for (var key in storedSelections) {
-            if (storedSelections.hasOwnProperty(key) && storedSelections[key]) {
+            if (storedSelections.hasOwnProperty(key)) {
+                var element = storedSelections[key];
+
+                if (!element) {
+                    skipped++;
+                    continue;
+                }
+
                 try {
-                    if (storedSelections[key].hidden) {
-                        storedSelections[key].remove();
+                    // Vérifier que l'élément existe encore
+                    if (element.typename) {
+                        // Vérifier s'il est caché
+                        if (element.hidden) {
+                            element.remove();
+                            cleaned++;
+                            $.writeln("  ✓ Supprimé: " + key);
+                        } else {
+                            // Élément existe mais n'est pas caché (cas anormal)
+                            $.writeln("  ⚠️ Élément '" + key + "' existe mais n'est pas caché");
+                            skipped++;
+                        }
                     }
-                } catch (e) {}
+                } catch (e) {
+                    // L'élément a peut-être déjà été supprimé
+                    $.writeln("  ⚠️ Erreur suppression '" + key + "': " + e.toString());
+                    errors++;
+                }
+
+                // Toujours réinitialiser la référence
                 storedSelections[key] = null;
             }
         }
-    } catch (e) {}
+
+        $.writeln("✅ Nettoyage terminé: " + cleaned + " supprimés, " + skipped + " ignorés, " + errors + " erreurs");
+
+    } catch (e) {
+        $.writeln("❌ Erreur critique dans cleanupHiddenElements: " + e.toString());
+    }
 }
 
 // Fonctions d'exportation (non modifiées)
@@ -729,141 +998,226 @@ function exportArtboard(doc, artboardName, folderPath, format, exportSize) {
 }
 
 function generateVerticalVersion() {
-    if (app.documents.length === 0) return "NO_DOCUMENT";
-    var doc = app.activeDocument;
+    try {
+        if (app.documents.length === 0) return "NO_DOCUMENT";
+        var doc = app.activeDocument;
 
-    if (!storedSelections.icon || !storedSelections.text) {
-        return "ERROR: Les deux éléments (icône + typographie) doivent être sélectionnés";
+        if (!storedSelections.icon || !storedSelections.text) {
+            return "ERROR: Les deux éléments (icône + typographie) doivent être sélectionnés";
+        }
+
+        // ✨ VALIDATION des éléments avant génération
+        var iconValidation = validateElement(storedSelections.icon);
+        if (!iconValidation.valid) {
+            return "ERROR: Icône invalide - " + iconValidation.error;
+        }
+
+        var textValidation = validateElement(storedSelections.text);
+        if (!textValidation.valid) {
+            return "ERROR: Typographie invalide - " + textValidation.error;
+        }
+
+        var insigne = storedSelections.icon.duplicate();
+        var logotype = storedSelections.text.duplicate();
+        insigne.hidden = false;
+        logotype.hidden = false;
+
+        var bLogotype = logotype.geometricBounds;
+        var logotypeWidth = bLogotype[2] - bLogotype[0];
+        var logotypeHeight = bLogotype[1] - bLogotype[3];
+
+        var bInsigne = insigne.geometricBounds;
+        var insigneHeight = bInsigne[1] - bInsigne[3];
+        var third = logotypeHeight / 2.5;
+
+        var targetHeight = logotypeHeight + 2 * third;
+        var scale = (targetHeight / insigneHeight) * 100;
+        insigne.resize(scale, scale);
+
+        var bInsigneNew = insigne.geometricBounds;
+        var insigneWidth = bInsigneNew[2] - bInsigneNew[0];
+        var insigneHeightNew = bInsigneNew[1] - bInsigneNew[3];
+
+        // ✨ CALCUL DE POSITION SÉCURISÉ (toujours commencer à 0,0)
+        var spacing = 100;
+        var maxX = 0;
+        var maxY = 0;
+
+        // Trouver la position la plus à droite des artboards existants
+        if (doc.artboards.length > 0) {
+            for (var i = 0; i < doc.artboards.length; i++) {
+                var ab = doc.artboards[i].artboardRect;
+                if (ab[2] > maxX) maxX = ab[2];
+            }
+        }
+
+        var artboardX = maxX + spacing;
+
+        // Centrage horizontal
+        var widest = Math.max(insigneWidth, logotypeWidth);
+        var centerX = artboardX + widest / 2;
+        var insigneX = centerX - insigneWidth / 2;
+        var logotypeX = centerX - logotypeWidth / 2;
+
+        // Position verticale : insigne en haut (y positif), texte en bas
+        var totalHeight = insigneHeightNew + third + logotypeHeight;
+        var topY = 0; // Commencer à 0
+        var insigneY = topY;
+        var logotypeY = topY - insigneHeightNew - third;
+
+        insigne.position = [insigneX, insigneY];
+        logotype.position = [logotypeX, logotypeY];
+
+        // Grouper les deux
+        var group = doc.groupItems.add();
+        insigne.move(group, ElementPlacement.PLACEATEND);
+        logotype.move(group, ElementPlacement.PLACEATEND);
+
+        // Créer un plan de travail autour du groupe
+        var gb = group.visibleBounds;
+        var margin = 50;
+        var width = (gb[2] - gb[0]) + (margin * 2);
+        var height = (gb[1] - gb[3]) + (margin * 2);
+
+        // ✨ CONSTRUCTION SÉCURISÉE du rectangle artboard
+        var left = gb[0] - margin;
+        var top = gb[1] + margin;
+        var right = left + width;
+        var bottom = top - height;
+
+        var artboardRect = [left, top, right, bottom];
+
+        // ✨ VALIDATION du rectangle artboard
+        var validation = validateArtboardRect(artboardRect);
+        if (!validation.valid) {
+            // Nettoyer le groupe créé
+            try { group.remove(); } catch(e) {}
+            return "ERROR: Artboard invalide - " + validation.error;
+        }
+
+        // Utiliser le rectangle validé (potentiellement corrigé)
+        artboardRect = validation.rect;
+
+        var newArtboard = doc.artboards.add(artboardRect);
+        newArtboard.name = "version_verticale_tiers";
+
+        $.writeln("✓ Version verticale générée avec succès");
+        return "OK";
+
+    } catch (e) {
+        $.writeln("❌ Erreur generateVerticalVersion: " + e.toString());
+        return "ERROR: " + e.toString();
     }
-
-    var insigne = storedSelections.icon.duplicate();
-    var logotype = storedSelections.text.duplicate();
-    insigne.hidden = false;
-    logotype.hidden = false;
-
-    var bLogotype = logotype.geometricBounds;
-    var logotypeWidth = bLogotype[2] - bLogotype[0];
-    var logotypeHeight = bLogotype[1] - bLogotype[3];
-    var logotypeTop = bLogotype[1];
-    var logotypeBottom = bLogotype[3];
-
-    var bInsigne = insigne.geometricBounds;
-    var insigneHeight = bInsigne[1] - bInsigne[3];
-    var third = logotypeHeight / 2.5;
-
-    var targetHeight = logotypeHeight + 2 * third;
-    var scale = (targetHeight / insigneHeight) * 100;
-    insigne.resize(scale, scale);
-
-    var bInsigneNew = insigne.geometricBounds;
-    var insigneWidth = bInsigneNew[2] - bInsigneNew[0];
-    var insigneHeightNew = bInsigneNew[1] - bInsigneNew[3];
-
-    var spacing = 70;
-    var maxX = -Infinity;
-    var maxY = -Infinity;
-
-    for (var i = 0; i < doc.artboards.length; i++) {
-        var ab = doc.artboards[i].artboardRect;
-        if (ab[2] > maxX) maxX = ab[2];
-        if (ab[1] > maxY) maxY = ab[1];
-    }
-
-    var artboardX = maxX + spacing;
-
-    // Position verticale : insigne au-dessus, texte en dessous
-    var topLineAbove = logotypeTop + third;
-    var insigneY = topLineAbove;
-    var logotypeY = insigneY - insigneHeightNew - third;
-
-    // Centrage horizontal
-    var widest = Math.max(insigneWidth, logotypeWidth);
-    var centerX = artboardX + 50 + widest / 2;
-    var insigneX = centerX - insigneWidth / 2;
-    var logotypeX = centerX - logotypeWidth / 2;
-
-    insigne.position = [insigneX, insigneY];
-    logotype.position = [logotypeX, logotypeY];
-
-    // Grouper les deux
-    var group = doc.groupItems.add();
-    insigne.move(group, ElementPlacement.PLACEATEND);
-    logotype.move(group, ElementPlacement.PLACEATEND);
-
-    // Créer un plan de travail autour du groupe
-    var gb = group.visibleBounds;
-    var width = gb[2] - gb[0] + 100;
-    var height = gb[1] - gb[3] + 100;
-
-    var artboardRect = [gb[0] - 50, gb[1] + 50, gb[0] - 50 + width, gb[3] - 50];
-    doc.artboards.add(artboardRect).name = "version_verticale_tiers";
-
-    return "OK";
 }
 
 function generateHorizontalVersion() {
-    if (app.documents.length === 0) return "NO_DOCUMENT";
-    var doc = app.activeDocument;
+    try {
+        if (app.documents.length === 0) return "NO_DOCUMENT";
+        var doc = app.activeDocument;
 
-    if (!storedSelections.icon || !storedSelections.text) {
-        return "ERROR: Les deux éléments (icône + typographie) doivent être sélectionnés";
+        if (!storedSelections.icon || !storedSelections.text) {
+            return "ERROR: Les deux éléments (icône + typographie) doivent être sélectionnés";
+        }
+
+        // ✨ VALIDATION des éléments avant génération
+        var iconValidation = validateElement(storedSelections.icon);
+        if (!iconValidation.valid) {
+            return "ERROR: Icône invalide - " + iconValidation.error;
+        }
+
+        var textValidation = validateElement(storedSelections.text);
+        if (!textValidation.valid) {
+            return "ERROR: Typographie invalide - " + textValidation.error;
+        }
+
+        var insigne = storedSelections.icon.duplicate();
+        var logotype = storedSelections.text.duplicate();
+        insigne.hidden = false;
+        logotype.hidden = false;
+
+        var bLogotype = logotype.geometricBounds;
+        var logotypeWidth = bLogotype[2] - bLogotype[0];
+        var logotypeHeight = bLogotype[1] - bLogotype[3];
+
+        var bInsigne = insigne.geometricBounds;
+        var insigneHeight = bInsigne[1] - bInsigne[3];
+        var third = logotypeHeight / 3;
+
+        var targetHeight = logotypeHeight + 2 * third;
+        var scale = (targetHeight / insigneHeight) * 100;
+        insigne.resize(scale, scale);
+
+        var bInsigneNew = insigne.geometricBounds;
+        var insigneWidth = bInsigneNew[2] - bInsigneNew[0];
+        var insigneHeightNew = bInsigneNew[1] - bInsigneNew[3];
+
+        // ✨ CALCUL DE POSITION SÉCURISÉ (toujours commencer à 0,0)
+        var spacing = 100;
+        var maxX = 0;
+
+        // Trouver la position la plus à droite des artboards existants
+        if (doc.artboards.length > 0) {
+            for (var i = 0; i < doc.artboards.length; i++) {
+                var ab = doc.artboards[i].artboardRect;
+                if (ab[2] > maxX) maxX = ab[2];
+            }
+        }
+
+        var artboardX = maxX + spacing;
+
+        // Position horizontale : insigne à gauche, texte à droite
+        var insigneX = artboardX;
+        var logotypeX = insigneX + insigneWidth + third;
+
+        // Aligner verticalement (centrage)
+        var maxHeight = Math.max(insigneHeightNew, logotypeHeight);
+        var topY = 0; // Commencer à 0
+        var insigneY = topY - (maxHeight - insigneHeightNew) / 2;
+        var logotypeY = topY - (maxHeight - logotypeHeight) / 2;
+
+        insigne.position = [insigneX, insigneY];
+        logotype.position = [logotypeX, logotypeY];
+
+        // Grouper les deux
+        var group = doc.groupItems.add();
+        insigne.move(group, ElementPlacement.PLACEATEND);
+        logotype.move(group, ElementPlacement.PLACEATEND);
+
+        // Créer un plan de travail autour du groupe
+        var gb = group.visibleBounds;
+        var margin = 50;
+        var width = (gb[2] - gb[0]) + (margin * 2);
+        var height = (gb[1] - gb[3]) + (margin * 2);
+
+        // ✨ CONSTRUCTION SÉCURISÉE du rectangle artboard
+        var left = gb[0] - margin;
+        var top = gb[1] + margin;
+        var right = left + width;
+        var bottom = top - height;
+
+        var artboardRect = [left, top, right, bottom];
+
+        // ✨ VALIDATION du rectangle artboard
+        var validation = validateArtboardRect(artboardRect);
+        if (!validation.valid) {
+            // Nettoyer le groupe créé
+            try { group.remove(); } catch(e) {}
+            return "ERROR: Artboard invalide - " + validation.error;
+        }
+
+        // Utiliser le rectangle validé (potentiellement corrigé)
+        artboardRect = validation.rect;
+
+        var newArtboard = doc.artboards.add(artboardRect);
+        newArtboard.name = "version_horizontale_tiers";
+
+        $.writeln("✓ Version horizontale générée avec succès");
+        return "OK";
+
+    } catch (e) {
+        $.writeln("❌ Erreur generateHorizontalVersion: " + e.toString());
+        return "ERROR: " + e.toString();
     }
-
-    var insigne = storedSelections.icon.duplicate();
-    var logotype = storedSelections.text.duplicate();
-    insigne.hidden = false;
-    logotype.hidden = false;
-
-    var bLogotype = logotype.geometricBounds;
-    var logotypeWidth = bLogotype[2] - bLogotype[0];
-    var logotypeHeight = bLogotype[1] - bLogotype[3];
-    var logotypeTop = bLogotype[1];
-    var logotypeBottom = bLogotype[3];
-
-    var bInsigne = insigne.geometricBounds;
-    var insigneHeight = bInsigne[1] - bInsigne[3];
-    var third = logotypeHeight / 3;
-
-    var targetHeight = logotypeHeight + 2 * third;
-    var scale = (targetHeight / insigneHeight) * 100;
-    insigne.resize(scale, scale);
-
-    var bInsigneNew = insigne.geometricBounds;
-    var insigneWidth = bInsigneNew[2] - bInsigneNew[0];
-
-    var topLineAbove = logotypeTop + third;
-    var newInsigneY = topLineAbove;
-
-    var spacing = 100;
-    var maxX = -Infinity;
-    var maxY = -Infinity;
-
-    for (var i = 0; i < doc.artboards.length; i++) {
-        var ab = doc.artboards[i].artboardRect;
-        if (ab[2] > maxX) maxX = ab[2];
-        if (ab[1] > maxY) maxY = ab[1];
-    }
-
-    var insigneX = maxX + spacing;
-    var logotypeX = insigneX + insigneWidth + third;
-
-    insigne.position = [insigneX, newInsigneY];
-    logotype.position = [logotypeX, logotypeTop];
-
-    // Grouper les deux
-    var group = doc.groupItems.add();
-    insigne.move(group, ElementPlacement.PLACEATEND);
-    logotype.move(group, ElementPlacement.PLACEATEND);
-
-    // Créer un plan de travail autour du groupe
-    var gb = group.visibleBounds;
-    var width = gb[2] - gb[0] + 100;
-    var height = gb[1] - gb[3] + 100;
-
-    var artboardRect = [gb[0] - 50, gb[1] + 50, gb[0] - 50 + width, gb[3] - 50];
-    doc.artboards.add(artboardRect).name = "version_horizontale_tiers";
-
-    return "OK";
 }
 
 

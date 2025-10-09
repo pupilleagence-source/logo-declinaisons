@@ -11,15 +11,23 @@
 <body>
     <div class="container">
         <header>
-            <h1>Logo Déclinaisons</h1>
-            <p class="subtitle">Générateur de plans de travail</p>
+            <img class="logo"src="./media/logo.svg">
+            <p class="subtitle">Logo variations in 3 clics.</p>
         </header>
-        
+
+        <!-- Navigation par onglets -->
+        <nav class="tabs">
+            <button class="tab-button active" data-tab="selection">Sélection</button>
+            <button class="tab-button" data-tab="colors">Couleur</button>
+            <button class="tab-button" data-tab="export">Export</button>
+        </nav>
+
         <main>
-            <!-- Section 1: Sélection des éléments -->
+            <!-- Onglet 1: Sélection -->
+            <div class="tab-content active" id="tab-selection">
                <section class="panel">
-                    <h2>1. Sélection des éléments</h2>
-                    
+                    <h2>Sélection des variantes du logo</h2>
+                    <p class="subtitle">sélectionne chaque élément correspondant aux variantes</p>
                     <div class="logo-selection">
                          <!-- Icône seule -->
                         <div class="selection-item">
@@ -42,7 +50,7 @@
                         <div class="selection-item">
                         <label>Version horizontale</label>
                         <div class="selection-controls">
-                               <button id="generate-vertical-layout" class="btn-secondary btn-large">Générer automatiquement</button>
+                               <button id="generate-vertical-layout" class="btn-select2">Génération auto</button>
                             <span class="selection-status" id="status-horizontal">Non sélectionné</span>
                             <button class="btn-select" data-type="horizontal">Sélectionner</button>
                         </div>
@@ -52,35 +60,19 @@
                         <div class="selection-item">
                         <label>Version verticale</label>
                         <div class="selection-controls">
-                             <button id="generate-horizontal-layout" class="btn-secondary btn-large">Générer automatiquement</button>
+                             <button id="generate-horizontal-layout" class="btn-select2">Génération auto</button>
                             <span class="selection-status" id="status-vertical">Non sélectionné</span>
                             <button class="btn-select" data-type="vertical">Sélectionner</button>
                         </div>
                         </div>
                     </div>
                 </section>
+            </div>
 
-
-            <!-- Section 2: Type de plans de travail -->
+            <!-- Onglet 2: Couleurs -->
+            <div class="tab-content" id="tab-colors">
             <section class="panel">
-                <h2>2. Types de plans de travail</h2>
-                
-                <div class="checkbox-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="artboard-fit" checked>
-                        <span>Fit-content (adapté au contenu)</span>
-                    </label>
-                    
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="artboard-square" checked>
-                        <span>Carré (avec marges 10%)</span>
-                    </label>
-                </div>
-            </section>
-
-            <!-- Section 3: Couleurs -->
-            <section class="panel">
-                <h2>3. Couleurs</h2>
+                <h2>Couleurs</h2>
 
                 <div class="checkbox-group">
                     <label class="checkbox-label color-locked">
@@ -116,10 +108,28 @@
                     <div id="colors-mapping" style="margin-top: 1em;"></div>
                 </div>
             </section>
+            </div>
 
-            <!-- Section Export -->
+            <!-- Onglet 3: Export -->
+            <div class="tab-content" id="tab-export">
+                <section class="panel">
+                <h2>Types de plans de travail</h2>
+
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="artboard-fit" checked>
+                        <span>Fit-content (adapté au contenu)</span>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="artboard-square" checked>
+                        <span>Carré (avec marges 10%)</span>
+                    </label>
+                </div>
+            </section>
+
                 <section class="panel" id="export-section">
-                <h2>4. Export</h2>
+                <h2>Options d'export</h2>
                 <div class="export-options">
                     <label><input type="checkbox" id="export-png"> PNG</label>
                     <label><input type="checkbox" id="export-jpg"> JPG</label>
@@ -170,19 +180,25 @@
                 </div>
 
                 </section>
+            </div>
 
-            
-            <!-- Section 5: Actions -->
+            <!-- Actions communes à tous les onglets -->
             <section class="panel actions-panel">
+                <!-- Navigation entre onglets -->
+                <div class="tab-navigation">
+                    <button id="prev-tab-btn" class="btn-secondary" disabled>← Précédent</button>
+                    <button id="next-tab-btn" class="btn-secondary">Suivant →</button>
+                </div>
+
                 <button id="generate-btn" class="btn-primary btn-large" disabled>
                     Générer les plans de travail
                 </button>
-                
+
                 <div class="summary" id="summary" style="display: none;">
                     <p>Plans de travail à créer : <strong id="artboard-count">0</strong></p>
                 </div>
             </section>
-            
+
             <!-- Zone de status -->
             <div class="status-message" id="status" style="display: none;"></div>
         </main>
