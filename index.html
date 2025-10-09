@@ -14,19 +14,11 @@
             <h1>Logo Déclinaisons</h1>
             <p class="subtitle">Générateur de plans de travail</p>
         </header>
-
-        <!-- Navigation par onglets -->
-        <nav class="tabs">
-            <button class="tab-button active" data-tab="selection">Sélection</button>
-            <button class="tab-button" data-tab="colors">Couleurs</button>
-            <button class="tab-button" data-tab="export">Export</button>
-        </nav>
-
+        
         <main>
-            <!-- Onglet 1: Sélection -->
-            <div class="tab-content active" id="tab-selection">
+            <!-- Section 1: Sélection des éléments -->
                <section class="panel">
-                    <h2>Sélection des éléments</h2>
+                    <h2>1. Sélection des éléments</h2>
                     
                     <div class="logo-selection">
                          <!-- Icône seule -->
@@ -67,12 +59,28 @@
                         </div>
                     </div>
                 </section>
-            </div>
 
-            <!-- Onglet 2: Couleurs -->
-            <div class="tab-content" id="tab-colors">
+
+            <!-- Section 2: Type de plans de travail -->
             <section class="panel">
-                <h2>Couleurs</h2>
+                <h2>2. Types de plans de travail</h2>
+                
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="artboard-fit" checked>
+                        <span>Fit-content (adapté au contenu)</span>
+                    </label>
+                    
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="artboard-square" checked>
+                        <span>Carré (avec marges 10%)</span>
+                    </label>
+                </div>
+            </section>
+
+            <!-- Section 3: Couleurs -->
+            <section class="panel">
+                <h2>3. Couleurs</h2>
 
                 <div class="checkbox-group">
                     <label class="checkbox-label color-locked">
@@ -108,28 +116,10 @@
                     <div id="colors-mapping" style="margin-top: 1em;"></div>
                 </div>
             </section>
-            </div>
 
-            <!-- Onglet 3: Export -->
-            <div class="tab-content" id="tab-export">
-                <section class="panel">
-                <h2>Types de plans de travail</h2>
-
-                <div class="checkbox-group">
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="artboard-fit" checked>
-                        <span>Fit-content (adapté au contenu)</span>
-                    </label>
-
-                    <label class="checkbox-label">
-                        <input type="checkbox" id="artboard-square" checked>
-                        <span>Carré (avec marges 10%)</span>
-                    </label>
-                </div>
-            </section>
-
+            <!-- Section Export -->
                 <section class="panel" id="export-section">
-                <h2>Options d'export</h2>
+                <h2>4. Export</h2>
                 <div class="export-options">
                     <label><input type="checkbox" id="export-png"> PNG</label>
                     <label><input type="checkbox" id="export-jpg"> JPG</label>
@@ -180,25 +170,19 @@
                 </div>
 
                 </section>
-            </div>
 
-            <!-- Actions communes à tous les onglets -->
+            
+            <!-- Section 5: Actions -->
             <section class="panel actions-panel">
-                <!-- Navigation entre onglets -->
-                <div class="tab-navigation">
-                    <button id="prev-tab-btn" class="btn-secondary" disabled>← Précédent</button>
-                    <button id="next-tab-btn" class="btn-secondary">Suivant →</button>
-                </div>
-
                 <button id="generate-btn" class="btn-primary btn-large" disabled>
                     Générer les plans de travail
                 </button>
-
+                
                 <div class="summary" id="summary" style="display: none;">
                     <p>Plans de travail à créer : <strong id="artboard-count">0</strong></p>
                 </div>
             </section>
-
+            
             <!-- Zone de status -->
             <div class="status-message" id="status" style="display: none;"></div>
         </main>

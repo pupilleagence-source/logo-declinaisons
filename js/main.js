@@ -51,11 +51,10 @@ document.addEventListener('DOMContentLoaded', init);
 
 function init() {
     console.log('Initializing Logo Déclinaisons...');
-
+    
     try {
         csInterface = new CSInterface();
         setupEventListeners();
-        updateTabNavigationButtons(); // Initialiser l'état des boutons de navigation
         updateUI();
         console.log('Extension initialized successfully');
     } catch (error) {
@@ -72,100 +71,7 @@ function updateExportSizes(event) {
   updateUI();
 }
 
-// Gestion des onglets
-function switchTab(event) {
-    const targetTab = event.target.dataset.tab;
-
-    // Retirer la classe active de tous les boutons et contenus
-    document.querySelectorAll('.tab-button').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-
-    // Ajouter la classe active au bouton et contenu ciblé
-    event.target.classList.add('active');
-    document.getElementById(`tab-${targetTab}`).classList.add('active');
-
-    // Mettre à jour les boutons de navigation
-    updateTabNavigationButtons();
-}
-
-// Obtenir l'index de l'onglet actif
-function getCurrentTabIndex() {
-    const tabs = ['selection', 'colors', 'export'];
-    const activeTab = document.querySelector('.tab-content.active');
-    if (!activeTab) return 0;
-    const tabId = activeTab.id.replace('tab-', '');
-    return tabs.indexOf(tabId);
-}
-
-// Activer un onglet par son index
-function activateTabByIndex(index) {
-    const tabs = ['selection', 'colors', 'export'];
-    if (index < 0 || index >= tabs.length) return;
-
-    const tabName = tabs[index];
-
-    // Retirer la classe active de tous les boutons et contenus
-    document.querySelectorAll('.tab-button').forEach(btn => {
-        btn.classList.remove('active');
-    });
-    document.querySelectorAll('.tab-content').forEach(content => {
-        content.classList.remove('active');
-    });
-
-    // Activer le bon onglet
-    const targetButton = document.querySelector(`[data-tab="${tabName}"]`);
-    const targetContent = document.getElementById(`tab-${tabName}`);
-
-    if (targetButton) targetButton.classList.add('active');
-    if (targetContent) targetContent.classList.add('active');
-
-    updateTabNavigationButtons();
-}
-
-// Navigation vers l'onglet précédent
-function goToPrevTab() {
-    const currentIndex = getCurrentTabIndex();
-    if (currentIndex > 0) {
-        activateTabByIndex(currentIndex - 1);
-    }
-}
-
-// Navigation vers l'onglet suivant
-function goToNextTab() {
-    const currentIndex = getCurrentTabIndex();
-    if (currentIndex < 2) {
-        activateTabByIndex(currentIndex + 1);
-    }
-}
-
-// Mettre à jour l'état des boutons de navigation
-function updateTabNavigationButtons() {
-    const currentIndex = getCurrentTabIndex();
-    const prevBtn = document.getElementById('prev-tab-btn');
-    const nextBtn = document.getElementById('next-tab-btn');
-
-    // Onglet 1 (index 0): seulement "Suivant" actif
-    // Onglet 2 (index 1): les deux actifs
-    // Onglet 3 (index 2): seulement "Précédent" actif
-
-    prevBtn.disabled = (currentIndex === 0);
-    nextBtn.disabled = (currentIndex === 2);
-}
-
 function setupEventListeners() {
-    // Onglets
-    document.querySelectorAll('.tab-button').forEach(btn => {
-        btn.addEventListener('click', switchTab);
-    });
-
-    // Navigation entre onglets
-    document.getElementById('prev-tab-btn').addEventListener('click', goToPrevTab);
-    document.getElementById('next-tab-btn').addEventListener('click', goToNextTab);
-
     // Boutons de sélection
     document.querySelectorAll('.btn-select').forEach(btn => {
         btn.addEventListener('click', handleSelection);
