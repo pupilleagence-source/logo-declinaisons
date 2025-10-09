@@ -19,8 +19,9 @@
 
 /* Base */
 body {
-    font-family: 'Adobe Clean', -apple-system, BlinkMacSystemFont, sans-serif;
+    font-family: 'Aileron', -apple-system, BlinkMacSystemFont, sans-serif;
     font-size: 12px;
+    font-weight: 400;
     color: var(--text-color);
     background-color: var(--bg-color);
     line-height: 1.4;
@@ -31,25 +32,76 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 /* Header */
 header {
     text-align: center;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
     border-bottom: 1px solid var(--border-color);
+}
+
+/* Onglets */
+.tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.tab-button {
+    flex: 1;
+    padding: 10px 16px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.3px;
+    transition: all 0.2s ease;
+    margin-bottom: -2px;
+}
+
+.tab-button:hover {
+    background: var(--hover-bg);
+    color: #ffffff;
+    font-weight: 600;
+}
+
+.tab-button.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+    font-weight: 700;
+}
+
+/* Contenu des onglets */
+.tab-content {
+    display: none;
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.tab-content.active {
+    display: flex;
+    flex-direction: column;
 }
 
 h1 {
     font-size: 16px;
-    font-weight: 300;
+    font-weight: 600;
     color: var(--primary-color);
     margin-bottom: 4px;
+    letter-spacing: 0.5px;
 }
 
 .subtitle {
     font-size: 11px;
+    font-weight: 300;
     color: #999;
 }
 
@@ -57,6 +109,9 @@ h1 {
 main {
     flex: 1;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
 /* Panels */
@@ -70,9 +125,10 @@ main {
 
 .panel h2 {
     font-size: 13px;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--primary-color);
     margin-bottom: 12px;
+    letter-spacing: 0.3px;
 }
 
 /* Selection items */
@@ -89,8 +145,9 @@ main {
 }
 
 .selection-item label {
-    font-weight: 500;
+    font-weight: 600;
     color: var(--text-color);
+    letter-spacing: 0.2px;
 }
 
 .selection-controls {
@@ -187,14 +244,29 @@ main {
     width: 100%;
     padding: 12px;
     font-size: 13px;
-    font-weight: 500;
+    font-weight: 600;
+    letter-spacing: 0.3px;
 }
 
 /* Actions panel */
 .actions-panel {
     background: var(--panel-bg);
-    position: sticky;
-    bottom: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 16px;
+    margin-top: auto;
+    flex-shrink: 0;
+}
+
+/* Navigation entre onglets */
+.tab-navigation {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.tab-navigation button {
+    flex: 1;
 }
 
 /* Summary */
@@ -205,10 +277,12 @@ main {
     border-radius: 3px;
     text-align: center;
     font-size: 11px;
+    font-weight: 400;
 }
 
 .summary strong {
     color: var(--primary-color);
+    font-weight: 700;
 }
 
 /* Status */
@@ -255,13 +329,21 @@ main {
     transition: all 0.2s;
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
     background-color: var(--hover-bg);
     border-color: var(--primary-color);
+    color: #ffffff;
 }
 
-.btn-secondary:active {
+.btn-secondary:active:not(:disabled) {
     transform: scale(0.98);
+}
+
+.btn-secondary:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    color: #666666;
+    border-color: #3a3a3a;
 }
 
 .color-mapping-item {
