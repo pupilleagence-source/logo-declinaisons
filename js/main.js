@@ -1,4 +1,8 @@
-// Instance globale de CSInterface
+// Encapsulation pour éviter la pollution du scope global
+(function() {
+    'use strict';
+
+// Instance de CSInterface (dans le scope de l'IIFE)
 let csInterface;
 
 // État de l'application
@@ -42,6 +46,7 @@ exportSizes: {
 customSizeEnabled: false,
 customSize: { width: 1000, height: 1000 },
 lockAspectRatio: true,
+initialAspectRatio: 1.0, // Stocker le ratio initial pour éviter la dérive
 outputFolder: ''
 
 };
@@ -262,13 +267,15 @@ function setupEventListeners() {
     document.getElementById('custom-width').addEventListener('change', (e) => {
       const newWidth = parseInt(e.target.value, 10) || 1;
       if (appState.lockAspectRatio) {
-        const ratio = appState.customSize.height / appState.customSize.width;
-        const newHeight = Math.max(1, Math.round(newWidth * ratio));
+        // Utiliser le ratio initial pour éviter la dérive
+        const newHeight = Math.max(1, Math.round(newWidth * appState.initialAspectRatio));
         appState.customSize.width  = newWidth;
         appState.customSize.height = newHeight;
         document.getElementById('custom-height').value = newHeight;
       } else {
         appState.customSize.width = newWidth;
+        // Si on change la largeur sans lock, mettre à jour le ratio initial
+        appState.initialAspectRatio = appState.customSize.height / newWidth;
       }
       updateUI();
     });
@@ -281,6 +288,24 @@ function setupEventListeners() {
         const result = await evalExtendScript('generateHorizontalVersion');
         if (result === 'OK') {
             showStatus('Version horizontale générée !', 'success');
+
+            // 🎯 Auto-sélection de la variation générée
+            try {
+                const storeResult = await evalExtendScript('storeSelection', ['horizontal']);
+                if (storeResult === 'OK') {
+                    appState.selections.horizontal = true;
+                    const statusEl = document.getElementById('status-horizontal');
+                    if (statusEl) {
+                        statusEl.textContent = 'Sélectionné ✓';
+                        statusEl.classList.add('selected');
+                    }
+                    updateUI();
+                    showStatus('Version horizontale générée et sélectionnée !', 'success');
+                }
+            } catch (autoSelectError) {
+                console.warn('Auto-sélection échouée:', autoSelectError);
+                // Ne pas bloquer si l'auto-sélection échoue
+            }
         } else {
             showStatus('Erreur : ' + result, 'error');
         }
@@ -296,6 +321,24 @@ function setupEventListeners() {
         const result = await evalExtendScript('generateVerticalVersion');
         if (result === 'OK') {
             showStatus('Version verticale générée !', 'success');
+
+            // 🎯 Auto-sélection de la variation générée
+            try {
+                const storeResult = await evalExtendScript('storeSelection', ['vertical']);
+                if (storeResult === 'OK') {
+                    appState.selections.vertical = true;
+                    const statusEl = document.getElementById('status-vertical');
+                    if (statusEl) {
+                        statusEl.textContent = 'Sélectionné ✓';
+                        statusEl.classList.add('selected');
+                    }
+                    updateUI();
+                    showStatus('Version verticale générée et sélectionnée !', 'success');
+                }
+            } catch (autoSelectError) {
+                console.warn('Auto-sélection échouée:', autoSelectError);
+                // Ne pas bloquer si l'auto-sélection échoue
+            }
         } else {
             showStatus(`Erreur: ${result}`, 'error');
         }
@@ -311,13 +354,15 @@ function setupEventListeners() {
     document.getElementById('custom-height').addEventListener('change', (e) => {
       const newHeight = parseInt(e.target.value, 10) || 1;
       if (appState.lockAspectRatio) {
-        const ratio = appState.customSize.width / appState.customSize.height;
-        const newWidth = Math.max(1, Math.round(newHeight * ratio));
+        // Utiliser l'inverse du ratio initial pour éviter la dérive
+        const newWidth = Math.max(1, Math.round(newHeight / appState.initialAspectRatio));
         appState.customSize.height = newHeight;
         appState.customSize.width  = newWidth;
         document.getElementById('custom-width').value = newWidth;
       } else {
         appState.customSize.height = newHeight;
+        // Si on change la hauteur sans lock, mettre à jour le ratio initial
+        appState.initialAspectRatio = newHeight / appState.customSize.width;
       }
       updateUI();
     });
@@ -343,44 +388,61 @@ function setupEventListeners() {
 
 async function handleSelection(event) {
     const type = event.target.dataset.type;
+    const button = event.target;
+
     console.log('Handling selection for type:', type);
-    
+
+    // Prévenir les race conditions en désactivant tous les boutons de sélection
+    const allSelectButtons = document.querySelectorAll('.btn-select');
+    allSelectButtons.forEach(btn => btn.disabled = true);
+
     try {
         // Vérifier qu'un document est ouvert
         const hasDoc = await evalExtendScript('hasOpenDocument');
         if (hasDoc === 'false') {
-            showStatus('Veuillez ouvrir un document Illustrator', 'error');
+            showStatus('Aucun document ouvert dans Illustrator. Ouvrez un fichier .ai avant de continuer.', 'error');
             return;
         }
-        
+
         // Vérifier la sélection
         const selectionInfo = await evalExtendScript('getSelectionInfo');
         if (selectionInfo === 'NO_SELECTION') {
-            showStatus('Veuillez sélectionner un élément', 'warning');
+            showStatus('Aucun élément sélectionné dans Illustrator. Sélectionnez un élément puis cliquez sur Sélectionner.', 'warning');
             return;
         }
-        
+        if (selectionInfo === 'NO_DOCUMENT') {
+            showStatus('Aucun document ouvert dans Illustrator. Ouvrez un fichier .ai avant de continuer.', 'error');
+            return;
+        }
+
         // Stocker la sélection
         const result = await evalExtendScript('storeSelection', [type]);
         if (result === 'OK') {
             appState.selections[type] = true;
-            
+
             // Mettre à jour l'UI
             const statusEl = document.getElementById(`status-${type}`);
             if (statusEl) {
                 statusEl.textContent = 'Sélectionné ✓';
                 statusEl.classList.add('selected');
             }
-            
+
             showStatus(`${getTypeName(type)} sélectionné`, 'success');
             updateUI();
+        } else if (result && result.startsWith('ERROR:')) {
+            const errorMsg = result.substring(7);
+            showStatus(`Erreur: ${errorMsg}`, 'error');
         } else {
             showStatus('Erreur lors de la sélection', 'error');
         }
-        
+
     } catch (error) {
         console.error('Selection error:', error);
-        showStatus('Erreur lors de la sélection', 'error');
+        const errorMsg = error.message || 'Erreur inconnue';
+        showStatus(`Erreur lors de la sélection: ${errorMsg}`, 'error');
+    } finally {
+        // Réactiver les boutons de sélection
+        allSelectButtons.forEach(btn => btn.disabled = false);
     }
 }
 
@@ -412,8 +474,6 @@ function updateColorVariations() {
 
     updateUI();
 }
-
-// La fonction updateSizes() et les listeners associés ont été supprimés
 
 function updateUI() {
   // Calcul des tailles d'export
@@ -463,26 +523,31 @@ function updateUI() {
 }
 
 async function handleGenerate() {
+    const generateBtn = document.getElementById('generate-btn');
+
     try {
+        // Désactiver le bouton pendant la génération
+        if (generateBtn) generateBtn.disabled = true;
+
         showStatus('Génération en cours...', 'warning');
 
         // Préparer les paramètres
         const params = {
-        selections: appState.selections,
-        artboardTypes: appState.artboardTypes,
-        colorVariations: appState.colorVariations,
-        customColors: appState.customColors, // Nouveau: mapping des couleurs customs
-        exportFormats: appState.exportFormats,
-        exportSizes: appState.exportSizes,
-        customSizeEnabled: appState.customSizeEnabled,
-        customSize: appState.customSize,
-        outputFolder: appState.outputFolder
+            selections: appState.selections,
+            artboardTypes: appState.artboardTypes,
+            colorVariations: appState.colorVariations,
+            customColors: appState.customColors,
+            exportFormats: appState.exportFormats,
+            exportSizes: appState.exportSizes,
+            customSizeEnabled: appState.customSizeEnabled,
+            customSize: appState.customSize,
+            outputFolder: appState.outputFolder
         };
 
         console.log('Generate params:', params);
 
-        // Appeler la fonction de génération
-        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)]);
+        // Appeler la fonction de génération avec timeout étendu (2 minutes pour grandes générations)
+        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 120000);
 
         if (result && result.startsWith('SUCCESS')) {
             const count = result.split(':')[1];
@@ -491,15 +556,24 @@ async function handleGenerate() {
             // Réinitialiser les sélections
             resetSelections();
         } else if (result && result.startsWith('ERROR')) {
-            const errorMsg = result.split(':')[1] || 'Erreur inconnue';
-            showStatus(`Erreur: ${errorMsg}`, 'error');
+            const errorMsg = result.substring(6).trim();
+            if (!errorMsg) {
+                showStatus('Erreur inconnue lors de la génération', 'error');
+            } else {
+                showStatus(errorMsg, 'error');
+            }
         } else {
-            showStatus('Erreur lors de la génération', 'error');
+            showStatus('Erreur: Réponse invalide du serveur ExtendScript', 'error');
         }
 
     } catch (error) {
         console.error('Generate error:', error);
-        showStatus('Erreur lors de la génération: ' + error.message, 'error');
+        const errorMsg = error.message || 'Erreur inconnue';
+        showStatus(`Erreur lors de la génération: ${errorMsg}`, 'error');
+    } finally {
+        // Réactiver le bouton
+        if (generateBtn) generateBtn.disabled = false;
+        updateUI(); // Re-vérifier l'état du bouton
     }
 }
 
@@ -551,22 +625,39 @@ function showStatus(message, type = '') {
     }
 }
 
-// Fonction utilitaire pour appeler ExtendScript
-function evalExtendScript(functionName, params = []) {
+// Fonction utilitaire pour appeler ExtendScript avec timeout
+function evalExtendScript(functionName, params = [], timeout = 30000) {
     return new Promise((resolve, reject) => {
-        const script = params.length > 0 
+        const script = params.length > 0
             ? `${functionName}(${params.map(p => JSON.stringify(p)).join(',')})`
             : `${functionName}()`;
-            
+
         console.log('Calling ExtendScript:', script);
-        
+
+        let timeoutId = null;
+        let completed = false;
+
+        // Configurer le timeout
+        timeoutId = setTimeout(() => {
+            if (!completed) {
+                completed = true;
+                console.error('ExtendScript timeout après', timeout, 'ms');
+                reject(new Error(`Timeout: L'opération a pris plus de ${timeout/1000}s`));
+            }
+        }, timeout);
+
         csInterface.evalScript(script, (result) => {
-            console.log('ExtendScript result:', result);
-            
-            if (result === 'EvalScript error.') {
-                reject(new Error('ExtendScript execution failed'));
-            } else {
-                resolve(result);
+            if (!completed) {
+                completed = true;
+                clearTimeout(timeoutId);
+
+                console.log('ExtendScript result:', result);
+
+                if (result === 'EvalScript error.') {
+                    reject(new Error('ExtendScript execution failed'));
+                } else {
+                    resolve(result);
+                }
             }
         });
     });
@@ -587,7 +678,11 @@ async function analyzeColors() {
     // Vérifier qu'un élément est sélectionné
     const selectionInfo = await evalExtendScript('getSelectionInfo');
     if (selectionInfo === 'NO_SELECTION') {
-      showStatus('Veuillez sélectionner un élément pour analyser ses couleurs', 'warning');
+      showStatus('Aucun élément sélectionné dans Illustrator. Sélectionnez les éléments dont vous voulez analyser les couleurs.', 'warning');
+      return;
+    }
+    if (selectionInfo === 'NO_DOCUMENT') {
+      showStatus('Aucun document ouvert dans Illustrator.', 'error');
       return;
     }
 
@@ -611,15 +706,17 @@ async function analyzeColors() {
 
       // Afficher les couleurs
       displayColorMapping();
-      showStatus(`${colors.length} couleur(s) détectée(s)`, 'success');
+      showStatus(`${colors.length} couleur(s) détectée(s). Vous pouvez maintenant les personnaliser ci-dessous.`, 'success');
     } else if (result && result.startsWith('ERROR:')) {
       const errorMsg = result.substring(7);
-      showStatus('Erreur: ' + errorMsg, 'error');
+      showStatus(errorMsg, 'error');
     } else {
-      showStatus('Erreur lors de l\'analyse des couleurs', 'error');
+      showStatus('Impossible d\'analyser les couleurs. Vérifiez que vos éléments contiennent des formes colorées.', 'error');
     }
   } catch (e) {
-    showStatus('Erreur lors de l\'analyse des couleurs: ' + e.message, 'error');
+    console.error('Erreur analyse couleurs:', e);
+    const errorMsg = e.message || 'Erreur inconnue';
+    showStatus('Impossible d\'analyser les couleurs : ' + errorMsg, 'error');
   }
 }
 
@@ -697,7 +794,10 @@ async function browseFolder() {
       updateUI();
     }
   } catch (e) {
-    console.error(e);
-    showStatus('Erreur lors du choix du dossier', 'error');
+    console.error('Erreur browseFolder:', e);
+    const errorMsg = e.message || 'Erreur inconnue';
+    showStatus('Impossible de choisir le dossier : ' + errorMsg, 'error');
   }
 }
+
+})(); // Fin de l'IIFE - Encapsulation du code
