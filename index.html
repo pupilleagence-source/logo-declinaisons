@@ -123,8 +123,26 @@
 
                     <label class="checkbox-label">
                         <input type="checkbox" id="artboard-square" checked>
-                        <span>Carré (avec marges 10%)</span>
+                        <span>Carré</span>
                     </label>
+                </div>
+            </section>
+
+                <section class="panel" id="margins-section">
+                <h2>Marges</h2>
+
+                <div id="margin-fit-container" class="margin-control" style="display: none; margin-bottom: 1em;">
+                    <label for="margin-fit" style="display: block; margin-bottom: 0.5em;">
+                        Marge Fit-content: <span id="margin-fit-value">5</span>%
+                    </label>
+                    <input type="range" id="margin-fit" min="0" max="40" value="5" step="1" style="width: 100%;">
+                </div>
+
+                <div id="margin-square-container" class="margin-control" style="display: none;">
+                    <label for="margin-square" style="display: block; margin-bottom: 0.5em;">
+                        Marge Carré: <span id="margin-square-value">10</span>%
+                    </label>
+                    <input type="range" id="margin-square" min="0" max="40" value="10" step="1" style="width: 100%;">
                 </div>
             </section>
 

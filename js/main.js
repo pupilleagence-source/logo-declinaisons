@@ -15,7 +15,11 @@ const appState = {
   },
   artboardTypes: {
     fit: true,
-    square: true 
+    square: true
+   },
+  artboardMargins: {
+    fit: 5,     // Marge en % pour fit-content
+    square: 10  // Marge en % pour carré
    },
   colorVariations: {
     original: true,
@@ -207,14 +211,38 @@ function setupEventListeners() {
     // Checkboxes types d'artboard
     const fitCheckbox = document.getElementById('artboard-fit');
     const squareCheckbox = document.getElementById('artboard-square');
-    
+
     if (fitCheckbox) {
         fitCheckbox.addEventListener('change', updateArtboardTypes);
     }
     if (squareCheckbox) {
         squareCheckbox.addEventListener('change', updateArtboardTypes);
     }
-    
+
+    // Range inputs pour les marges
+    const marginFitInput = document.getElementById('margin-fit');
+    const marginFitValue = document.getElementById('margin-fit-value');
+    if (marginFitInput && marginFitValue) {
+        marginFitInput.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value, 10);
+            appState.artboardMargins.fit = value;
+            marginFitValue.textContent = value;
+        });
+    }
+
+    const marginSquareInput = document.getElementById('margin-square');
+    const marginSquareValue = document.getElementById('margin-square-value');
+    if (marginSquareInput && marginSquareValue) {
+        marginSquareInput.addEventListener('input', (e) => {
+            const value = parseInt(e.target.value, 10);
+            appState.artboardMargins.square = value;
+            marginSquareValue.textContent = value;
+        });
+    }
+
+    // Initialiser l'affichage des marges au démarrage
+    updateMarginsVisibility();
+
     // Checkboxes couleurs
     const bwCheckbox = document.getElementById('color-bw');
     if (bwCheckbox) {
@@ -449,11 +477,26 @@ async function handleSelection(event) {
 function updateArtboardTypes() {
     const fitCheckbox = document.getElementById('artboard-fit');
     const squareCheckbox = document.getElementById('artboard-square');
-    
+
     appState.artboardTypes.fit = fitCheckbox ? fitCheckbox.checked : true;
     appState.artboardTypes.square = squareCheckbox ? squareCheckbox.checked : true;
-    
+
+    // Afficher/masquer les contrôles de marges selon les types cochés
+    updateMarginsVisibility();
+
     updateUI();
+}
+
+function updateMarginsVisibility() {
+    const fitContainer = document.getElementById('margin-fit-container');
+    const squareContainer = document.getElementById('margin-square-container');
+
+    if (fitContainer) {
+        fitContainer.style.display = appState.artboardTypes.fit ? 'block' : 'none';
+    }
+    if (squareContainer) {
+        squareContainer.style.display = appState.artboardTypes.square ? 'block' : 'none';
+    }
 }
 
 function updateColorVariations() {
@@ -535,6 +578,7 @@ async function handleGenerate() {
         const params = {
             selections: appState.selections,
             artboardTypes: appState.artboardTypes,
+            artboardMargins: appState.artboardMargins,
             colorVariations: appState.colorVariations,
             customColors: appState.customColors,
             exportFormats: appState.exportFormats,
