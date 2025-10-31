@@ -1255,7 +1255,7 @@ function generateArtboards(paramsJSON) {
                 if (params.artboardTypes.fit) {
                     try {
                         var nameFit = selType + "_fit" + colorVar.suffix;
-                        var marginFit = params.artboardMargins ? params.artboardMargins.fit : 5;
+                        var marginFit = params.artboardMargins ? params.artboardMargins.fit : 0;
                         var h = createFitArtboard(doc, element, artboardSize, currentX, currentY, nameFit, false, marginFit);
                         maxHeight = Math.max(maxHeight, h);
                         artboardCount++;
@@ -1280,7 +1280,7 @@ function generateArtboards(paramsJSON) {
                         // Si monochromeLight, créer une version avec fond noir
                         if (colorVar.needsBlackBg) {
                             var nameFitBg = selType + "_fit" + colorVar.suffix + "_bg";
-                            var marginFit = params.artboardMargins ? params.artboardMargins.fit : 5;
+                            var marginFit = params.artboardMargins ? params.artboardMargins.fit : 0;
                             var hBg = createFitArtboard(doc, element, artboardSize, currentX, currentY, nameFitBg, true, marginFit);
                             maxHeight = Math.max(maxHeight, hBg);
                             artboardCount++;
@@ -1535,8 +1535,29 @@ function generateArtboards(paramsJSON) {
             $.writeln("   (Ce n'est pas grave, il est très loin et ne gêne pas)");
         }
 
-        $.writeln("📄 Le nouveau document 'Untitled*' reste ouvert et actif");
-        $.writeln("💡 Sauvegardez-le avec Fichier > Enregistrer (nom suggéré: exportation-logotypes_XXXXXX.ai)");
+        // 💾 Enregistrer le fichier Illustrator dans le dossier d'export si défini
+        if (params.outputFolder && params.outputFolder !== "") {
+            try {
+                var saveFolder = new Folder(params.outputFolder);
+                if (saveFolder.exists) {
+                    var saveFile = new File(saveFolder.fsName + "/logo-export-variation.ai");
+                    var saveOpts = new IllustratorSaveOptions();
+                    saveOpts.compatibility = Compatibility.ILLUSTRATOR24; // CC 2020 ou plus récent
+                    saveOpts.compressed = true;
+
+                    doc.saveAs(saveFile, saveOpts);
+                    $.writeln("💾 Fichier Illustrator enregistré : " + saveFile.fsName);
+                } else {
+                    $.writeln("⚠️ Le dossier d'export n'existe pas, fichier non enregistré");
+                }
+            } catch (saveError) {
+                $.writeln("⚠️ Impossible d'enregistrer le fichier Illustrator : " + saveError.toString());
+                // Ne pas bloquer la génération si la sauvegarde échoue
+            }
+        } else {
+            $.writeln("📄 Le nouveau document 'Untitled*' reste ouvert et actif");
+            $.writeln("💡 Sauvegardez-le avec Fichier > Enregistrer (nom suggéré: exportation-logotypes_XXXXXX.ai)");
+        }
 
         // 🆕 Le nouveau document reste actif (décision 1.A)
         // app.activeDocument est déjà targetDoc, pas besoin de changer
@@ -1580,9 +1601,9 @@ function createBackgroundRect(doc, x, y, width, height, color) {
 // Créer un artboard fit-content
 function createFitArtboard(doc, element, width, x, y, name, withBlackBg, marginPercent) {
     try {
-        // Marge par défaut: 5%
+        // Marge par défaut: 0%
         if (typeof marginPercent === 'undefined' || marginPercent === null) {
-            marginPercent = 5;
+            marginPercent = 0;
         }
 
         // ✨ DUPLICATION ET MESURE D'ABORD (élément peut avoir des coords extrêmes)

@@ -22,7 +22,7 @@ const appState = {
     square: true
    },
   artboardMargins: {
-    fit: 5,     // Marge en % pour fit-content
+    fit: 0,     // Marge en % pour fit-content
     square: 10  // Marge en % pour carré
    },
   colorVariations: {
@@ -746,7 +746,14 @@ async function handleGenerate() {
 
         if (result && result.startsWith('SUCCESS')) {
             const count = result.split(':')[1];
-            showStatus(`${count} plans de travail créés avec succès !`, 'success');
+            let successMsg = `${count} plans de travail créés avec succès !`;
+
+            // Ajouter info sur l'enregistrement si un dossier d'export est défini
+            if (appState.outputFolder && appState.outputFolder !== '') {
+                successMsg += ' Fichier Illustrator enregistré : logo-export-variation.ai';
+            }
+
+            showStatus(successMsg, 'success');
 
             // Réinitialiser les sélections
             resetSelections();
@@ -815,21 +822,26 @@ function getTypeName(type) {
 function showStatus(message, type = '') {
     const statusEl = document.getElementById('status');
     if (!statusEl) return;
-    
-    statusEl.textContent = message;
+
+    // Créer le contenu avec le bouton de fermeture
+    statusEl.innerHTML = `
+        ${message}
+        <button class="status-close" onclick="this.parentElement.style.display='none'" title="Fermer">×</button>
+    `;
+
     statusEl.className = 'status-message';
     if (type) {
         statusEl.classList.add(type);
     }
     statusEl.style.display = 'block';
-    
+
     console.log(`Status [${type}]: ${message}`);
-    
-    // Masquer après 3 secondes si succès
+
+    // Masquer après 5 secondes si succès (augmenté à 5s pour laisser le temps de lire)
     if (type === 'success') {
         setTimeout(() => {
             statusEl.style.display = 'none';
-        }, 3000);
+        }, 5000);
     }
 }
 
