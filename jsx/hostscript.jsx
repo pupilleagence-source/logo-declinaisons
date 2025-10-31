@@ -1516,23 +1516,37 @@ function generateArtboards(paramsJSON) {
 
         $.writeln("✅ Génération complétée: " + artboardCount + " artboards créés");
 
-        // 🆕 Supprimer l'artboard temporaire maintenant que la génération est terminée
+        // 🧹 Supprimer tous les artboards qui ne sont pas dans notre liste de créations
         try {
-            var foundTemp = false;
-            for (var i = 0; i < doc.artboards.length; i++) {
-                if (doc.artboards[i].name === "TEMP_ARTBOARD") {
+            $.writeln("🧹 Nettoyage des artboards non-générés...");
+
+            // Créer une liste des noms d'artboards générés
+            var createdNames = {};
+            for (var i = 0; i < created.length; i++) {
+                createdNames[created[i].name] = true;
+            }
+
+            // Parcourir TOUS les artboards en sens inverse (important pour la suppression)
+            var removedCount = 0;
+            for (var i = doc.artboards.length - 1; i >= 0; i--) {
+                var artboardName = doc.artboards[i].name;
+
+                // Si l'artboard n'est pas dans notre liste de créations, le supprimer
+                if (!createdNames[artboardName]) {
+                    $.writeln("   Suppression de l'artboard: " + artboardName);
                     doc.artboards[i].remove();
-                    foundTemp = true;
-                    $.writeln("   ✓ Artboard temporaire supprimé");
-                    break;
+                    removedCount++;
                 }
             }
-            if (!foundTemp) {
-                $.writeln("   ℹ️ Artboard temporaire déjà supprimé ou non trouvé");
+
+            if (removedCount > 0) {
+                $.writeln("   ✅ " + removedCount + " artboard(s) non-générés supprimés");
+            } else {
+                $.writeln("   ℹ️ Aucun artboard à nettoyer");
             }
         } catch (e) {
-            $.writeln("   ⚠️ Impossible de supprimer l'artboard temporaire: " + e.toString());
-            $.writeln("   (Ce n'est pas grave, il est très loin et ne gêne pas)");
+            $.writeln("   ⚠️ Erreur lors du nettoyage des artboards: " + e.toString());
+            $.writeln("   (Les artboards temporaires peuvent rester mais ne gênent pas)");
         }
 
         // 💾 Enregistrer le fichier Illustrator dans le dossier d'export si défini
