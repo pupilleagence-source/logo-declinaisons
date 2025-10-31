@@ -330,19 +330,82 @@ function extractColors() {
     }
 }
 
+// Extraire les couleurs de TOUTES les variations stockées
+function extractAllStoredColors() {
+    try {
+        if (app.documents.length === 0) {
+            return "ERROR: NO_DOCUMENT";
+        }
+
+        var colorSet = {};
+        var maxColors = 30; // Augmenté de 10 à 30 pour couvrir toutes les variations
+        var colorCount = 0;
+        var analyzedCount = 0;
+
+        // Parcourir toutes les sélections stockées
+        var types = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
+        for (var t = 0; t < types.length; t++) {
+            var type = types[t];
+            var element = storedSelections[type];
+
+            if (element) {
+                $.writeln("🎨 Analyse des couleurs de : " + type);
+                analyzedCount++;
+                colorCount = extractColorsRecursive(element, colorSet, colorCount);
+                if (colorCount >= maxColors) {
+                    $.writeln("⚠️ Limite de " + maxColors + " couleurs atteinte");
+                    break;
+                }
+            }
+        }
+
+        if (analyzedCount === 0) {
+            return "ERROR: Aucune variation sélectionnée. Sélectionnez au moins une variation avant d'analyser les couleurs.";
+        }
+
+        $.writeln("✅ Analyse terminée : " + analyzedCount + " variation(s) analysée(s)");
+
+        // Convertir en tableau et limiter
+        var colors = [];
+        var count = 0;
+        for (var hex in colorSet) {
+            if (colorSet.hasOwnProperty(hex)) {
+                colors.push(hex);
+                count++;
+                if (count >= maxColors) break;
+            }
+        }
+
+        $.writeln("🎨 " + colors.length + " couleur(s) unique(s) trouvée(s)");
+
+        // Créer le JSON avec metadata
+        var jsonString = '{"colors":[';
+        for (var i = 0; i < colors.length; i++) {
+            if (i > 0) jsonString += ',';
+            jsonString += '"' + colors[i] + '"';
+        }
+        jsonString += '],"analyzed":' + analyzedCount + '}';
+
+        return "COLORS:" + jsonString;
+    } catch (e) {
+        $.writeln("❌ Erreur extractAllStoredColors: " + e.toString());
+        return "ERROR: " + e.toString();
+    }
+}
+
 function extractColorsRecursive(item, colorSet, colorCount) {
-    if (colorCount >= 10) return colorCount;
+    if (colorCount >= 30) return colorCount; // Augmenté de 10 à 30
 
     try {
         if (item.typename === "GroupItem") {
             for (var i = 0; i < item.pageItems.length; i++) {
                 colorCount = extractColorsRecursive(item.pageItems[i], colorSet, colorCount);
-                if (colorCount >= 10) break;
+                if (colorCount >= 30) break;
             }
         } else if (item.typename === "CompoundPathItem") {
             for (var i = 0; i < item.pathItems.length; i++) {
                 colorCount = extractColorsRecursive(item.pathItems[i], colorSet, colorCount);
-                if (colorCount >= 10) break;
+                if (colorCount >= 30) break;
             }
         } else if (item.typename === "PathItem") {
             // 🎨 Extraire fillColor (RGB ou CMYK)
@@ -361,7 +424,7 @@ function extractColorsRecursive(item, colorSet, colorCount) {
             }
 
             // 🎨 Extraire strokeColor (RGB ou CMYK)
-            if (colorCount < 10 && item.stroked) {
+            if (colorCount < 30 && item.stroked) {
                 var hex = null;
                 if (item.strokeColor.typename === "RGBColor") {
                     hex = rgbToHex(item.strokeColor);
@@ -395,7 +458,7 @@ function extractColorsRecursive(item, colorSet, colorCount) {
             }
 
             // 🎨 Extraire strokeColor du texte (RGB ou CMYK)
-            if (colorCount < 10 && textRange.characterAttributes.strokeColor) {
+            if (colorCount < 30 && textRange.characterAttributes.strokeColor) {
                 var strokeColorType = textRange.characterAttributes.strokeColor.typename;
                 var hex = null;
 

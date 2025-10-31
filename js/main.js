@@ -895,26 +895,24 @@ async function analyzeColors() {
   try {
     showStatus('Analyse des couleurs en cours...', 'warning');
 
-    // Vérifier qu'un élément est sélectionné
-    const selectionInfo = await evalExtendScript('getSelectionInfo');
-    if (selectionInfo === 'NO_SELECTION') {
-      showStatus('Aucun élément sélectionné dans Illustrator. Sélectionnez les éléments dont vous voulez analyser les couleurs.', 'warning');
-      return;
-    }
-    if (selectionInfo === 'NO_DOCUMENT') {
-      showStatus('Aucun document ouvert dans Illustrator.', 'error');
+    // ✨ NOUVEAU : Vérifier qu'au moins une variation est sélectionnée
+    const hasSelection = Object.values(appState.selections).some(v => v);
+    if (!hasSelection) {
+      showStatus('Aucune variation sélectionnée. Sélectionnez au moins une variation (horizontal, vertical, icône, texte, etc.) pour analyser ses couleurs.', 'warning');
       return;
     }
 
-    // Extraire les couleurs de la sélection
-    const result = await evalExtendScript('extractColors');
+    // ✨ NOUVEAU : Extraire les couleurs de TOUTES les variations stockées
+    const result = await evalExtendScript('extractAllStoredColors');
 
     if (result && result.startsWith('COLORS:')) {
       const colorsJSON = result.substring(7);
-      const colors = JSON.parse(colorsJSON);
+      const data = JSON.parse(colorsJSON);
+      const colors = data.colors;
+      const analyzedCount = data.analyzed;
 
       if (colors.length === 0) {
-        showStatus('Aucune couleur trouvée dans la sélection', 'warning');
+        showStatus('Aucune couleur trouvée dans les variations sélectionnées', 'warning');
         return;
       }
 
@@ -926,12 +924,15 @@ async function analyzeColors() {
 
       // Afficher les couleurs
       displayColorMapping();
-      showStatus(`${colors.length} couleur(s) détectée(s). Vous pouvez maintenant les personnaliser ci-dessous.`, 'success');
+
+      // Message amélioré indiquant le nombre de variations analysées
+      const variationText = analyzedCount > 1 ? `${analyzedCount} variations` : '1 variation';
+      showStatus(`${colors.length} couleur(s) détectée(s) sur ${variationText}. Vous pouvez maintenant les personnaliser ci-dessous.`, 'success');
     } else if (result && result.startsWith('ERROR:')) {
       const errorMsg = result.substring(7);
       showStatus(errorMsg, 'error');
     } else {
-      showStatus('Impossible d\'analyser les couleurs. Vérifiez que vos éléments contiennent des formes colorées.', 'error');
+      showStatus('Impossible d\'analyser les couleurs. Vérifiez que vos variations contiennent des formes colorées.', 'error');
     }
   } catch (e) {
     console.error('Erreur analyse couleurs:', e);
