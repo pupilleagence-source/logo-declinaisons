@@ -7,7 +7,10 @@ var storedSelections = {
     horizontal: null,
     vertical: null,
     icon: null,
-    text: null
+    text: null,
+    custom1: null,
+    custom2: null,
+    custom3: null
 };
 
 /**
@@ -342,34 +345,67 @@ function extractColorsRecursive(item, colorSet, colorCount) {
                 if (colorCount >= 10) break;
             }
         } else if (item.typename === "PathItem") {
-            if (item.filled && item.fillColor.typename === "RGBColor") {
-                var hex = rgbToHex(item.fillColor);
-                if (!colorSet[hex]) {
+            // 🎨 Extraire fillColor (RGB ou CMYK)
+            if (item.filled) {
+                var hex = null;
+                if (item.fillColor.typename === "RGBColor") {
+                    hex = rgbToHex(item.fillColor);
+                } else if (item.fillColor.typename === "CMYKColor") {
+                    hex = cmykToHex(item.fillColor);
+                }
+
+                if (hex && !colorSet[hex]) {
                     colorSet[hex] = true;
                     colorCount++;
                 }
             }
-            if (colorCount < 10 && item.stroked && item.strokeColor.typename === "RGBColor") {
-                var hex = rgbToHex(item.strokeColor);
-                if (!colorSet[hex]) {
+
+            // 🎨 Extraire strokeColor (RGB ou CMYK)
+            if (colorCount < 10 && item.stroked) {
+                var hex = null;
+                if (item.strokeColor.typename === "RGBColor") {
+                    hex = rgbToHex(item.strokeColor);
+                } else if (item.strokeColor.typename === "CMYKColor") {
+                    hex = cmykToHex(item.strokeColor);
+                }
+
+                if (hex && !colorSet[hex]) {
                     colorSet[hex] = true;
                     colorCount++;
                 }
             }
         } else if (item.typename === "TextFrame") {
             var textRange = item.textRange;
-            if (textRange.characterAttributes.fillColor &&
-                textRange.characterAttributes.fillColor.typename === "RGBColor") {
-                var hex = rgbToHex(textRange.characterAttributes.fillColor);
-                if (!colorSet[hex]) {
+
+            // 🎨 Extraire fillColor du texte (RGB ou CMYK)
+            if (textRange.characterAttributes.fillColor) {
+                var fillColorType = textRange.characterAttributes.fillColor.typename;
+                var hex = null;
+
+                if (fillColorType === "RGBColor") {
+                    hex = rgbToHex(textRange.characterAttributes.fillColor);
+                } else if (fillColorType === "CMYKColor") {
+                    hex = cmykToHex(textRange.characterAttributes.fillColor);
+                }
+
+                if (hex && !colorSet[hex]) {
                     colorSet[hex] = true;
                     colorCount++;
                 }
             }
-            if (colorCount < 10 && textRange.characterAttributes.strokeColor &&
-                textRange.characterAttributes.strokeColor.typename === "RGBColor") {
-                var hex = rgbToHex(textRange.characterAttributes.strokeColor);
-                if (!colorSet[hex]) {
+
+            // 🎨 Extraire strokeColor du texte (RGB ou CMYK)
+            if (colorCount < 10 && textRange.characterAttributes.strokeColor) {
+                var strokeColorType = textRange.characterAttributes.strokeColor.typename;
+                var hex = null;
+
+                if (strokeColorType === "RGBColor") {
+                    hex = rgbToHex(textRange.characterAttributes.strokeColor);
+                } else if (strokeColorType === "CMYKColor") {
+                    hex = cmykToHex(textRange.characterAttributes.strokeColor);
+                }
+
+                if (hex && !colorSet[hex]) {
                     colorSet[hex] = true;
                     colorCount++;
                 }
@@ -511,36 +547,86 @@ function applyCustomColorsRecursive(item, colorMapping, tmpPaths) {
                 item.filled = true;
             }
 
-            if (item.filled && item.fillColor.typename === "RGBColor") {
-                var hex = rgbToHex(item.fillColor);
-                var newHex = findCustomColor(hex, colorMapping);
-                if (newHex && newHex !== hex) {
-                    item.fillColor = hexToRGBColor(newHex);
+            // 🎨 GESTION RGB ET CMYK pour fillColor
+            if (item.filled) {
+                var hex = null;
+
+                // Extraire la couleur en hex (RGB ou CMYK)
+                if (item.fillColor.typename === "RGBColor") {
+                    hex = rgbToHex(item.fillColor);
+                } else if (item.fillColor.typename === "CMYKColor") {
+                    hex = cmykToHex(item.fillColor);
+                }
+
+                if (hex) {
+                    var newHex = findCustomColor(hex, colorMapping);
+                    if (newHex && newHex !== hex) {
+                        // 🔑 TOUJOURS créer une RGBColor et laisser Illustrator faire la conversion
+                        // C'est la stratégie de monochrome qui fonctionne!
+                        item.fillColor = hexToRGBColor(newHex);
+                    }
                 }
             }
-            if (item.stroked && item.strokeColor.typename === "RGBColor") {
-                var hex = rgbToHex(item.strokeColor);
-                var newHex = findCustomColor(hex, colorMapping);
-                if (newHex && newHex !== hex) {
-                    item.strokeColor = hexToRGBColor(newHex);
+
+            // 🎨 GESTION RGB ET CMYK pour strokeColor
+            if (item.stroked) {
+                var hex = null;
+
+                // Extraire la couleur en hex (RGB ou CMYK)
+                if (item.strokeColor.typename === "RGBColor") {
+                    hex = rgbToHex(item.strokeColor);
+                } else if (item.strokeColor.typename === "CMYKColor") {
+                    hex = cmykToHex(item.strokeColor);
+                }
+
+                if (hex) {
+                    var newHex = findCustomColor(hex, colorMapping);
+                    if (newHex && newHex !== hex) {
+                        // 🔑 TOUJOURS créer une RGBColor et laisser Illustrator faire la conversion
+                        item.strokeColor = hexToRGBColor(newHex);
+                    }
                 }
             }
         } else if (item.typename === "TextFrame") {
             var textRange = item.textRange;
-            if (textRange.characterAttributes.fillColor &&
-                textRange.characterAttributes.fillColor.typename === "RGBColor") {
-                var hex = rgbToHex(textRange.characterAttributes.fillColor);
-                var newHex = findCustomColor(hex, colorMapping);
-                if (newHex && newHex !== hex) {
-                    textRange.characterAttributes.fillColor = hexToRGBColor(newHex);
+
+            // 🎨 GESTION RGB ET CMYK pour fillColor du texte
+            if (textRange.characterAttributes.fillColor) {
+                var fillColorType = textRange.characterAttributes.fillColor.typename;
+                var hex = null;
+
+                if (fillColorType === "RGBColor") {
+                    hex = rgbToHex(textRange.characterAttributes.fillColor);
+                } else if (fillColorType === "CMYKColor") {
+                    hex = cmykToHex(textRange.characterAttributes.fillColor);
+                }
+
+                if (hex) {
+                    var newHex = findCustomColor(hex, colorMapping);
+                    if (newHex && newHex !== hex) {
+                        // 🔑 TOUJOURS créer une RGBColor et laisser Illustrator faire la conversion
+                        textRange.characterAttributes.fillColor = hexToRGBColor(newHex);
+                    }
                 }
             }
-            if (textRange.characterAttributes.strokeColor &&
-                textRange.characterAttributes.strokeColor.typename === "RGBColor") {
-                var hex = rgbToHex(textRange.characterAttributes.strokeColor);
-                var newHex = findCustomColor(hex, colorMapping);
-                if (newHex && newHex !== hex) {
-                    textRange.characterAttributes.strokeColor = hexToRGBColor(newHex);
+
+            // 🎨 GESTION RGB ET CMYK pour strokeColor du texte
+            if (textRange.characterAttributes.strokeColor) {
+                var strokeColorType = textRange.characterAttributes.strokeColor.typename;
+                var hex = null;
+
+                if (strokeColorType === "RGBColor") {
+                    hex = rgbToHex(textRange.characterAttributes.strokeColor);
+                } else if (strokeColorType === "CMYKColor") {
+                    hex = cmykToHex(textRange.characterAttributes.strokeColor);
+                }
+
+                if (hex) {
+                    var newHex = findCustomColor(hex, colorMapping);
+                    if (newHex && newHex !== hex) {
+                        // 🔑 TOUJOURS créer une RGBColor et laisser Illustrator faire la conversion
+                        textRange.characterAttributes.strokeColor = hexToRGBColor(newHex);
+                    }
                 }
             }
         } else if (item.pageItems && item.pageItems.length > 0) {
@@ -553,12 +639,46 @@ function applyCustomColorsRecursive(item, colorMapping, tmpPaths) {
     }
 }
 
+// Calculer la distance entre deux couleurs hexadécimales
+function colorDistance(hex1, hex2) {
+    var rgb1 = hexToRGB(hex1);
+    var rgb2 = hexToRGB(hex2);
+
+    // Distance euclidienne dans l'espace RGB
+    var dr = rgb1.r - rgb2.r;
+    var dg = rgb1.g - rgb2.g;
+    var db = rgb1.b - rgb2.b;
+
+    return Math.sqrt(dr * dr + dg * dg + db * db);
+}
+
 function findCustomColor(originalHex, colorMapping) {
+    // 1. Essayer d'abord un match exact
     for (var i = 0; i < colorMapping.length; i++) {
         if (colorMapping[i].original.toLowerCase() === originalHex.toLowerCase()) {
             return colorMapping[i].custom;
         }
     }
+
+    // 2. Si pas de match exact, chercher la couleur la plus proche
+    // Cela gère les conversions RGB<->CMYK qui peuvent être légèrement différentes
+    var threshold = 30; // Seuil de tolérance (sur 255, donc ~12%)
+    var bestMatch = null;
+    var bestDistance = Infinity;
+
+    for (var i = 0; i < colorMapping.length; i++) {
+        var distance = colorDistance(originalHex, colorMapping[i].original);
+        if (distance < bestDistance && distance < threshold) {
+            bestDistance = distance;
+            bestMatch = colorMapping[i].custom;
+        }
+    }
+
+    if (bestMatch) {
+        $.writeln("   🎨 Correspondance approximative trouvée: " + originalHex + " → " + bestMatch + " (distance: " + bestDistance.toFixed(1) + ")");
+        return bestMatch;
+    }
+
     return originalHex; // Si pas de mapping trouvé, retourner la couleur originale
 }
 
@@ -568,6 +688,55 @@ function hexToRGBColor(hex) {
     color.red = rgb.r;
     color.green = rgb.g;
     color.blue = rgb.b;
+    return color;
+}
+
+// Convertir une couleur CMYK en hexadécimal (via RGB approximatif)
+function cmykToHex(cmykColor) {
+    try {
+        // Conversion CMYK vers RGB (approximation)
+        var c = cmykColor.cyan / 100;
+        var m = cmykColor.magenta / 100;
+        var y = cmykColor.yellow / 100;
+        var k = cmykColor.black / 100;
+
+        var r = Math.round(255 * (1 - c) * (1 - k));
+        var g = Math.round(255 * (1 - m) * (1 - k));
+        var b = Math.round(255 * (1 - y) * (1 - k));
+
+        var hex = "#" +
+            ("0" + r.toString(16)).slice(-2) +
+            ("0" + g.toString(16)).slice(-2) +
+            ("0" + b.toString(16)).slice(-2);
+
+        return hex.toUpperCase();
+    } catch (e) {
+        $.writeln("Erreur cmykToHex: " + e.toString());
+        return "#000000";
+    }
+}
+
+// Convertir hexadécimal en CMYKColor
+function hexToCMYKColor(hex) {
+    var rgb = hexToRGB(hex);
+
+    // Normaliser RGB (0-1)
+    var r = rgb.r / 255;
+    var g = rgb.g / 255;
+    var b = rgb.b / 255;
+
+    // Conversion RGB vers CMYK
+    var k = 1 - Math.max(r, g, b);
+    var c = k === 1 ? 0 : (1 - r - k) / (1 - k);
+    var m = k === 1 ? 0 : (1 - g - k) / (1 - k);
+    var y = k === 1 ? 0 : (1 - b - k) / (1 - k);
+
+    var color = new CMYKColor();
+    color.cyan = c * 100;
+    color.magenta = m * 100;
+    color.yellow = y * 100;
+    color.black = k * 100;
+
     return color;
 }
 
@@ -587,11 +756,12 @@ function convertToGrayscale(element) {
 }
 
 /**
- * Crée un nouveau document pour l'exportation avec les mêmes propriétés que la source
- * @param {Document} sourceDoc - Le document source
+ * Crée un nouveau document pour l'exportation avec les paramètres spécifiés
+ * @param {Document} sourceDoc - Le document source (pour récupérer rulerUnits)
+ * @param {Object} documentSettings - Paramètres du document (colorMode, ppi)
  * @return {Document|null} Le nouveau document ou null si erreur
  */
-function createExportDocument(sourceDoc) {
+function createExportDocument(sourceDoc, documentSettings) {
     try {
         $.writeln("📄 Création d'un nouveau document pour l'exportation...");
 
@@ -606,8 +776,14 @@ function createExportDocument(sourceDoc) {
 
         var docName = "exportation-logotypes_" + timestamp;
 
-        // Récupérer les propriétés du document source
-        var colorSpace = sourceDoc.documentColorSpace; // DocumentColorSpace.RGB ou CMYK
+        // 🎯 Utiliser les paramètres du document depuis documentSettings
+        var colorSpace = DocumentColorSpace.RGB; // Valeur par défaut
+        if (documentSettings && documentSettings.colorMode) {
+            if (documentSettings.colorMode === 'CMYK') {
+                colorSpace = DocumentColorSpace.CMYK;
+            }
+        }
+
         var rulerUnits = sourceDoc.rulerUnits;
 
         // 🎯 SOLUTION ULTRA-SIMPLE : Créer le document directement avec 50×50 points
@@ -635,9 +811,16 @@ function createExportDocument(sourceDoc) {
         // Définir les unités
         newDoc.rulerUnits = rulerUnits;
 
+        // 🎯 Appliquer le PPI si spécifié
+        var ppi = 72; // Valeur par défaut
+        if (documentSettings && documentSettings.ppi) {
+            ppi = documentSettings.ppi;
+        }
+
         $.writeln("✓ Nouveau document créé (Untitled*)");
         $.writeln("   Nom suggéré pour la sauvegarde: " + docName + ".ai");
         $.writeln("   ColorSpace: " + (colorSpace === DocumentColorSpace.RGB ? "RGB" : "CMYK"));
+        $.writeln("   Résolution: " + ppi + " PPI");
 
         // 🎯 DÉPLACER l'artboard minimal loin en haut à gauche
         try {
@@ -824,7 +1007,7 @@ function generateArtboards(paramsJSON) {
         $.writeln("📄 Document source: " + (sourceDoc.name || "Sans titre"));
 
         // Créer le nouveau document pour l'exportation
-        targetDoc = createExportDocument(sourceDoc);
+        targetDoc = createExportDocument(sourceDoc, params.documentSettings);
         if (!targetDoc) {
             return "ERROR: Impossible de créer le document d'exportation. Vérifiez que vous avez assez de mémoire.";
         }
@@ -836,21 +1019,58 @@ function generateArtboards(paramsJSON) {
             horizontal: null,
             vertical: null,
             icon: null,
-            text: null
+            text: null,
+            custom1: null,
+            custom2: null,
+            custom3: null
         };
 
-        var typesList = ['horizontal', 'vertical', 'icon', 'text'];
+        // 🎨 Transférer aussi les versions avec custom colors si nécessaire
+        var transferredCustomSelections = {
+            horizontal: null,
+            vertical: null,
+            icon: null,
+            text: null,
+            custom1: null,
+            custom2: null,
+            custom3: null
+        };
+
+        var hasCustomColors = params.colorVariations.custom &&
+                             params.customColors &&
+                             params.customColors.mapping &&
+                             params.customColors.mapping.length > 0;
+
+        var typesList = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
         var transferErrors = [];
 
         for (var t = 0; t < typesList.length; t++) {
             var selType = typesList[t];
 
-            if (params.selections[selType] && storedSelections[selType]) {
-                var typeName = selType === 'icon' ? 'icône' :
-                              selType === 'text' ? 'typographie' :
-                              selType === 'horizontal' ? 'version horizontale' :
-                              'version verticale';
+            // 🔍 Debug: Log l'état des sélections
+            $.writeln("🔍 Vérification type '" + selType + "': params.selections=" + params.selections[selType] + ", storedSelections=" + (storedSelections[selType] ? "existe" : "null"));
 
+            if (params.selections[selType] && storedSelections[selType]) {
+                var typeName;
+                if (selType === 'icon') {
+                    typeName = 'icône';
+                } else if (selType === 'text') {
+                    typeName = 'typographie';
+                } else if (selType === 'horizontal') {
+                    typeName = 'version horizontale';
+                } else if (selType === 'vertical') {
+                    typeName = 'version verticale';
+                } else if (selType.indexOf('custom') === 0) {
+                    // Pour les variations custom, extraire le numéro
+                    var customNum = selType.replace('custom', '');
+                    typeName = 'variation custom ' + customNum;
+                } else {
+                    typeName = selType;
+                }
+
+                $.writeln("➡️ Tentative de transfert de '" + typeName + "' (type: " + selType + ")");
+
+                // Transférer la version normale
                 var transferred = transferElementToDocument(
                     storedSelections[selType],
                     sourceDoc,
@@ -859,9 +1079,47 @@ function generateArtboards(paramsJSON) {
                 );
 
                 if (!transferred) {
+                    $.writeln("❌ Échec du transfert de '" + typeName + "'");
                     transferErrors.push(typeName);
                 } else {
+                    $.writeln("✅ Transfert de '" + typeName + "' réussi");
                     transferredSelections[selType] = transferred;
+                }
+
+                // 🎨 Si custom colors activé, créer et transférer une version avec custom colors
+                if (hasCustomColors && transferred) {
+                    $.writeln("🎨 Application des custom colors sur " + typeName + " AVANT transfert...");
+
+                    // Dupliquer l'élément source
+                    var customElement = storedSelections[selType].duplicate();
+                    customElement.hidden = false;
+
+                    // Appliquer custom colors dans le document SOURCE
+                    var tmpPaths = [];
+                    applyCustomColors(customElement, params.customColors.mapping, tmpPaths);
+                    for (var j = tmpPaths.length - 1; j >= 0; j--) {
+                        try {
+                            tmpPaths[j].remove();
+                        } catch (e) {}
+                    }
+
+                    // Transférer cette version colorée
+                    var transferredCustom = transferElementToDocument(
+                        customElement,
+                        sourceDoc,
+                        targetDoc,
+                        typeName + " (custom colors)"
+                    );
+
+                    // Nettoyer la duplication dans le document source
+                    try {
+                        customElement.remove();
+                    } catch (e) {}
+
+                    if (transferredCustom) {
+                        transferredCustomSelections[selType] = transferredCustom;
+                        $.writeln("   ✅ Version custom colors de " + typeName + " transférée");
+                    }
                 }
             }
         }
@@ -897,14 +1155,28 @@ function generateArtboards(paramsJSON) {
 
         // ✨ VALIDATION des sélections transférées
         // Note: typesList redéfini ici mais c'est normal (scope local)
-        var typesListValidation = ['horizontal', 'vertical', 'icon', 'text'];
+        var typesListValidation = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
         for (var i = 0; i < typesListValidation.length; i++) {
             var selType = typesListValidation[i];
             if (params.selections[selType] && selectionsToUse[selType]) {
                 var validation = validateElement(selectionsToUse[selType]);
                 if (!validation.valid) {
                     $.writeln("⚠️ Sélection '" + selType + "' invalide après transfert: " + validation.error);
-                    var typeName = selType === 'icon' ? 'icône' : selType === 'text' ? 'typographie' : selType === 'horizontal' ? 'version horizontale' : 'version verticale';
+                    var typeName;
+                    if (selType === 'icon') {
+                        typeName = 'icône';
+                    } else if (selType === 'text') {
+                        typeName = 'typographie';
+                    } else if (selType === 'horizontal') {
+                        typeName = 'version horizontale';
+                    } else if (selType === 'vertical') {
+                        typeName = 'version verticale';
+                    } else if (selType.indexOf('custom') === 0) {
+                        var customNum = selType.replace('custom', '');
+                        typeName = 'variation custom ' + customNum;
+                    } else {
+                        typeName = selType;
+                    }
                     return "ERROR: Problème avec la " + typeName + " après transfert : " + validation.error;
                 }
             }
@@ -942,16 +1214,23 @@ function generateArtboards(paramsJSON) {
         }
 
         // Boucle de génération des artboards
-        var typesListGen = ['horizontal', 'vertical', 'icon', 'text'];
+        var typesListGen = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
         for (var i = 0; i < typesListGen.length; i++) {
             var selType = typesListGen[i];
             if (!params.selections[selType] || !selectionsToUse[selType]) continue;
 
             for (var c = 0; c < colorVariations.length; c++) {
                 var colorVar = colorVariations[c];
-                var element = selectionsToUse[selType].duplicate();
+
+                // 🎨 Pour custom colors, utiliser la version déjà transférée avec les couleurs appliquées
+                var sourceElement = (colorVar.name === "custom" && transferredCustomSelections[selType])
+                    ? transferredCustomSelections[selType]
+                    : selectionsToUse[selType];
+
+                var element = sourceElement.duplicate();
                 element.hidden = false;
 
+                // Appliquer les variations de couleur (sauf custom qui est déjà appliqué)
                 if (colorVar.name === "blackwhite") {
                     convertToGrayscale(element);
                 } else if (colorVar.name === "monochrome") {
@@ -970,16 +1249,8 @@ function generateArtboards(paramsJSON) {
                             tmpPaths[j].remove();
                         } catch (e) {}
                     }
-                } else if (colorVar.name === "custom") {
-                    // 🔧 CORRECTION: Créer et nettoyer tmpPaths (même logique que monochrome)
-                    var tmpPaths = [];
-                    applyCustomColors(element, colorVar.mapping, tmpPaths);
-                    for (var j = tmpPaths.length - 1; j >= 0; j--) {
-                        try {
-                            tmpPaths[j].remove();
-                        } catch (e) {}
-                    }
                 }
+                // 🎨 Custom colors déjà appliquées avant le transfert - rien à faire ici!
 
                 if (params.artboardTypes.fit) {
                     try {
@@ -1079,6 +1350,88 @@ function generateArtboards(paramsJSON) {
             }
         }
 
+        // 🎨 GÉNÉRATION DES FAVICONS (32x32, uniquement pour icon)
+        // ⚠️ FAVICONS : Toujours carré avec 10% de marge, indépendamment des choix utilisateur
+        if (params.faviconEnabled && params.selections.icon && selectionsToUse.icon) {
+            $.writeln("🌐 Génération des favicons 32x32 (toujours carré, 10% marge)...");
+
+            var faviconSize = 32; // Taille fixe pour favicon
+            var faviconMargin = 10; // Marge fixe de 10% pour favicon
+
+            for (var c = 0; c < colorVariations.length; c++) {
+                var colorVar = colorVariations[c];
+
+                // Utiliser l'icône avec les couleurs appropriées
+                var sourceElement = (colorVar.name === "custom" && transferredCustomSelections.icon)
+                    ? transferredCustomSelections.icon
+                    : selectionsToUse.icon;
+
+                var element = sourceElement.duplicate();
+                element.hidden = false;
+
+                // Appliquer les variations de couleur
+                if (colorVar.name === "blackwhite") {
+                    convertToGrayscale(element);
+                } else if (colorVar.name === "monochrome") {
+                    var tmpPaths = [];
+                    convertToMonochrome(element, colorVar.rgb, tmpPaths);
+                    for (var j = tmpPaths.length - 1; j >= 0; j--) {
+                        try {
+                            tmpPaths[j].remove();
+                        } catch (e) {}
+                    }
+                } else if (colorVar.name === "monochromeLight") {
+                    var tmpPaths = [];
+                    convertToMonochrome(element, colorVar.rgb, tmpPaths);
+                    for (var j = tmpPaths.length - 1; j >= 0; j--) {
+                        try {
+                            tmpPaths[j].remove();
+                        } catch (e) {}
+                    }
+                }
+
+                // Toujours créer un artboard carré avec 10% de marge pour favicon
+                try {
+                    var nameSq = "icon_favicon" + colorVar.suffix;
+                    createSquareArtboard(doc, element, faviconSize, currentX, currentY, nameSq, false, faviconMargin);
+                    maxHeight = Math.max(maxHeight, faviconSize);
+                    artboardCount++;
+                    created.push({ name: nameSq, type: 'favicon', colorVariation: colorVar.name });
+
+                    if (artboardCount % artboardsPerRow === 0) {
+                        currentY -= (maxHeight + spacing);
+                        currentX = startX;
+                        maxHeight = 0;
+                    } else {
+                        currentX += faviconSize + spacing;
+                    }
+
+                    // Version avec fond noir si monochromeLight
+                    if (colorVar.needsBlackBg) {
+                        var nameSqBg = "icon_favicon" + colorVar.suffix + "_bg";
+                        createSquareArtboard(doc, element, faviconSize, currentX, currentY, nameSqBg, true, faviconMargin);
+                        maxHeight = Math.max(maxHeight, faviconSize);
+                        artboardCount++;
+                        created.push({ name: nameSqBg, type: 'favicon', colorVariation: colorVar.name });
+
+                        if (artboardCount % artboardsPerRow === 0) {
+                            currentY -= (maxHeight + spacing);
+                            currentX = startX;
+                            maxHeight = 0;
+                        } else {
+                            currentX += faviconSize + spacing;
+                        }
+                    }
+                } catch (e) {
+                    $.writeln("Erreur favicon: " + e.toString());
+                }
+
+                element.remove();
+            }
+
+            $.writeln("✅ Favicons générés");
+        }
+
         // ✨ NETTOYAGE GARANTI (éléments transférés cachés)
         cleanupAllHiddenElements();
 
@@ -1114,29 +1467,48 @@ function generateArtboards(paramsJSON) {
                 var colorFolder = new Folder(typeFolder.fsName + "/" + art.colorVariation);
                 if (!colorFolder.exists) colorFolder.create();
 
-                for (var fmt in params.exportFormats) {
-                    if (!params.exportFormats[fmt]) continue;
+                // ⚠️ FAVICONS : Export forcé en PNG et SVG uniquement, taille fixe 32px
+                if (art.type === 'favicon') {
+                    // Pour les favicons, l'artboard fait 32px et on veut l'exporter à 32px (scale 100%)
+                    // La formule dans exportArtboard est: scale = (exportSize / 1000) * 100
+                    // Pour avoir scale = 100%, on doit passer exportSize = 1000
+                    // Cela donnera : scale = (1000 / 1000) * 100 = 100%
 
-                    // 🔧 PDF et SVG créent automatiquement leur sous-dossier via exportForScreens
-                    // PNG et JPG nécessitent la création manuelle du dossier
-                    var exportPath;
-                    if (fmt === "pdf" || fmt === "svg") {
-                        // Utiliser directement colorFolder - exportForScreens créera le sous-dossier
-                        exportPath = colorFolder.fsName;
-                    } else {
-                        // Créer le dossier format pour PNG et JPG
-                        var fmtFolder = new Folder(colorFolder.fsName + "/" + fmt.toUpperCase());
-                        if (!fmtFolder.exists) fmtFolder.create();
-                        exportPath = fmtFolder.fsName;
-                    }
+                    // PNG
+                    var pngFolder = new Folder(colorFolder.fsName + "/PNG");
+                    if (!pngFolder.exists) pngFolder.create();
+                    exportArtboard(doc, art.name, pngFolder.fsName, "png", 1000);
 
-                    if (fmt === "png" || fmt === "jpg") {
-                        for (var s = 0; s < activeSizes.length; s++) {
-                            var sz = activeSizes[s];
-                            exportArtboardWithPrefix(doc, art.name, exportPath, fmt, sz.size, sz.prefix);
+                    // SVG
+                    exportArtboard(doc, art.name, colorFolder.fsName, "svg", 1000);
+
+                    $.writeln("   ✅ Favicon exporté: " + art.name + " (PNG + SVG, 32px à 100% scale)");
+                } else {
+                    // Export normal pour les autres types
+                    for (var fmt in params.exportFormats) {
+                        if (!params.exportFormats[fmt]) continue;
+
+                        // 🔧 PDF et SVG créent automatiquement leur sous-dossier via exportForScreens
+                        // PNG et JPG nécessitent la création manuelle du dossier
+                        var exportPath;
+                        if (fmt === "pdf" || fmt === "svg") {
+                            // Utiliser directement colorFolder - exportForScreens créera le sous-dossier
+                            exportPath = colorFolder.fsName;
+                        } else {
+                            // Créer le dossier format pour PNG et JPG
+                            var fmtFolder = new Folder(colorFolder.fsName + "/" + fmt.toUpperCase());
+                            if (!fmtFolder.exists) fmtFolder.create();
+                            exportPath = fmtFolder.fsName;
                         }
-                    } else {
-                        exportArtboard(doc, art.name, exportPath, fmt, artboardSize);
+
+                        if (fmt === "png" || fmt === "jpg") {
+                            for (var s = 0; s < activeSizes.length; s++) {
+                                var sz = activeSizes[s];
+                                exportArtboardWithPrefix(doc, art.name, exportPath, fmt, sz.size, sz.prefix);
+                            }
+                        } else {
+                            exportArtboard(doc, art.name, exportPath, fmt, artboardSize);
+                        }
                     }
                 }
             }

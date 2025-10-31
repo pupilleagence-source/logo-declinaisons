@@ -7,12 +7,16 @@ let csInterface;
 
 // État de l'application
 const appState = {
-  selections: { 
+  selections: {
     horizontal: null,
     vertical: null,
     icon: null,
-    text: null 
+    text: null,
+    custom1: null,
+    custom2: null,
+    custom3: null
   },
+  customVariationsCount: 0, // Nombre de variations custom ajoutées (max 3)
   artboardTypes: {
     fit: true,
     square: true
@@ -51,7 +55,12 @@ customSizeEnabled: false,
 customSize: { width: 1000, height: 1000 },
 lockAspectRatio: true,
 initialAspectRatio: 1.0, // Stocker le ratio initial pour éviter la dérive
-outputFolder: ''
+faviconEnabled: false, // Export favicon 32x32 (uniquement pour icon)
+outputFolder: '',
+documentSettings: {
+  colorMode: 'RGB',  // RGB ou CMYK
+  ppi: 72            // Résolution en PPI
+}
 
 };
 
@@ -148,6 +157,85 @@ function goToNextTab() {
     const currentIndex = getCurrentTabIndex();
     if (currentIndex < 2) {
         activateTabByIndex(currentIndex + 1);
+    }
+}
+
+// Ajouter une variation custom
+function addCustomVariation() {
+    if (appState.customVariationsCount >= 3) {
+        showStatus('Maximum 3 variations custom', 'warning');
+        return;
+    }
+
+    appState.customVariationsCount++;
+    const variationId = `custom${appState.customVariationsCount}`;
+
+    const container = document.getElementById('custom-variations-container');
+
+    // Créer la nouvelle ligne de sélection
+    const variationDiv = document.createElement('div');
+    variationDiv.className = 'selection-item';
+    variationDiv.id = `variation-${variationId}`;
+    variationDiv.innerHTML = `
+        <label>
+            <input type="text" id="label-${variationId}" placeholder="Nom de la variation"
+                   value="Variation ${appState.customVariationsCount}"
+                   style="border: none; background: transparent; font-weight: bold; width: 150px;">
+        </label>
+        <div class="selection-controls">
+            <span class="selection-status" id="status-${variationId}">Non sélectionné</span>
+            <button class="btn-select" data-type="${variationId}">Sélectionner</button>
+            <button class="btn-remove" data-variation="${variationId}" style="margin-left: 0.5em; padding: 0.3em 0.7em; background: #d9534f; color: white; border: none; border-radius: 3px; cursor: pointer;">✕</button>
+        </div>
+    `;
+
+    container.appendChild(variationDiv);
+
+    // Ajouter event listener pour le bouton de sélection
+    const selectBtn = variationDiv.querySelector('.btn-select');
+    selectBtn.addEventListener('click', handleSelection);
+
+    // Ajouter event listener pour le bouton de suppression
+    const removeBtn = variationDiv.querySelector('.btn-remove');
+    removeBtn.addEventListener('click', (e) => {
+        const varId = e.target.dataset.variation;
+        removeCustomVariation(varId);
+    });
+
+    // Mettre à jour l'interface
+    updateCustomVariationsUI();
+    updateUI();
+}
+
+// Supprimer une variation custom
+function removeCustomVariation(variationId) {
+    const variationDiv = document.getElementById(`variation-${variationId}`);
+    if (variationDiv) {
+        variationDiv.remove();
+    }
+
+    // Réinitialiser la sélection
+    appState.selections[variationId] = null;
+
+    // Recalculer le nombre de variations (compter les divs restants)
+    const container = document.getElementById('custom-variations-container');
+    appState.customVariationsCount = container.children.length;
+
+    updateCustomVariationsUI();
+    updateUI();
+}
+
+// Mettre à jour l'interface des variations custom
+function updateCustomVariationsUI() {
+    const addBtn = document.getElementById('add-variation-btn');
+    const infoDiv = document.getElementById('add-variation-info');
+
+    if (addBtn) {
+        addBtn.disabled = appState.customVariationsCount >= 3;
+    }
+
+    if (infoDiv) {
+        infoDiv.textContent = `${appState.customVariationsCount}/3 variations ajoutées`;
     }
 }
 
@@ -263,6 +351,27 @@ function setupEventListeners() {
         customCheckbox.addEventListener('change', updateColorVariations);
     }
 
+    // Paramètres du document
+    const colorModeSelect = document.getElementById('color-mode');
+    if (colorModeSelect) {
+        colorModeSelect.addEventListener('change', (e) => {
+            appState.documentSettings.colorMode = e.target.value;
+            console.log('Mode couleur changé:', e.target.value);
+        });
+    }
+
+    const documentPpiInput = document.getElementById('document-ppi');
+    if (documentPpiInput) {
+        documentPpiInput.addEventListener('change', (e) => {
+            let value = parseInt(e.target.value, 10);
+            // Validation: limiter entre 1 et 999
+            if (isNaN(value) || value < 1) value = 1;
+            if (value > 999) value = 999;
+            appState.documentSettings.ppi = value;
+            e.target.value = value; // Mettre à jour l'input si la valeur a été corrigée
+        });
+    }
+
     // Bouton d'analyse des couleurs
     const analyzeColorsBtn = document.getElementById('analyze-colors-btn');
     if (analyzeColorsBtn) {
@@ -288,6 +397,15 @@ function setupEventListeners() {
     document.getElementById('custom-size-inputs').style.display = e.target.checked ? 'block' : 'none';
     updateUI();
     });
+
+    // Favicon toggle
+    const faviconEnable = document.getElementById('favicon-enable');
+    if (faviconEnable) {
+        faviconEnable.addEventListener('change', (e) => {
+            appState.faviconEnabled = e.target.checked;
+            updateUI();
+        });
+    }
     // Width / Height inputs
     const lockCheckbox = document.getElementById('lock-aspect-ratio');
 
@@ -406,6 +524,13 @@ function setupEventListeners() {
     if (browseBtn) {
     browseBtn.addEventListener('click', browseFolder);
     }
+
+    // Bouton d'ajout de variation custom
+    const addVariationBtn = document.getElementById('add-variation-btn');
+    if (addVariationBtn) {
+        addVariationBtn.addEventListener('click', addCustomVariation);
+    }
+
     // Bouton générer
     const generateBtn = document.getElementById('generate-btn');
     if (generateBtn) {
@@ -519,10 +644,23 @@ function updateColorVariations() {
 }
 
 function updateUI() {
+  // Afficher/masquer la section favicon selon si icon est sélectionné
+  const faviconSection = document.getElementById('favicon-section');
+  if (faviconSection) {
+    faviconSection.style.display = appState.selections.icon ? 'block' : 'none';
+    // Si icon n'est plus sélectionné, décocher favicon automatiquement
+    if (!appState.selections.icon && appState.faviconEnabled) {
+      appState.faviconEnabled = false;
+      const faviconCheckbox = document.getElementById('favicon-enable');
+      if (faviconCheckbox) faviconCheckbox.checked = false;
+    }
+  }
+
   // Calcul des tailles d'export
   const fixedCount = Object.values(appState.exportSizes).filter(v => v).length;
   const customCount = appState.customSizeEnabled ? 1 : 0;
-  const sizeCount  = fixedCount + customCount;
+  const faviconCount = (appState.faviconEnabled && appState.selections.icon) ? 1 : 0;
+  const sizeCount  = fixedCount + customCount + faviconCount;
 
   // Calcul des sélections, types et couleurs
   const selectedCount = Object.values(appState.selections).filter(v => v).length;
@@ -536,6 +674,17 @@ function updateUI() {
     // monochromeLight génère 2 artboards au lieu de 1
     const otherColors = colorCount - 1;
     totalArtboards = selectedCount * typeCount * (otherColors + 2);
+  }
+
+  // Ajouter les artboards favicon (1 artboard carré par variation de couleur, uniquement pour icon)
+  // Les favicons sont toujours en carré avec 10% de marge, indépendamment des choix fit/square
+  if (appState.faviconEnabled && appState.selections.icon) {
+    let faviconArtboards = colorCount; // 1 artboard par couleur (toujours carré)
+    if (appState.colorVariations.monochromeLight) {
+      // monochromeLight génère 2 artboards (normal + fond noir)
+      faviconArtboards = colorCount + 1;
+    }
+    totalArtboards += faviconArtboards;
   }
 
   // Mise à jour du résumé et du bouton
@@ -585,7 +734,9 @@ async function handleGenerate() {
             exportSizes: appState.exportSizes,
             customSizeEnabled: appState.customSizeEnabled,
             customSize: appState.customSize,
-            outputFolder: appState.outputFolder
+            faviconEnabled: appState.faviconEnabled,
+            outputFolder: appState.outputFolder,
+            documentSettings: appState.documentSettings
         };
 
         console.log('Generate params:', params);
@@ -626,9 +777,12 @@ function resetSelections() {
     horizontal: null,
     vertical: null,
     icon: null,
-    text: null
+    text: null,
+    custom1: null,
+    custom2: null,
+    custom3: null
   };
-  ['horizontal','vertical','icon','text'].forEach(type => {
+  ['horizontal','vertical','icon','text','custom1','custom2','custom3'].forEach(type => {
     const statusEl = document.getElementById(`status-${type}`);
     if (statusEl) {
       statusEl.textContent = 'Non sélectionné';
@@ -645,6 +799,16 @@ function getTypeName(type) {
     icon:       'Icône',
     text:       'Typographie'
   };
+
+  // Pour les variations custom, récupérer le label personnalisé
+  if (type.startsWith('custom')) {
+    const labelInput = document.getElementById(`label-${type}`);
+    if (labelInput && labelInput.value) {
+      return labelInput.value;
+    }
+    return `Variation ${type.replace('custom', '')}`;
+  }
+
   return names[type] || type;
 }
 

@@ -65,6 +65,19 @@
                             <button class="btn-select" data-type="vertical">Sélectionner</button>
                         </div>
                         </div>
+
+                        <!-- Conteneur pour les variations custom -->
+                        <div id="custom-variations-container"></div>
+
+                        <!-- Bouton pour ajouter des variations -->
+                        <div style="margin-top: 1em; text-align: center;">
+                            <button id="add-variation-btn" class="btn-secondary" style="padding: 0.5em 1em;">
+                                + Ajouter une variation (max 3)
+                            </button>
+                            <div id="add-variation-info" style="font-size: 12px; color: #999; margin-top: 0.5em;">
+                                0/3 variations ajoutées
+                            </div>
+                        </div>
                     </div>
                 </section>
             </div>
@@ -106,6 +119,28 @@
                 <div id="custom-colors-section" style="display: none; margin-top: 1em;">
                     <button id="analyze-colors-btn" class="btn-secondary btn-large">Analyser les couleurs</button>
                     <div id="colors-mapping" style="margin-top: 1em;"></div>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2>Paramètres du document</h2>
+
+                <div style="margin-bottom: 1em;">
+                    <label for="color-mode" style="display: block; margin-bottom: 0.5em;">Mode couleur:</label>
+                    <select id="color-mode" style="width: 100%; padding: 0.5em; font-size: 14px;">
+                        <option value="RGB" selected>RGB</option>
+                        <option value="CMYK">CMJN (CMYK)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="document-ppi" style="display: block; margin-bottom: 0.5em;">
+                        Résolution (PPI):
+                    </label>
+                    <input type="number" id="document-ppi" min="1" max="999" value="72" style="width: 100%; padding: 0.5em; font-size: 14px;">
+                    <div style="font-size: 12px; color: #999; margin-top: 0.25em;">
+                        Valeurs courantes: 72 (Web), 150, 300 (Print)
+                    </div>
                 </div>
             </section>
             </div>
@@ -193,6 +228,17 @@
                         <input type="checkbox" id="lock-aspect-ratio"  checked>
                         <span>Conserver le ratio</span>
                     </label>
+                    </div>
+
+                    <!-- Section Favicon (visible uniquement si icon est sélectionné) -->
+                    <div id="favicon-section" style="display: none; margin-top: 1em; padding-top: 1em; border-top: 1px solid #444;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="favicon-enable">
+                            <span>Favicon (32×32 px - uniquement icône)</span>
+                        </label>
+                        <div style="font-size: 11px; color: #999; margin-left: 1.5em; margin-top: 0.25em;">
+                            Exporte l'icône en 32×32 pixels dans toutes les variantes de couleurs
+                        </div>
                     </div>
 
                 </div>
