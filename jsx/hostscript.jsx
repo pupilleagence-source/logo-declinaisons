@@ -291,9 +291,20 @@ function storeSelection(type) {
         var elementToStore;
 
         if (doc.selection.length > 1) {
+            // Sauvegarder les références aux éléments sélectionnés AVANT de les dupliquer
+            // (car doc.selection peut changer dynamiquement pendant la duplication)
+            var selectedItems = [];
+            for (var i = 0; i < doc.selection.length; i++) {
+                selectedItems.push(doc.selection[i]);
+            }
+
+            // Créer un groupe pour les duplicatas
             elementToStore = doc.groupItems.add();
-            for (var i = doc.selection.length - 1; i >= 0; i--) {
-                doc.selection[i].move(elementToStore, ElementPlacement.PLACEATBEGINNING);
+
+            // Dupliquer chaque élément depuis le tableau sauvegardé
+            for (var i = 0; i < selectedItems.length; i++) {
+                var itemDuplicate = selectedItems[i].duplicate();
+                itemDuplicate.move(elementToStore, ElementPlacement.PLACEATBEGINNING);
             }
         } else {
             elementToStore = selection.duplicate();
