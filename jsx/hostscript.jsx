@@ -49,6 +49,64 @@ function sanitizeFilename(filename) {
 }
 
 /**
+ * Ouvre le sélecteur de couleur NATIF d'Illustrator via app.showColorPicker()
+ * Affiche le dialogue natif avec onglets RGB/CMYK/HSB/Grayscale/Web Safe RGB
+ * Permet l'utilisation de la pipette pour prélever des couleurs dans Illustrator
+ * @param {string} initialColorHex - Couleur initiale en format hex (ex: "#FF0000")
+ * @return {string} "COLOR:#RRGGBB", "CANCELLED" si annulé, ou "ERROR:..." en cas d'erreur
+ */
+function openColorPickerDialog(initialColorHex) {
+    try {
+        $.writeln("🎨 Ouverture du sélecteur de couleur natif Illustrator...");
+
+        // Créer un objet RGBColor pour la couleur initiale
+        var initialColor = new RGBColor();
+
+        // Convertir hex en RGB (ex: "#FF0000" -> r:255, g:0, b:0)
+        if (initialColorHex && initialColorHex.charAt(0) === '#') {
+            var hex = initialColorHex.substring(1);
+            initialColor.red = parseInt(hex.substring(0, 2), 16);
+            initialColor.green = parseInt(hex.substring(2, 4), 16);
+            initialColor.blue = parseInt(hex.substring(4, 6), 16);
+        } else {
+            // Par défaut: noir
+            initialColor.red = 0;
+            initialColor.green = 0;
+            initialColor.blue = 0;
+        }
+
+        $.writeln("   Couleur initiale: R=" + initialColor.red + " G=" + initialColor.green + " B=" + initialColor.blue);
+
+        // Ouvrir le sélecteur de couleur NATIF d'Illustrator (avec onglets RGB/CMYK/HSB/etc)
+        var selectedColor = app.showColorPicker(initialColor);
+
+        // L'utilisateur a annulé
+        if (!selectedColor || selectedColor === false) {
+            $.writeln("   ℹ️ Sélection de couleur annulée par l'utilisateur");
+            return "CANCELLED";
+        }
+
+        // Convertir le résultat RGBColor en hex
+        var r = Math.round(selectedColor.red);
+        var g = Math.round(selectedColor.green);
+        var b = Math.round(selectedColor.blue);
+
+        // Convertir en hex string avec padding
+        var rHex = ("0" + r.toString(16)).slice(-2);
+        var gHex = ("0" + g.toString(16)).slice(-2);
+        var bHex = ("0" + b.toString(16)).slice(-2);
+        var hexColor = "#" + (rHex + gHex + bHex).toUpperCase();
+
+        $.writeln("   ✅ Couleur sélectionnée: " + hexColor + " (R:" + r + " G:" + g + " B:" + b + ")");
+        return "COLOR:" + hexColor;
+
+    } catch (e) {
+        $.writeln("   ❌ Erreur dans openColorPickerDialog: " + e.toString());
+        return "ERROR: " + e.toString();
+    }
+}
+
+/**
  * Parse JSON de manière sécurisée (alternative à eval pour ExtendScript)
  * Utilise une approche simplifiée pour les paramètres de notre application
  * @param {string} jsonString - La chaîne JSON à parser

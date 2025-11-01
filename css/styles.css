@@ -518,3 +518,24 @@ main {
 .lock-icon {
     margin-left: auto;
 }
+
+/* Boutons sélecteur de couleur natif ($.colorPicker) */
+.color-picker-btn {
+    width: 40px;
+    height: 25px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
+    transition: all 0.2s;
+    vertical-align: middle;
+}
+
+.color-picker-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.color-picker-btn:active {
+    transform: scale(0.98);
+}

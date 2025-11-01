@@ -279,22 +279,32 @@ function setupEventListeners() {
         verticalLayoutBtn.addEventListener('click', generateVerticalLayout);
     }
 
-    // écouteur colorpicker monochromie
+    // écouteur colorpicker monochromie (bouton avec app.showColorPicker natif)
     const monochromeColorPicker = document.getElementById('black-color-picker');
-      if (monochromeColorPicker) {
-          monochromeColorPicker.addEventListener('input', (e) => {
-              appState.colorVariations.monochromeColor = e.target.value;
-              updateUI();
-          });
+    if (monochromeColorPicker) {
+        monochromeColorPicker.addEventListener('click', async () => {
+            // Passer la couleur actuelle au dialogue
+            const selectedColor = await openNativeColorPicker(appState.colorVariations.monochromeColor);
+            if (selectedColor) {
+                appState.colorVariations.monochromeColor = selectedColor;
+                monochromeColorPicker.style.backgroundColor = selectedColor;
+                updateUI();
+            }
+        });
     }
 
-    // écouteur colorpicker monochromie light
+    // écouteur colorpicker monochromie light (bouton avec app.showColorPicker natif)
     const monochromeLightColorPicker = document.getElementById('light-color-picker');
-      if (monochromeLightColorPicker) {
-          monochromeLightColorPicker.addEventListener('input', (e) => {
-              appState.colorVariations.monochromeLightColor = e.target.value;
-              updateUI();
-          });
+    if (monochromeLightColorPicker) {
+        monochromeLightColorPicker.addEventListener('click', async () => {
+            // Passer la couleur actuelle au dialogue
+            const selectedColor = await openNativeColorPicker(appState.colorVariations.monochromeLightColor);
+            if (selectedColor) {
+                appState.colorVariations.monochromeLightColor = selectedColor;
+                monochromeLightColorPicker.style.backgroundColor = selectedColor;
+                updateUI();
+            }
+        });
     }
     // Checkboxes types d'artboard
     const fitCheckbox = document.getElementById('artboard-fit');
@@ -882,6 +892,44 @@ function evalExtendScript(functionName, params = [], timeout = 30000) {
         });
     });
 }
+
+/**
+ * Ouvre le sélecteur de couleur natif Illustrator via app.showColorPicker()
+ * Affiche le dialogue natif avec onglets RGB/CMYK/HSB/Grayscale/Web Safe RGB
+ * Permet l'utilisation de la pipette pour prélever des couleurs dans le document
+ * @param {string} currentColor - Couleur actuelle en hex (ex: "#FF0000") à afficher dans le dialogue
+ * @return {Promise<string|null>} Retourne la couleur hex (#RRGGBB) ou null si annulé/erreur
+ */
+async function openNativeColorPicker(currentColor = '#000000') {
+    try {
+        // Passer la couleur actuelle au dialogue pour l'afficher
+        const result = await evalExtendScript('openColorPickerDialog', [currentColor]);
+
+        if (result === 'CANCELLED') {
+            // L'utilisateur a annulé - ne rien faire
+            console.log('Sélection de couleur annulée');
+            return null;
+        } else if (result && result.startsWith('COLOR:')) {
+            // Extraire la couleur hex du format "COLOR:#RRGGBB"
+            const hexColor = result.substring(6);
+            console.log('Couleur sélectionnée:', hexColor);
+            return hexColor;
+        } else if (result && result.startsWith('ERROR:')) {
+            const errorMsg = result.substring(7);
+            console.error('Erreur sélecteur de couleur:', errorMsg);
+            showStatus(`Erreur: ${errorMsg}`, 'error');
+            return null;
+        } else {
+            console.error('Résultat inattendu du sélecteur:', result);
+            return null;
+        }
+    } catch (error) {
+        console.error('Erreur lors de l\'ouverture du sélecteur de couleur:', error);
+        showStatus(`Erreur: ${error.message}`, 'error');
+        return null;
+    }
+}
+
 function updateExportFormats() {
   appState.exportFormats.png = document.getElementById('export-png').checked;
   appState.exportFormats.jpg = document.getElementById('export-jpg').checked;
@@ -973,14 +1021,20 @@ function displayColorMapping() {
     arrow.className = 'color-arrow';
     arrow.textContent = '→';
 
-    // Couleur custom
-    const customPreview = document.createElement('input');
-    customPreview.type = 'color';
-    customPreview.className = 'color-preview';
-    customPreview.value = colorMap.custom;
-    customPreview.addEventListener('change', (e) => {
-      appState.customColors.mapping[index].custom = e.target.value;
-      customValue.textContent = e.target.value;
+    // Couleur custom - bouton avec sélecteur natif Illustrator
+    const customPreview = document.createElement('button');
+    customPreview.type = 'button';
+    customPreview.className = 'color-preview color-picker-btn';
+    customPreview.style.backgroundColor = colorMap.custom;
+    customPreview.title = 'Cliquer pour ouvrir le sélecteur de couleur natif Illustrator (avec pipette)';
+    customPreview.addEventListener('click', async () => {
+      // Passer la couleur actuelle au dialogue
+      const selectedColor = await openNativeColorPicker(colorMap.custom);
+      if (selectedColor) {
+        appState.customColors.mapping[index].custom = selectedColor;
+        customPreview.style.backgroundColor = selectedColor;
+        customValue.textContent = selectedColor;
+      }
     });
 
     const customInfo = document.createElement('div');
