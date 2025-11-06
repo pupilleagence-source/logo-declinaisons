@@ -8,7 +8,7 @@ const Trial = {
     config: {
         freeGenerations: 7,
         gracePeriodDays: 7,
-        serverURL: 'https://your-vercel-app.vercel.app/api/trial', // À configurer plus tard
+        serverURL: 'https://logotyps-mprhphe6s-pupilleagence-sources-projects.vercel.app/api/trial',
     },
 
     /**

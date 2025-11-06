@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(./Support Files/Contents/Windows/Illustrator.exe --version)",
-      "Bash(npm run build:zxp:*)"
+      "Bash(npm run build:zxp:*)",
+      "Bash(vercel --prod:*)",
+      "Bash(curl:*)",
+      "Bash(vercel logs:*)",
+      "Bash(npm install:*)",
+      "Bash(for:*)",
+      "Bash(do curl -X POST https://logotyps-mprhphe6s-pupilleagence-sources-projects.vercel.app/api/trial/increment -H \"Content-Type: application/json\" -d \"{\"\"hwid\"\":\"\"HWID-test456\"\"}\" -s)",
+      "Bash(done)",
+      "Bash(create-zxp-simple.bat)"
     ],
     "deny": [],
     "ask": []

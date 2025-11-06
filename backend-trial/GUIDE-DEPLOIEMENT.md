@@ -140,7 +140,7 @@ Ouvrir PowerShell et exécuter (remplacer `VOTRE-URL` par l'URL de votre projet)
 
 ```powershell
 $body = @{hwid="HWID-test123"} | ConvertTo-Json
-Invoke-RestMethod -Uri "https://VOTRE-URL.vercel.app/api/trial/check" -Method Post -Body $body -ContentType "application/json"
+Invoke-RestMethod -Uri "https://logotyps-4z4eznm8f-pupilleagence-sources-projects.vercel.app /api/trial/check" -Method Post -Body $body -ContentType "application/json"
 ```
 
 Vous devriez voir :

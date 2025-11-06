@@ -603,6 +603,26 @@ function setupEventListeners() {
         generateBtn.addEventListener('click', handleGenerate);
     }
 
+    // DEBUG: Bouton reset trial
+    const resetTrialBtn = document.getElementById('reset-trial-btn');
+    if (resetTrialBtn) {
+        resetTrialBtn.addEventListener('click', async () => {
+            if (confirm('Réinitialiser le trial ?\n\nCela va remettre le compteur à 7/7 générations gratuites.')) {
+                // Réinitialiser le trial
+                Trial.reset();
+
+                // Réinitialiser le HWID pour avoir un nouveau compteur
+                localStorage.removeItem('_hwid');
+
+                // Rafraîchir le statut
+                const status = await Trial.init();
+                updateTrialBadge(status);
+
+                showStatus('✓ Trial réinitialisé ! 7/7 générations disponibles', 'success');
+            }
+        });
+    }
+
 }
 
 async function handleSelection(event) {

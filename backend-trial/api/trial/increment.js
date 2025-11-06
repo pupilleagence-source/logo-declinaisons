@@ -6,10 +6,23 @@
  * Response: { generationsUsed: number, generationsLimit: number }
  */
 
-import { kv } from '@vercel/kv';
+import { createClient } from 'redis';
 
 // Configuration
 const FREE_GENERATIONS_LIMIT = 7;
+
+// Créer le client Redis avec les variables d'environnement Vercel
+let redis = null;
+
+async function getRedisClient() {
+    if (!redis) {
+        redis = createClient({
+            url: process.env.KV_URL || process.env.REDIS_URL
+        });
+        await redis.connect();
+    }
+    return redis;
+}
 
 export default async function handler(req, res) {
     // CORS headers pour permettre les requêtes depuis CEP Extension
@@ -49,14 +62,13 @@ export default async function handler(req, res) {
             });
         }
 
+        // Récupérer le client Redis
+        const client = await getRedisClient();
+
         // Récupérer le compteur actuel
         const key = `trial:${hwid}`;
-        let generationsUsed = await kv.get(key);
-
-        // Si pas encore enregistré, initialiser à 0
-        if (generationsUsed === null) {
-            generationsUsed = 0;
-        }
+        const value = await client.get(key);
+        let generationsUsed = value ? parseInt(value, 10) : 0;
 
         // Vérifier si limite dépassée
         if (generationsUsed >= FREE_GENERATIONS_LIMIT) {
@@ -71,7 +83,7 @@ export default async function handler(req, res) {
 
         // Incrémenter le compteur
         generationsUsed++;
-        await kv.set(key, generationsUsed);
+        await client.set(key, generationsUsed.toString());
 
         // Logger pour analytics (optionnel)
         console.log(`✓ HWID ${hwid.substring(0, 20)}... → ${generationsUsed}/${FREE_GENERATIONS_LIMIT}`);
@@ -89,7 +101,8 @@ export default async function handler(req, res) {
 
         return res.status(500).json({
             error: 'Internal server error',
-            message: 'Erreur serveur lors de l\'incrémentation'
+            message: 'Erreur serveur lors de l\'incrémentation',
+            details: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 }
