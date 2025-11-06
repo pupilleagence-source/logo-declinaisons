@@ -15,6 +15,10 @@
     {
       "src": "/api/trial/increment",
       "dest": "/api/trial/increment.js"
+    },
+    {
+      "src": "/api/trial/reset",
+      "dest": "/api/trial/reset.js"
     }
   ],
   "env": {

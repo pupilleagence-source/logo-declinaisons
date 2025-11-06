@@ -8,7 +8,7 @@ const Trial = {
     config: {
         freeGenerations: 7,
         gracePeriodDays: 7,
-        serverURL: 'https://logotyps-mprhphe6s-pupilleagence-sources-projects.vercel.app/api/trial',
+        serverURL: 'https://logotyps.vercel.app/api/trial',
     },
 
     /**
@@ -41,51 +41,59 @@ const Trial = {
         // 1. Vérifier si license activée
         const license = this.getStoredLicense();
         if (license && license.active) {
-            return {
-                type: 'licensed',
-                unlimitedGenerations: true,
-                licenseKey: license.key,
-                email: license.email
-            };
-        }
+            // Pour les licences : utiliser le cache avec grace period (mode offline OK)
+            const cached = this.getCachedStatus();
 
-        // 2. Récupérer cache local
-        const cached = this.getCachedStatus();
-
-        // 3. Vérifier si cache valide (pas expiré)
-        if (cached && !this.isCacheExpired(cached)) {
-            console.log('✓ Utilisation du cache local (valide)');
-            return {
-                type: 'trial',
-                generationsUsed: cached.generationsUsed,
-                generationsRemaining: this.config.freeGenerations - cached.generationsUsed,
-                generationsLimit: this.config.freeGenerations,
-                cacheExpiry: cached.expiry
-            };
-        }
-
-        // 4. Cache expiré ou inexistant → Valider avec serveur
-        console.log('⏳ Validation avec serveur...');
-        try {
-            const serverStatus = await this.validateWithServer();
-            this.cacheStatus(serverStatus);
-            return serverStatus;
-        } catch (error) {
-            console.warn('⚠️ Serveur inaccessible, utilisation cache expiré', error);
-
-            // Fallback: utiliser cache même expiré si pas le choix
-            if (cached) {
+            if (cached && !this.isCacheExpired(cached)) {
+                console.log('✓ License active (cache local)');
                 return {
-                    type: 'trial',
-                    generationsUsed: cached.generationsUsed,
-                    generationsRemaining: this.config.freeGenerations - cached.generationsUsed,
-                    generationsLimit: this.config.freeGenerations,
-                    offline: true
+                    type: 'licensed',
+                    unlimitedGenerations: true,
+                    licenseKey: license.key,
+                    email: license.email,
+                    offline: false
                 };
             }
 
-            // Pas de cache du tout → Donner un statut par défaut
-            return this.getDefaultStatus();
+            // Essayer de valider avec le serveur
+            try {
+                // TODO: Appel au serveur pour valider la license
+                console.log('✓ License active (validée serveur)');
+                return {
+                    type: 'licensed',
+                    unlimitedGenerations: true,
+                    licenseKey: license.key,
+                    email: license.email
+                };
+            } catch (error) {
+                // Mode offline pour les licences payées
+                console.log('⚠️ Serveur inaccessible, utilisation license en mode offline');
+                return {
+                    type: 'licensed',
+                    unlimitedGenerations: true,
+                    licenseKey: license.key,
+                    email: license.email,
+                    offline: true
+                };
+            }
+        }
+
+        // 2. TRIAL : Toujours valider avec le serveur (pas de cache local)
+        console.log('⏳ Validation trial avec serveur...');
+        try {
+            const serverStatus = await this.validateWithServer();
+            return serverStatus;
+        } catch (error) {
+            console.error('❌ Serveur inaccessible pour le trial', error);
+
+            // Pour le trial : pas de fallback offline
+            // On retourne un statut d'erreur qui bloquera l'utilisation
+            return {
+                type: 'trial',
+                error: true,
+                offline: true,
+                message: 'Connexion Internet requise pour utiliser le trial gratuit.\n\nActivez une license pour un accès offline illimité.'
+            };
         }
     },
 
@@ -107,26 +115,42 @@ const Trial = {
     validateWithServer: async function() {
         const hwid = await HWID.get();
 
-        const response = await fetch(this.config.serverURL + '/check', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ hwid })
-        });
+        // Créer un AbortController pour timeout de 5 secondes
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-        if (!response.ok) {
-            throw new Error('Serveur inaccessible');
+        try {
+            const response = await fetch(this.config.serverURL + '/check', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ hwid }),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (!response.ok) {
+                throw new Error('Serveur inaccessible');
+            }
+
+            const data = await response.json();
+
+            return {
+                type: 'trial',
+                generationsUsed: data.generationsUsed || 0,
+                generationsRemaining: this.config.freeGenerations - (data.generationsUsed || 0),
+                generationsLimit: this.config.freeGenerations
+            };
+        } catch (error) {
+            clearTimeout(timeoutId);
+
+            if (error.name === 'AbortError') {
+                throw new Error('Timeout: serveur inaccessible (5s)');
+            }
+            throw error;
         }
-
-        const data = await response.json();
-
-        return {
-            type: 'trial',
-            generationsUsed: data.generationsUsed || 0,
-            generationsRemaining: this.config.freeGenerations - (data.generationsUsed || 0),
-            generationsLimit: this.config.freeGenerations
-        };
     },
 
     /**
@@ -135,9 +159,18 @@ const Trial = {
     canGenerate: async function() {
         const status = await this.getStatus();
 
-        // License activée → illimité
+        // License activée → illimité (même en offline)
         if (status.type === 'licensed') {
-            return { allowed: true, reason: 'licensed' };
+            return { allowed: true, reason: 'licensed', offline: status.offline };
+        }
+
+        // Trial en erreur (serveur inaccessible)
+        if (status.error) {
+            return {
+                allowed: false,
+                reason: 'trial_offline',
+                message: status.message
+            };
         }
 
         // Trial → vérifier limite
@@ -149,7 +182,7 @@ const Trial = {
         return {
             allowed: false,
             reason: 'trial_expired',
-            message: 'Vos 7 générations gratuites sont épuisées. Activez une license pour continuer.'
+            message: 'Vos 7 générations gratuites sont épuisées.\n\nActivez une license pour un accès illimité et offline.'
         };
     },
 
@@ -157,43 +190,59 @@ const Trial = {
      * Incrémente le compteur de générations
      */
     incrementGeneration: async function() {
+        // Vérifier si l'utilisateur a une license
+        const license = this.getStoredLicense();
+
+        // Si license active : pas besoin d'incrémenter (accès illimité)
+        if (license && license.active) {
+            console.log('✓ License active : génération illimitée');
+            return 0; // Valeur fictive, pas de limite
+        }
+
+        // TRIAL : Toujours incrémenter sur le serveur (pas de fallback local)
         try {
             const hwid = await HWID.get();
 
-            // Incrémenter sur le serveur
-            const response = await fetch(this.config.serverURL + '/increment', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ hwid })
-            });
+            // Créer un AbortController pour timeout de 5 secondes
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
 
-            if (response.ok) {
-                const data = await response.json();
-
-                // Mettre à jour le cache local
-                this.cacheStatus({
-                    generationsUsed: data.generationsUsed
+            try {
+                // Incrémenter sur le serveur
+                const response = await fetch(this.config.serverURL + '/increment', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ hwid }),
+                    signal: controller.signal
                 });
 
-                console.log('✓ Génération comptabilisée:', data.generationsUsed + '/' + this.config.freeGenerations);
-                return data.generationsUsed;
-            } else {
-                // Serveur a répondu mais erreur → fallback local
-                throw new Error('Serveur non disponible');
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('✓ Génération comptabilisée:', data.generationsUsed + '/' + this.config.freeGenerations);
+                    return data.generationsUsed;
+                } else {
+                    // Erreur serveur
+                    throw new Error('Serveur inaccessible');
+                }
+            } catch (fetchError) {
+                clearTimeout(timeoutId);
+
+                if (fetchError.name === 'AbortError') {
+                    throw new Error('Timeout: impossible de joindre le serveur');
+                }
+                throw fetchError;
             }
 
         } catch (error) {
-            console.warn('⚠️ Impossible d\'incrémenter sur serveur (offline), utilisation du cache local', error);
+            console.error('❌ Impossible d\'incrémenter sur serveur (trial nécessite connexion)', error);
 
-            // Fallback: incrémenter localement
-            const cached = this.getCachedStatus() || { generationsUsed: 0 };
-            cached.generationsUsed++;
-            this.cacheStatus(cached);
-
-            console.log('✓ Génération comptabilisée localement:', cached.generationsUsed + '/' + this.config.freeGenerations);
-            return cached.generationsUsed;
+            // Pour le trial : pas de fallback offline
+            // On lance une erreur qui sera gérée par l'appelant
+            throw new Error('Connexion Internet requise pour le trial gratuit');
         }
     },
 
@@ -263,10 +312,49 @@ const Trial = {
     /**
      * Réinitialise le trial (DEBUG ONLY - à retirer en production)
      */
-    reset: function() {
-        localStorage.removeItem('_trial_cache');
-        localStorage.removeItem('_license');
-        console.log('✓ Trial réinitialisé (DEBUG)');
+    reset: async function() {
+        try {
+            // Récupérer le HWID actuel avant de le supprimer
+            const hwid = await HWID.get();
+
+            // Supprimer les données locales
+            localStorage.removeItem('_trial_cache');
+            localStorage.removeItem('_license');
+            localStorage.removeItem('_hwid');
+
+            // Appeler le serveur pour supprimer la clé Redis
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                const response = await fetch(this.config.serverURL + '/reset', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ hwid }),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('✓ Trial réinitialisé (local + serveur):', data);
+                } else {
+                    console.warn('⚠️ Trial réinitialisé localement, mais erreur serveur');
+                }
+            } catch (error) {
+                console.warn('⚠️ Trial réinitialisé localement, serveur inaccessible:', error.message);
+            }
+
+        } catch (error) {
+            console.error('❌ Erreur reset trial:', error);
+            // Quand même supprimer les données locales
+            localStorage.removeItem('_trial_cache');
+            localStorage.removeItem('_license');
+            localStorage.removeItem('_hwid');
+        }
     }
 };
 

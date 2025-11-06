@@ -115,10 +115,21 @@ function updateTrialBadge(status) {
         // License activée → afficher badge vert
         badge.style.display = 'block';
         badge.className = 'trial-badge';
-        text.textContent = '✅ License activée';
+
+        if (status.offline) {
+            text.textContent = '✅ License activée (Mode offline)';
+        } else {
+            text.textContent = '✅ License activée';
+        }
     } else if (status.type === 'trial') {
-        // Trial actif
         badge.style.display = 'block';
+
+        // Trial en erreur (serveur inaccessible)
+        if (status.error) {
+            badge.className = 'trial-badge expired';
+            text.textContent = '❌ Connexion requise (Trial)';
+            return;
+        }
 
         const remaining = status.generationsRemaining;
 
@@ -607,18 +618,23 @@ function setupEventListeners() {
     const resetTrialBtn = document.getElementById('reset-trial-btn');
     if (resetTrialBtn) {
         resetTrialBtn.addEventListener('click', async () => {
-            if (confirm('Réinitialiser le trial ?\n\nCela va remettre le compteur à 7/7 générations gratuites.')) {
-                // Réinitialiser le trial
-                Trial.reset();
+            if (confirm('Réinitialiser le trial ?\n\nCela va remettre le compteur à 7/7 (local + serveur).')) {
+                try {
+                    // Afficher un message de chargement
+                    showStatus('Réinitialisation en cours...', 'warning');
 
-                // Réinitialiser le HWID pour avoir un nouveau compteur
-                localStorage.removeItem('_hwid');
+                    // Réinitialiser le trial (local + serveur)
+                    await Trial.reset();
 
-                // Rafraîchir le statut
-                const status = await Trial.init();
-                updateTrialBadge(status);
+                    // Rafraîchir le statut
+                    const status = await Trial.init();
+                    updateTrialBadge(status);
 
-                showStatus('✓ Trial réinitialisé ! 7/7 générations disponibles', 'success');
+                    showStatus('✓ Trial réinitialisé ! 7/7 générations disponibles', 'success');
+                } catch (error) {
+                    console.error('Erreur reset:', error);
+                    showStatus('⚠️ Erreur lors de la réinitialisation', 'error');
+                }
             }
         });
     }
@@ -854,11 +870,17 @@ async function handleGenerate() {
             showStatus(successMsg, 'success');
 
             // 🎁 INCRÉMENTER LE COMPTEUR DE TRIAL (si en mode trial)
-            await Trial.incrementGeneration();
+            try {
+                await Trial.incrementGeneration();
 
-            // Mettre à jour le badge avec le nouveau statut
-            const newStatus = await Trial.getStatus();
-            updateTrialBadge(newStatus);
+                // Mettre à jour le badge avec le nouveau statut
+                const newStatus = await Trial.getStatus();
+                updateTrialBadge(newStatus);
+            } catch (incrementError) {
+                // Erreur lors de l'incrémentation (serveur offline pour trial)
+                console.error('❌ Erreur incrémentation trial:', incrementError);
+                showStatus('⚠️ Génération réussie mais impossible de mettre à jour le compteur (connexion requise)', 'warning');
+            }
 
             // Réinitialiser les sélections
             resetSelections();
