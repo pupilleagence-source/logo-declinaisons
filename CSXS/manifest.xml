@@ -5,8 +5,8 @@
     </ExtensionList>
     <ExecutionEnvironment>
         <HostList>
-            <!-- Support Illustrator CC 2022 (v26) et plus récent -->
-            <Host Name="ILST" Version="[26.0,29.9]" />
+            <!-- Support Illustrator CC 2022 (v26) et toutes versions futures -->
+            <Host Name="ILST" Version="[26.0,99.9]" />
         </HostList>
         <LocaleList>
             <Locale Code="All" />

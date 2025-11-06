@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "name": "logo-declinaisons-trial",
+  "builds": [
+    {
+      "src": "api/**/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/trial/check",
+      "dest": "/api/trial/check.js"
+    },
+    {
+      "src": "/api/trial/increment",
+      "dest": "/api/trial/increment.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  }
+}

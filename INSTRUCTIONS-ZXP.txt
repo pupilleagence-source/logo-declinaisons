@@ -1,0 +1,97 @@
+================================================
+  CRÉATION DU PACKAGE ZXP
+  Logo Déclinaisons
+================================================
+
+ÉTAPE 1 : TÉLÉCHARGER ZXPSignCmd.exe
+-------------------------------------
+
+1. Téléchargez ZXPSignCmd.exe depuis :
+   https://github.com/Adobe-CEP/CEP-Resources/raw/master/ZXPSignCMD/4.1.2/win64/ZXPSignCmd.exe
+
+2. Placez le fichier ZXPSignCmd.exe dans ce dossier :
+   c:\Users\huglg\AppData\Roaming\Adobe\CEP\extensions\logo-declinaisons\
+
+3. Vous devriez avoir :
+   logo-declinaisons/
+   ├── ZXPSignCmd.exe        ← NOUVEAU
+   ├── create-zxp.bat
+   ├── index.html
+   ├── CSXS/
+   ├── css/
+   etc.
+
+
+ÉTAPE 2 : CRÉER LE ZXP
+-----------------------
+
+1. Double-cliquez sur : create-zxp.bat
+
+2. Le script va :
+   - Créer un certificat auto-signé (certificate.p12)
+   - Packager tous les fichiers en ZXP
+   - Signer le ZXP avec le certificat
+   - Ajouter un timestamp
+
+3. Le fichier créé :
+   dist/LogoDeclinaisons-1.0.0.zxp
+
+4. Ce fichier ZXP fonctionne sur WINDOWS ET MAC !
+
+
+ÉTAPE 3 : DISTRIBUER
+---------------------
+
+Donnez le fichier LogoDeclinaisons-1.0.0.zxp à vos clients.
+
+Instructions pour vos clients :
+
+1. Télécharger ZXP Installer (gratuit) :
+   https://aescripts.com/learn/zxp-installer
+
+2. Glisser-déposer le fichier .zxp dans ZXP Installer
+
+3. Redémarrer Adobe Illustrator
+
+4. Le plugin apparaît dans :
+   Fenêtre > Extensions > Logo Déclinaisons
+
+
+IMPORTANT
+---------
+
+⚠️  Gardez le fichier certificate.p12 en sécurité !
+    - Ne le partagez jamais
+    - Utilisez toujours le même pour les mises à jour
+    - Si vous le perdez, créez-en un nouveau
+
+⚠️  Le mode debug CEP doit être activé :
+    - Windows : Votre installateur .exe le fait automatiquement
+    - Mac : ZXP Installer l'active automatiquement
+
+
+DÉPANNAGE
+----------
+
+❌ "ZXPSignCmd.exe n'est pas reconnu"
+   → Assurez-vous qu'il est bien dans le dossier
+
+❌ "Erreur lors de la création du certificat"
+   → Supprimez certificate.p12 et relancez le script
+
+❌ "Erreur lors de la signature"
+   → Vérifiez que tous les fichiers (CSXS, css, js, jsx, lib, media, index.html) sont présents
+
+
+MISES À JOUR
+------------
+
+Pour créer une nouvelle version :
+
+1. Modifiez vos fichiers sources
+2. Changez le numéro de version dans create-zxp.bat (ligne 10)
+3. Relancez create-zxp.bat
+4. Un nouveau ZXP sera créé avec le nouveau numéro
+
+
+================================================

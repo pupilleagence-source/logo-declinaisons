@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./Support Files/Contents/Windows/Illustrator.exe --version)",
+      "Bash(npm run build:zxp:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -67,11 +67,15 @@ documentSettings: {
 // Initialisation
 document.addEventListener('DOMContentLoaded', init);
 
-function init() {
+async function init() {
     console.log('Initializing Logo Déclinaisons...');
 
     try {
         csInterface = new CSInterface();
+
+        // Initialiser le système de trial/licensing
+        await initTrialSystem();
+
         setupEventListeners();
         updateTabNavigationButtons(); // Initialiser l'état des boutons de navigation
         updateUI();
@@ -79,6 +83,58 @@ function init() {
     } catch (error) {
         console.error('Failed to initialize:', error);
         showStatus('Erreur d\'initialisation', 'error');
+    }
+}
+
+/**
+ * Initialise le système de trial et met à jour l'interface
+ */
+async function initTrialSystem() {
+    try {
+        const status = await Trial.init();
+
+        // Mettre à jour le badge
+        updateTrialBadge(status);
+
+        console.log('✓ Trial system initialized:', status);
+    } catch (error) {
+        console.error('❌ Erreur init trial system:', error);
+    }
+}
+
+/**
+ * Met à jour le badge de trial dans l'interface
+ */
+function updateTrialBadge(status) {
+    const badge = document.getElementById('trial-badge');
+    const text = document.getElementById('trial-text');
+
+    if (!badge || !text) return;
+
+    if (status.type === 'licensed') {
+        // License activée → afficher badge vert
+        badge.style.display = 'block';
+        badge.className = 'trial-badge';
+        text.textContent = '✅ License activée';
+    } else if (status.type === 'trial') {
+        // Trial actif
+        badge.style.display = 'block';
+
+        const remaining = status.generationsRemaining;
+
+        if (remaining === 0) {
+            // Trial épuisé
+            badge.className = 'trial-badge expired';
+            text.textContent = '🔒 Trial épuisé - Activez une license';
+        } else if (remaining <= 2) {
+            // Dernières générations
+            badge.className = 'trial-badge warning';
+            text.textContent = `⚠️ ${remaining} génération${remaining > 1 ? 's' : ''} gratuite${remaining > 1 ? 's' : ''} restante${remaining > 1 ? 's' : ''}`;
+        } else {
+            // Trial normal
+            badge.className = 'trial-badge';
+            text.textContent = `🎁 ${remaining}/${status.generationsLimit} générations gratuites`;
+        }
     }
 }
 
@@ -728,6 +784,18 @@ async function handleGenerate() {
     const generateBtn = document.getElementById('generate-btn');
 
     try {
+        // 🔒 VÉRIFIER LE TRIAL AVANT GÉNÉRATION
+        const canGenerate = await Trial.canGenerate();
+
+        if (!canGenerate.allowed) {
+            // Trial épuisé → Bloquer et afficher message
+            showStatus(canGenerate.message, 'error');
+            console.log('❌ Génération bloquée:', canGenerate.reason);
+            return; // Arrêter ici
+        }
+
+        console.log('✓ Génération autorisée:', canGenerate.reason);
+
         // Désactiver le bouton pendant la génération
         if (generateBtn) generateBtn.disabled = true;
 
@@ -764,6 +832,13 @@ async function handleGenerate() {
             }
 
             showStatus(successMsg, 'success');
+
+            // 🎁 INCRÉMENTER LE COMPTEUR DE TRIAL (si en mode trial)
+            await Trial.incrementGeneration();
+
+            // Mettre à jour le badge avec le nouveau statut
+            const newStatus = await Trial.getStatus();
+            updateTrialBadge(newStatus);
 
             // Réinitialiser les sélections
             resetSelections();

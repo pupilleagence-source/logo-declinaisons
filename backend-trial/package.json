@@ -1,0 +1,16 @@
+{
+  "name": "logo-declinaisons-trial-backend",
+  "version": "1.0.0",
+  "description": "Backend API Vercel pour le système de trial de Logo Déclinaisons",
+  "type": "module",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@vercel/kv": "^1.0.1"
+  },
+  "devDependencies": {
+    "vercel": "^33.0.0"
+  }
+}

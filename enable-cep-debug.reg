@@ -1,0 +1,17 @@
+Windows Registry Editor Version 5.00
+
+; Active le mode debug pour CEP 9
+[HKEY_CURRENT_USER\Software\Adobe\CSXS.9]
+"PlayerDebugMode"="1"
+
+; Active le mode debug pour CEP 10
+[HKEY_CURRENT_USER\Software\Adobe\CSXS.10]
+"PlayerDebugMode"="1"
+
+; Active le mode debug pour CEP 11
+[HKEY_CURRENT_USER\Software\Adobe\CSXS.11]
+"PlayerDebugMode"="1"
+
+; Active le mode debug pour CEP 12
+[HKEY_CURRENT_USER\Software\Adobe\CSXS.12]
+"PlayerDebugMode"="1"

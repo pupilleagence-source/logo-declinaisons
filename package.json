@@ -1,0 +1,45 @@
+{
+  "name": "logo-declinaisons",
+  "version": "1.0.0",
+  "description": "Plugin Adobe Illustrator pour générer des déclinaisons automatiques de logos",
+  "author": "Votre Nom",
+  "license": "Commercial",
+  "scripts": {
+    "build": "cep-packager",
+    "build:win": "cep-packager --win",
+    "build:mac": "cep-packager --mac",
+    "build:zxp": "node build-zxp.js"
+  },
+  "cep": {
+    "name": "Logo Déclinaisons",
+    "id": "com.graphiste.logodeclinaisons",
+    "hosts": [
+      "ILST"
+    ],
+    "version": "1.0.0"
+  },
+  "packager": {
+    "name": "Logo Déclinaisons",
+    "appId": "com.graphiste.logodeclinaisons",
+    "vendor": "Graphiste",
+    "version": "1.0.0",
+    "extension": {
+      "source": ".",
+      "output": "./dist"
+    },
+    "platforms": {
+      "win": {
+        "name": "LogoDeclinaisons",
+        "iconUrl": "https://via.placeholder.com/256",
+        "iconHash": "sha1"
+      },
+      "mac": {
+        "name": "LogoDeclinaisons",
+        "bundleId": "com.graphiste.logodeclinaisons"
+      }
+    }
+  },
+  "devDependencies": {
+    "zxp-sign-cmd": "^2.0.0"
+  }
+}

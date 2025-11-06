@@ -72,6 +72,36 @@ header {
     padding-bottom: var(--space-sm);
 }
 
+/* Trial Badge */
+.trial-badge {
+    margin-top: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    background: linear-gradient(135deg, rgba(249, 184, 93, 0.15), rgba(249, 184, 93, 0.05));
+    border: 1.5px solid var(--primary-color);
+    border-radius: var(--radius-md);
+    text-align: center;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-color);
+    animation: fadeIn 0.3s ease;
+}
+
+.trial-badge.warning {
+    background: linear-gradient(135deg, rgba(227, 72, 80, 0.15), rgba(227, 72, 80, 0.05));
+    border-color: var(--error-color);
+}
+
+.trial-badge.expired {
+    background: linear-gradient(135deg, rgba(227, 72, 80, 0.2), rgba(227, 72, 80, 0.1));
+    border-color: var(--error-color);
+    font-weight: 600;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* Onglets */
 .tabs {
     display: flex;
