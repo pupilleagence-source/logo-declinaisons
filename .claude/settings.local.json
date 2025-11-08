@@ -12,7 +12,9 @@
       "Bash(done)",
       "Bash(create-zxp-simple.bat)",
       "Bash(vercel inspect:*)",
-      "Bash(vercel ls:*)"
+      "Bash(vercel ls:*)",
+      "Bash(vercel env:*)",
+      "Bash(node test-lemon.js:*)"
     ],
     "deny": [],
     "ask": []

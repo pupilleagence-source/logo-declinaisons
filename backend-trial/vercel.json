@@ -19,6 +19,34 @@
     {
       "src": "/api/trial/reset",
       "dest": "/api/trial/reset.js"
+    },
+    {
+      "src": "/api/license/activate",
+      "dest": "/api/license/activate.js"
+    },
+    {
+      "src": "/api/license/validate",
+      "dest": "/api/license/validate.js"
+    },
+    {
+      "src": "/api/license/deactivate",
+      "dest": "/api/license/deactivate.js"
+    },
+    {
+      "src": "/api/license/force-deactivate",
+      "dest": "/api/license/force-deactivate.js"
+    },
+    {
+      "src": "/api/webhooks/lemonsqueezy",
+      "dest": "/api/webhooks/lemonsqueezy.js"
+    },
+    {
+      "src": "/api/debug/redis",
+      "dest": "/api/debug/redis.js"
+    },
+    {
+      "src": "/api/version/latest",
+      "dest": "/api/version/latest.js"
     }
   ],
   "env": {

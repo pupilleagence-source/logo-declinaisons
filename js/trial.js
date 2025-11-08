@@ -57,24 +57,75 @@ const Trial = {
 
             // Essayer de valider avec le serveur
             try {
-                // TODO: Appel au serveur pour valider la license
-                console.log('✓ License active (validée serveur)');
-                return {
-                    type: 'licensed',
-                    unlimitedGenerations: true,
-                    licenseKey: license.key,
-                    email: license.email
-                };
+                const hwid = await HWID.get();
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                const response = await fetch('https://logotyps.vercel.app/api/license/validate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ hwid }),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+
+                    if (data.valid) {
+                        // Licence valide, mettre à jour le cache
+                        this.saveCachedStatus({
+                            type: 'licensed',
+                            unlimitedGenerations: true,
+                            expiry: Date.now() + (24 * 60 * 60 * 1000) // 24h
+                        });
+
+                        console.log('✓ License active (validée serveur)');
+                        return {
+                            type: 'licensed',
+                            unlimitedGenerations: true,
+                            licenseKey: license.key,
+                            email: license.email
+                        };
+                    } else {
+                        // Licence révoquée ou expirée
+                        console.warn('⚠️ Licence révoquée:', data.message);
+                        localStorage.removeItem('_license');
+                        localStorage.removeItem('_trial_cache');
+
+                        // Basculer en mode trial
+                        const trialStatus = await this.validateWithServer();
+                        return trialStatus;
+                    }
+                } else {
+                    throw new Error('Erreur validation serveur');
+                }
             } catch (error) {
-                // Mode offline pour les licences payées
-                console.log('⚠️ Serveur inaccessible, utilisation license en mode offline');
-                return {
-                    type: 'licensed',
-                    unlimitedGenerations: true,
-                    licenseKey: license.key,
-                    email: license.email,
-                    offline: true
-                };
+                // Mode offline pour les licences payées (grace period de 7 jours)
+                const licenseAge = Date.now() - (license.activatedAt || 0);
+                const maxOfflineAge = 7 * 24 * 60 * 60 * 1000; // 7 jours
+
+                if (licenseAge < maxOfflineAge) {
+                    console.log('⚠️ Serveur inaccessible, utilisation license en mode offline');
+                    return {
+                        type: 'licensed',
+                        unlimitedGenerations: true,
+                        licenseKey: license.key,
+                        email: license.email,
+                        offline: true
+                    };
+                } else {
+                    console.error('❌ Licence offline depuis trop longtemps (>7 jours)');
+                    return {
+                        type: 'trial',
+                        error: true,
+                        message: 'Connexion Internet requise pour valider votre licence.\n\n(Offline depuis plus de 7 jours)'
+                    };
+                }
             }
         }
 
@@ -155,14 +206,85 @@ const Trial = {
 
     /**
      * Vérifie si une génération est autorisée
+     * IMPORTANT: Pour les licences payées, valide en temps réel avec le serveur
      */
     canGenerate: async function() {
-        const status = await this.getStatus();
+        // Vérifier si l'utilisateur a une license
+        const license = this.getStoredLicense();
 
-        // License activée → illimité (même en offline)
-        if (status.type === 'licensed') {
-            return { allowed: true, reason: 'licensed', offline: status.offline };
+        if (license && license.active) {
+            // FORCE validation serveur avant chaque génération (pas de cache)
+            try {
+                const hwid = await HWID.get();
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                const response = await fetch('https://logotyps.vercel.app/api/license/validate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ hwid }),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+
+                    if (data.valid) {
+                        // Licence valide
+                        console.log('✓ License valide (vérification temps réel)');
+                        return { allowed: true, reason: 'licensed' };
+                    } else {
+                        // Licence révoquée → Désactiver sur Lemon Squeezy pour libérer le slot
+                        console.warn('⚠️ Licence révoquée:', data.message);
+
+                        // Libérer le slot Lemon Squeezy
+                        try {
+                            await this.forceLicenseDeactivate();
+                            console.log('✓ Slot Lemon Squeezy libéré');
+                        } catch (deactivateError) {
+                            console.warn('⚠️ Impossible de libérer le slot:', deactivateError);
+                        }
+
+                        return {
+                            allowed: false,
+                            reason: 'license_revoked',
+                            message: 'Votre licence a été révoquée.\n\nVeuillez contacter le support.',
+                            needsUIUpdate: true // Signal pour mettre à jour l'interface
+                        };
+                    }
+                } else {
+                    throw new Error('Erreur validation serveur');
+                }
+            } catch (error) {
+                // Mode offline pour les licences payées (grace period de 7 jours)
+                const licenseAge = Date.now() - (license.activatedAt || 0);
+                const maxOfflineAge = 7 * 24 * 60 * 60 * 1000; // 7 jours
+
+                if (licenseAge < maxOfflineAge) {
+                    console.log('⚠️ Serveur inaccessible, utilisation license en mode offline');
+                    return {
+                        allowed: true,
+                        reason: 'licensed',
+                        offline: true
+                    };
+                } else {
+                    console.error('❌ Licence offline depuis trop longtemps (>7 jours)');
+                    return {
+                        allowed: false,
+                        reason: 'license_offline',
+                        message: 'Connexion Internet requise pour valider votre licence.\n\n(Offline depuis plus de 7 jours)'
+                    };
+                }
+            }
         }
+
+        // TRIAL : Vérifier le statut
+        const status = await this.getStatus();
 
         // Trial en erreur (serveur inaccessible)
         if (status.error) {
@@ -354,6 +476,53 @@ const Trial = {
             localStorage.removeItem('_trial_cache');
             localStorage.removeItem('_license');
             localStorage.removeItem('_hwid');
+        }
+    },
+
+    /**
+     * Force la désactivation d'une licence (sans passer par Lemon Squeezy)
+     * Utilisé quand l'instance_id n'est pas disponible
+     */
+    forceLicenseDeactivate: async function() {
+        try {
+            const hwid = await HWID.get();
+
+            // Supprimer localement d'abord
+            localStorage.removeItem('_license');
+
+            // Appeler le serveur pour supprimer de Redis
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+                const response = await fetch('https://logotyps.vercel.app/api/license/force-deactivate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ hwid }),
+                    signal: controller.signal
+                });
+
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('✓ Licence désactivée (force):', data);
+                    return { success: true, message: 'Licence désactivée avec succès' };
+                } else {
+                    const error = await response.json();
+                    console.warn('⚠️ Erreur désactivation serveur:', error);
+                    return { success: false, message: error.message };
+                }
+            } catch (error) {
+                console.warn('⚠️ Licence supprimée localement, serveur inaccessible:', error.message);
+                return { success: true, message: 'Licence supprimée localement' };
+            }
+
+        } catch (error) {
+            console.error('❌ Erreur force deactivate:', error);
+            return { success: false, message: error.message };
         }
     }
 };

@@ -75,6 +75,7 @@ async function init() {
 
         // Initialiser le système de trial/licensing
         await initTrialSystem();
+        updateLicenseKeyButton();
 
         setupEventListeners();
         updateTabNavigationButtons(); // Initialiser l'état des boutons de navigation
@@ -112,15 +113,8 @@ function updateTrialBadge(status) {
     if (!badge || !text) return;
 
     if (status.type === 'licensed') {
-        // License activée → afficher badge vert
-        badge.style.display = 'block';
-        badge.className = 'trial-badge';
-
-        if (status.offline) {
-            text.textContent = '✅ License activée (Mode offline)';
-        } else {
-            text.textContent = '✅ License activée';
-        }
+        // License activée → cacher le badge (notification suffit)
+        badge.style.display = 'none';
     } else if (status.type === 'trial') {
         badge.style.display = 'block';
 
@@ -639,6 +633,345 @@ function setupEventListeners() {
         });
     }
 
+    // License Key Button & Modal
+    const licenseKeyBtn = document.getElementById('license-key-btn');
+    const licenseModal = document.getElementById('license-modal');
+    const closeLicenseModal = document.getElementById('close-license-modal');
+    const cancelLicenseBtn = document.getElementById('cancel-license-btn');
+    const activateLicenseSubmitBtn = document.getElementById('activate-license-submit-btn');
+    const deactivateLicenseBtn = document.getElementById('deactivate-license-btn');
+
+    if (licenseKeyBtn) {
+        licenseKeyBtn.addEventListener('click', openLicenseModal);
+    }
+
+    if (closeLicenseModal) {
+        closeLicenseModal.addEventListener('click', () => {
+            licenseModal.style.display = 'none';
+        });
+    }
+
+    if (cancelLicenseBtn) {
+        cancelLicenseBtn.addEventListener('click', () => {
+            licenseModal.style.display = 'none';
+        });
+    }
+
+    if (activateLicenseSubmitBtn) {
+        activateLicenseSubmitBtn.addEventListener('click', handleLicenseActivation);
+    }
+
+    if (deactivateLicenseBtn) {
+        deactivateLicenseBtn.addEventListener('click', handleLicenseDeactivation);
+    }
+
+    // Fermer la modal en cliquant en dehors
+    if (licenseModal) {
+        licenseModal.addEventListener('click', (e) => {
+            if (e.target === licenseModal) {
+                licenseModal.style.display = 'none';
+            }
+        });
+    }
+
+    // === UPDATE MODAL ===
+    const updateModal = document.getElementById('update-modal');
+    const closeUpdateModal = document.getElementById('close-update-modal');
+    const updateSkipBtn = document.getElementById('update-skip-btn');
+    const updateDownloadBtn = document.getElementById('update-download-btn');
+
+    if (closeUpdateModal) {
+        closeUpdateModal.addEventListener('click', () => {
+            UpdateChecker.closeUpdateModal();
+        });
+    }
+
+    if (updateSkipBtn) {
+        updateSkipBtn.addEventListener('click', () => {
+            UpdateChecker.closeUpdateModal();
+        });
+    }
+
+    if (updateDownloadBtn) {
+        updateDownloadBtn.addEventListener('click', () => {
+            const downloadUrl = updateDownloadBtn.dataset.downloadUrl;
+            if (downloadUrl) {
+                UpdateChecker.downloadUpdate(downloadUrl);
+            }
+        });
+    }
+
+    // Fermer la modal en cliquant en dehors
+    if (updateModal) {
+        updateModal.addEventListener('click', (e) => {
+            if (e.target === updateModal) {
+                UpdateChecker.closeUpdateModal();
+            }
+        });
+    }
+
+}
+
+/**
+ * Ouvre la modal de licence (activation ou manage)
+ */
+async function openLicenseModal() {
+    const licenseModal = document.getElementById('license-modal');
+    const activationForm = document.getElementById('license-activation-form');
+    const licenseInfo = document.getElementById('license-info-display');
+    const activateBtn = document.getElementById('activate-license-submit-btn');
+    const deactivateBtn = document.getElementById('deactivate-license-btn');
+    const errorDiv = document.getElementById('license-error');
+    const successDiv = document.getElementById('license-success');
+
+    // Reset messages
+    errorDiv.style.display = 'none';
+    successDiv.style.display = 'none';
+
+    // Vérifier si une licence est active
+    const license = Trial.getStoredLicense();
+
+    if (license && license.active) {
+        // Afficher les infos de la licence
+        activationForm.style.display = 'none';
+        licenseInfo.style.display = 'block';
+        activateBtn.style.display = 'none';
+        deactivateBtn.style.display = 'inline-block';
+
+        // Remplir les infos
+        document.getElementById('license-type-display').textContent =
+            license.type === 'lifetime' ? 'Lifetime (à vie)' : 'Mensuelle';
+        document.getElementById('license-key-display').textContent =
+            license.key.substring(0, 10) + '...';
+    } else {
+        // Afficher le formulaire d'activation
+        activationForm.style.display = 'block';
+        licenseInfo.style.display = 'none';
+        activateBtn.style.display = 'inline-block';
+        deactivateBtn.style.display = 'none';
+
+        // Reset formulaire
+        document.getElementById('license-key-input').value = '';
+    }
+
+    licenseModal.style.display = 'flex';
+}
+
+/**
+ * Met à jour le bouton License Key selon l'état
+ */
+function updateLicenseKeyButton() {
+    const licenseKeyBtn = document.getElementById('license-key-btn');
+    const licenseKeyText = document.getElementById('license-key-text');
+
+    if (!licenseKeyBtn || !licenseKeyText) return;
+
+    const license = Trial.getStoredLicense();
+    const resetTrialBtn = document.getElementById('reset-trial-btn');
+
+    if (license && license.active) {
+        // Licence active
+        licenseKeyBtn.classList.add('active');
+        licenseKeyText.textContent = '✓ Licensed';
+
+        // Cacher le bouton reset trial et le badge
+        if (resetTrialBtn && resetTrialBtn.parentElement) {
+            resetTrialBtn.parentElement.style.display = 'none';
+        }
+    } else {
+        // Mode trial
+        licenseKeyBtn.classList.remove('active');
+        licenseKeyText.textContent = 'License Key';
+
+        // Afficher le bouton reset trial
+        if (resetTrialBtn && resetTrialBtn.parentElement) {
+            resetTrialBtn.parentElement.style.display = 'block';
+        }
+    }
+}
+
+/**
+ * Gère l'activation de licence
+ */
+async function handleLicenseActivation() {
+    const licenseKey = document.getElementById('license-key-input').value.trim();
+    const errorDiv = document.getElementById('license-error');
+    const successDiv = document.getElementById('license-success');
+    const submitBtn = document.getElementById('activate-license-submit-btn');
+
+    // Reset messages
+    errorDiv.style.display = 'none';
+    successDiv.style.display = 'none';
+
+    // Validation
+    if (!licenseKey) {
+        errorDiv.textContent = 'Veuillez entrer une clé de licence.';
+        errorDiv.style.display = 'block';
+        return;
+    }
+
+    try {
+        // Désactiver le bouton pendant l'activation
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Activation en cours...';
+
+        // Récupérer le HWID
+        const hwid = await HWID.get();
+
+        // Appeler l'API d'activation (email par défaut pour la compatibilité backend)
+        const response = await fetch('https://logotyps.vercel.app/api/license/activate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                licenseKey: licenseKey,
+                email: 'user@license.local',
+                hwid: hwid
+            })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            // Stocker la licence
+            Trial.storeLicense({
+                active: true,
+                key: licenseKey,
+                email: 'user@license.local',
+                type: data.licenseType || 'lifetime',
+                activatedAt: Date.now()
+            });
+
+            // Afficher le succès
+            successDiv.textContent = '✓ Licence activée avec succès ! Vous avez maintenant un accès illimité.';
+            successDiv.style.display = 'block';
+
+            // Mettre à jour le badge et le bouton
+            const status = await Trial.getStatus();
+            updateTrialBadge(status);
+            updateLicenseKeyButton();
+
+            // Fermer la modal après 2 secondes
+            setTimeout(() => {
+                document.getElementById('license-modal').style.display = 'none';
+                showStatus('✓ Licence activée ! Générations illimitées', 'success');
+            }, 2000);
+
+        } else {
+            // Afficher l'erreur
+            errorDiv.textContent = data.message || 'Erreur lors de l\'activation de la licence.';
+            errorDiv.style.display = 'block';
+        }
+
+    } catch (error) {
+        console.error('Erreur activation licence:', error);
+        errorDiv.textContent = 'Erreur de connexion au serveur. Vérifiez votre connexion Internet.';
+        errorDiv.style.display = 'block';
+    } finally {
+        // Réactiver le bouton
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Activer';
+    }
+}
+
+/**
+ * Gère la désactivation de licence
+ */
+async function handleLicenseDeactivation() {
+    const errorDiv = document.getElementById('license-error');
+    const successDiv = document.getElementById('license-success');
+    const deactivateBtn = document.getElementById('deactivate-license-btn');
+
+    if (!confirm('Êtes-vous sûr de vouloir désactiver cette licence sur cet appareil ?\n\nCela libérera une activation pour l\'utiliser sur un autre appareil.')) {
+        return;
+    }
+
+    try {
+        // Désactiver le bouton
+        deactivateBtn.disabled = true;
+        deactivateBtn.textContent = 'Désactivation...';
+
+        // Récupérer la licence et le HWID
+        const license = Trial.getStoredLicense();
+        const hwid = await HWID.get();
+
+        if (!license) {
+            throw new Error('Aucune licence trouvée');
+        }
+
+        // Essayer d'abord la désactivation normale
+        const response = await fetch('https://logotyps.vercel.app/api/license/deactivate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                licenseKey: license.key,
+                hwid: hwid
+            })
+        });
+
+        const data = await response.json();
+
+        // Si échec à cause de l'instance_id manquant, utiliser force-deactivate
+        if (!response.ok && data.message && data.message.includes('Instance ID manquant')) {
+            console.log('⚠️ Instance ID manquant, utilisation de force-deactivate...');
+
+            const forceResult = await Trial.forceLicenseDeactivate();
+
+            if (forceResult.success) {
+                // Afficher le succès
+                successDiv.textContent = '✓ Licence désactivée avec succès.';
+                successDiv.style.display = 'block';
+
+                // Mettre à jour l'interface
+                const status = await Trial.getStatus();
+                updateTrialBadge(status);
+                updateLicenseKeyButton();
+
+                // Fermer la modal après 2 secondes
+                setTimeout(() => {
+                    document.getElementById('license-modal').style.display = 'none';
+                    showStatus('Licence désactivée. Retour au mode trial.', 'success');
+                }, 2000);
+            } else {
+                errorDiv.textContent = forceResult.message || 'Erreur lors de la désactivation.';
+                errorDiv.style.display = 'block';
+            }
+        } else if (response.ok && data.success) {
+            // Désactivation normale réussie
+            localStorage.removeItem('_license');
+
+            // Afficher le succès
+            successDiv.textContent = '✓ Licence désactivée avec succès.';
+            successDiv.style.display = 'block';
+
+            // Mettre à jour l'interface
+            const status = await Trial.getStatus();
+            updateTrialBadge(status);
+            updateLicenseKeyButton();
+
+            // Fermer la modal après 2 secondes
+            setTimeout(() => {
+                document.getElementById('license-modal').style.display = 'none';
+                showStatus('Licence désactivée. Retour au mode trial.', 'success');
+            }, 2000);
+        } else {
+            // Autre erreur
+            errorDiv.textContent = data.message || 'Erreur lors de la désactivation.';
+            errorDiv.style.display = 'block';
+        }
+
+    } catch (error) {
+        console.error('Erreur désactivation licence:', error);
+        errorDiv.textContent = 'Erreur de connexion au serveur.';
+        errorDiv.style.display = 'block';
+    } finally {
+        // Réactiver le bouton
+        deactivateBtn.disabled = false;
+        deactivateBtn.textContent = 'Désactiver';
+    }
 }
 
 async function handleSelection(event) {
@@ -827,6 +1160,14 @@ async function handleGenerate() {
             // Trial épuisé → Bloquer et afficher message
             showStatus(canGenerate.message, 'error');
             console.log('❌ Génération bloquée:', canGenerate.reason);
+
+            // Si la licence a été révoquée, mettre à jour l'interface
+            if (canGenerate.needsUIUpdate) {
+                const newStatus = await Trial.getStatus();
+                updateTrialBadge(newStatus);
+                updateLicenseKeyButton();
+            }
+
             return; // Arrêter ici
         }
 
