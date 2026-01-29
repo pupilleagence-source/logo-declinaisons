@@ -462,6 +462,66 @@ function extractAllStoredColors() {
     }
 }
 
+// 🎨 Extraire les couleurs des stops d'un dégradé
+function extractGradientStopColors(gradientColor, colorSet, colorCount) {
+    try {
+        var gradient = gradientColor.gradient;
+        for (var s = 0; s < gradient.gradientStops.length; s++) {
+            if (colorCount >= 30) break;
+            var stop = gradient.gradientStops[s];
+            var hex = null;
+            if (stop.color.typename === "RGBColor") {
+                hex = rgbToHex(stop.color);
+            } else if (stop.color.typename === "CMYKColor") {
+                hex = cmykToHex(stop.color);
+            }
+            if (hex && !colorSet[hex]) {
+                colorSet[hex] = true;
+                colorCount++;
+            }
+        }
+    } catch (e) {
+        $.writeln("Erreur extractGradientStopColors: " + e.toString());
+    }
+    return colorCount;
+}
+
+// 🎨 Appliquer un mapping de couleurs custom aux stops d'un dégradé
+function applyColorMappingToGradient(gradientColor, colorMapping) {
+    try {
+        var gradient = gradientColor.gradient;
+        for (var s = 0; s < gradient.gradientStops.length; s++) {
+            var stop = gradient.gradientStops[s];
+            var hex = null;
+            if (stop.color.typename === "RGBColor") {
+                hex = rgbToHex(stop.color);
+            } else if (stop.color.typename === "CMYKColor") {
+                hex = cmykToHex(stop.color);
+            }
+            if (hex) {
+                var newHex = findCustomColor(hex, colorMapping);
+                if (newHex && newHex !== hex) {
+                    stop.color = hexToRGBColor(newHex);
+                }
+            }
+        }
+    } catch (e) {
+        $.writeln("Erreur applyColorMappingToGradient: " + e.toString());
+    }
+}
+
+// 🎨 Appliquer une couleur monochrome à tous les stops d'un dégradé
+function applyMonochromeToGradient(gradientColor, color) {
+    try {
+        var gradient = gradientColor.gradient;
+        for (var s = 0; s < gradient.gradientStops.length; s++) {
+            gradient.gradientStops[s].color = color;
+        }
+    } catch (e) {
+        $.writeln("Erreur applyMonochromeToGradient: " + e.toString());
+    }
+}
+
 function extractColorsRecursive(item, colorSet, colorCount) {
     if (colorCount >= 30) return colorCount; // Augmenté de 10 à 30
 
@@ -477,13 +537,15 @@ function extractColorsRecursive(item, colorSet, colorCount) {
                 if (colorCount >= 30) break;
             }
         } else if (item.typename === "PathItem") {
-            // 🎨 Extraire fillColor (RGB ou CMYK)
+            // 🎨 Extraire fillColor (RGB, CMYK ou Gradient)
             if (item.filled) {
                 var hex = null;
                 if (item.fillColor.typename === "RGBColor") {
                     hex = rgbToHex(item.fillColor);
                 } else if (item.fillColor.typename === "CMYKColor") {
                     hex = cmykToHex(item.fillColor);
+                } else if (item.fillColor.typename === "GradientColor") {
+                    colorCount = extractGradientStopColors(item.fillColor, colorSet, colorCount);
                 }
 
                 if (hex && !colorSet[hex]) {
@@ -492,13 +554,15 @@ function extractColorsRecursive(item, colorSet, colorCount) {
                 }
             }
 
-            // 🎨 Extraire strokeColor (RGB ou CMYK)
+            // 🎨 Extraire strokeColor (RGB, CMYK ou Gradient)
             if (colorCount < 30 && item.stroked) {
                 var hex = null;
                 if (item.strokeColor.typename === "RGBColor") {
                     hex = rgbToHex(item.strokeColor);
                 } else if (item.strokeColor.typename === "CMYKColor") {
                     hex = cmykToHex(item.strokeColor);
+                } else if (item.strokeColor.typename === "GradientColor") {
+                    colorCount = extractGradientStopColors(item.strokeColor, colorSet, colorCount);
                 }
 
                 if (hex && !colorSet[hex]) {
@@ -509,7 +573,7 @@ function extractColorsRecursive(item, colorSet, colorCount) {
         } else if (item.typename === "TextFrame") {
             var textRange = item.textRange;
 
-            // 🎨 Extraire fillColor du texte (RGB ou CMYK)
+            // 🎨 Extraire fillColor du texte (RGB, CMYK ou Gradient)
             if (textRange.characterAttributes.fillColor) {
                 var fillColorType = textRange.characterAttributes.fillColor.typename;
                 var hex = null;
@@ -518,6 +582,8 @@ function extractColorsRecursive(item, colorSet, colorCount) {
                     hex = rgbToHex(textRange.characterAttributes.fillColor);
                 } else if (fillColorType === "CMYKColor") {
                     hex = cmykToHex(textRange.characterAttributes.fillColor);
+                } else if (fillColorType === "GradientColor") {
+                    colorCount = extractGradientStopColors(textRange.characterAttributes.fillColor, colorSet, colorCount);
                 }
 
                 if (hex && !colorSet[hex]) {
@@ -526,7 +592,7 @@ function extractColorsRecursive(item, colorSet, colorCount) {
                 }
             }
 
-            // 🎨 Extraire strokeColor du texte (RGB ou CMYK)
+            // 🎨 Extraire strokeColor du texte (RGB, CMYK ou Gradient)
             if (colorCount < 30 && textRange.characterAttributes.strokeColor) {
                 var strokeColorType = textRange.characterAttributes.strokeColor.typename;
                 var hex = null;
@@ -535,6 +601,8 @@ function extractColorsRecursive(item, colorSet, colorCount) {
                     hex = rgbToHex(textRange.characterAttributes.strokeColor);
                 } else if (strokeColorType === "CMYKColor") {
                     hex = cmykToHex(textRange.characterAttributes.strokeColor);
+                } else if (strokeColorType === "GradientColor") {
+                    colorCount = extractGradientStopColors(textRange.characterAttributes.strokeColor, colorSet, colorCount);
                 }
 
                 if (hex && !colorSet[hex]) {
@@ -545,7 +613,7 @@ function extractColorsRecursive(item, colorSet, colorCount) {
         } else if (item.pageItems && item.pageItems.length > 0) {
             for (var i = 0; i < item.pageItems.length; i++) {
                 colorCount = extractColorsRecursive(item.pageItems[i], colorSet, colorCount);
-                if (colorCount >= 10) break;
+                if (colorCount >= 30) break;
             }
         }
     } catch (e) {
@@ -679,85 +747,92 @@ function applyCustomColorsRecursive(item, colorMapping, tmpPaths) {
                 item.filled = true;
             }
 
-            // 🎨 GESTION RGB ET CMYK pour fillColor
+            // 🎨 GESTION RGB, CMYK ET GRADIENT pour fillColor
             if (item.filled) {
-                var hex = null;
+                if (item.fillColor.typename === "GradientColor") {
+                    applyColorMappingToGradient(item.fillColor, colorMapping);
+                } else {
+                    var hex = null;
+                    if (item.fillColor.typename === "RGBColor") {
+                        hex = rgbToHex(item.fillColor);
+                    } else if (item.fillColor.typename === "CMYKColor") {
+                        hex = cmykToHex(item.fillColor);
+                    }
 
-                // Extraire la couleur en hex (RGB ou CMYK)
-                if (item.fillColor.typename === "RGBColor") {
-                    hex = rgbToHex(item.fillColor);
-                } else if (item.fillColor.typename === "CMYKColor") {
-                    hex = cmykToHex(item.fillColor);
-                }
-
-                if (hex) {
-                    var newHex = findCustomColor(hex, colorMapping);
-                    if (newHex && newHex !== hex) {
-                        // 🔑 TOUJOURS créer une RGBColor et laisser Illustrator faire la conversion
-                        // C'est la stratégie de monochrome qui fonctionne!
-                        item.fillColor = hexToRGBColor(newHex);
+                    if (hex) {
+                        var newHex = findCustomColor(hex, colorMapping);
+                        if (newHex && newHex !== hex) {
+                            item.fillColor = hexToRGBColor(newHex);
+                        }
                     }
                 }
             }
 
-            // 🎨 GESTION RGB ET CMYK pour strokeColor
+            // 🎨 GESTION RGB, CMYK ET GRADIENT pour strokeColor
             if (item.stroked) {
-                var hex = null;
+                if (item.strokeColor.typename === "GradientColor") {
+                    applyColorMappingToGradient(item.strokeColor, colorMapping);
+                } else {
+                    var hex = null;
+                    if (item.strokeColor.typename === "RGBColor") {
+                        hex = rgbToHex(item.strokeColor);
+                    } else if (item.strokeColor.typename === "CMYKColor") {
+                        hex = cmykToHex(item.strokeColor);
+                    }
 
-                // Extraire la couleur en hex (RGB ou CMYK)
-                if (item.strokeColor.typename === "RGBColor") {
-                    hex = rgbToHex(item.strokeColor);
-                } else if (item.strokeColor.typename === "CMYKColor") {
-                    hex = cmykToHex(item.strokeColor);
-                }
-
-                if (hex) {
-                    var newHex = findCustomColor(hex, colorMapping);
-                    if (newHex && newHex !== hex) {
-                        // 🔑 TOUJOURS créer une RGBColor et laisser Illustrator faire la conversion
-                        item.strokeColor = hexToRGBColor(newHex);
+                    if (hex) {
+                        var newHex = findCustomColor(hex, colorMapping);
+                        if (newHex && newHex !== hex) {
+                            item.strokeColor = hexToRGBColor(newHex);
+                        }
                     }
                 }
             }
         } else if (item.typename === "TextFrame") {
             var textRange = item.textRange;
 
-            // 🎨 GESTION RGB ET CMYK pour fillColor du texte
+            // 🎨 GESTION RGB, CMYK ET GRADIENT pour fillColor du texte
             if (textRange.characterAttributes.fillColor) {
                 var fillColorType = textRange.characterAttributes.fillColor.typename;
-                var hex = null;
 
-                if (fillColorType === "RGBColor") {
-                    hex = rgbToHex(textRange.characterAttributes.fillColor);
-                } else if (fillColorType === "CMYKColor") {
-                    hex = cmykToHex(textRange.characterAttributes.fillColor);
-                }
+                if (fillColorType === "GradientColor") {
+                    applyColorMappingToGradient(textRange.characterAttributes.fillColor, colorMapping);
+                } else {
+                    var hex = null;
+                    if (fillColorType === "RGBColor") {
+                        hex = rgbToHex(textRange.characterAttributes.fillColor);
+                    } else if (fillColorType === "CMYKColor") {
+                        hex = cmykToHex(textRange.characterAttributes.fillColor);
+                    }
 
-                if (hex) {
-                    var newHex = findCustomColor(hex, colorMapping);
-                    if (newHex && newHex !== hex) {
-                        // 🔑 TOUJOURS créer une RGBColor et laisser Illustrator faire la conversion
-                        textRange.characterAttributes.fillColor = hexToRGBColor(newHex);
+                    if (hex) {
+                        var newHex = findCustomColor(hex, colorMapping);
+                        if (newHex && newHex !== hex) {
+                            textRange.characterAttributes.fillColor = hexToRGBColor(newHex);
+                        }
                     }
                 }
             }
 
-            // 🎨 GESTION RGB ET CMYK pour strokeColor du texte
+            // 🎨 GESTION RGB, CMYK ET GRADIENT pour strokeColor du texte
             if (textRange.characterAttributes.strokeColor) {
                 var strokeColorType = textRange.characterAttributes.strokeColor.typename;
-                var hex = null;
 
-                if (strokeColorType === "RGBColor") {
-                    hex = rgbToHex(textRange.characterAttributes.strokeColor);
-                } else if (strokeColorType === "CMYKColor") {
-                    hex = cmykToHex(textRange.characterAttributes.strokeColor);
-                }
+                if (strokeColorType === "GradientColor") {
+                    applyColorMappingToGradient(textRange.characterAttributes.strokeColor, colorMapping);
+                } else {
+                    var hex = null;
+                    if (strokeColorType === "RGBColor") {
+                        hex = rgbToHex(textRange.characterAttributes.strokeColor);
+                    } else if (strokeColorType === "CMYKColor") {
+                        hex = cmykToHex(textRange.characterAttributes.strokeColor);
+                    }
 
-                if (hex) {
-                    var newHex = findCustomColor(hex, colorMapping);
-                    if (newHex && newHex !== hex) {
-                        // 🔑 TOUJOURS créer une RGBColor et laisser Illustrator faire la conversion
-                        textRange.characterAttributes.strokeColor = hexToRGBColor(newHex);
+                    if (hex) {
+                        var newHex = findCustomColor(hex, colorMapping);
+                        if (newHex && newHex !== hex) {
+                            textRange.characterAttributes.strokeColor = hexToRGBColor(newHex);
+                        }
                     }
                 }
             }
@@ -2405,7 +2480,7 @@ function exportForScreensPDF(doc, artboardIndex, baseFilePath, artboardName) {
         var itemsToExport = new ExportForScreensItemToExport();
         itemsToExport.artboards = String(artboardIndex + 1);
         itemsToExport.document = false;
-        
+
         var fileSpec = new File(baseFilePath + ".pdf");
         doc.exportForScreens(fileSpec.parent, ExportForScreensType.SE_PDF, exportOptions, itemsToExport, artboardName);
     } catch (e) {
@@ -2420,5 +2495,63 @@ function exportForScreensPDF(doc, artboardIndex, baseFilePath, artboardName) {
             saveOpts.artboardRange = String(artboardIndex + 1);
             doc.saveAs(new File(baseFilePath + ".pdf"), saveOpts);
         } catch (fallbackError) {}
+    }
+}
+
+/**
+ * Active le PlayerDebugMode sur Mac pour permettre les mises à jour automatiques
+ * Retourne un objet JSON stringifié avec le résultat
+ */
+function enablePlayerDebugMode() {
+    try {
+        // Détecter si on est sur Mac
+        var isMac = $.os.toLowerCase().indexOf('mac') >= 0;
+
+        if (!isMac) {
+            return JSON.stringify({
+                success: true,
+                platform: 'windows',
+                message: 'Windows détecté - PlayerDebugMode non requis'
+            });
+        }
+
+        // Activer pour les différentes versions de CSXS
+        var csxsVersions = [
+            'com.adobe.CSXS.9',   // CC 2018-2019
+            'com.adobe.CSXS.10',  // CC 2020
+            'com.adobe.CSXS.11',  // CC 2021+
+            'com.adobe.CSXS.12'   // Futures versions
+        ];
+
+        var activatedCount = 0;
+
+        for (var i = 0; i < csxsVersions.length; i++) {
+            try {
+                var command = 'defaults write ' + csxsVersions[i] + ' PlayerDebugMode 1';
+                system.callSystem(command);
+                activatedCount++;
+            } catch (e) {
+                // Ignorer les erreurs pour les versions non installées
+            }
+        }
+
+        if (activatedCount > 0) {
+            return JSON.stringify({
+                success: true,
+                needsRestart: true,
+                message: 'PlayerDebugMode activé pour ' + activatedCount + ' version(s) de CSXS'
+            });
+        } else {
+            return JSON.stringify({
+                success: false,
+                error: 'Aucune version de CSXS trouvée'
+            });
+        }
+
+    } catch (error) {
+        return JSON.stringify({
+            success: false,
+            error: error.toString()
+        });
     }
 }
