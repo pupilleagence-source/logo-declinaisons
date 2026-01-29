@@ -119,12 +119,24 @@ const Trial = {
                         offline: true
                     };
                 } else {
-                    console.error('❌ Licence offline depuis trop longtemps (>7 jours)');
-                    return {
-                        type: 'trial',
-                        error: true,
-                        message: 'Connexion Internet requise pour valider votre licence.\n\n(Offline depuis plus de 7 jours)'
-                    };
+                    // Grace period expiré : supprimer la licence fantôme et basculer en trial
+                    console.warn('⚠️ Licence offline depuis trop longtemps (>7 jours), bascule en mode trial');
+                    localStorage.removeItem('_license');
+                    localStorage.removeItem('_trial_cache');
+
+                    // Tenter le mode trial
+                    try {
+                        const trialStatus = await this.validateWithServer();
+                        return trialStatus;
+                    } catch (trialError) {
+                        console.error('❌ Serveur inaccessible pour le trial aussi', trialError);
+                        return {
+                            type: 'trial',
+                            error: true,
+                            offline: true,
+                            message: 'Connexion Internet requise pour utiliser le trial gratuit.\n\nActivez une license pour un accès offline illimité.'
+                        };
+                    }
                 }
             }
         }
