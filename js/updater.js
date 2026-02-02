@@ -4,10 +4,13 @@
 
 const UpdateChecker = {
     // Version actuelle du plugin (doit correspondre au manifest.xml)
-    CURRENT_VERSION: '1.0.0',
+    CURRENT_VERSION: '1.0.1',
 
     // URL de l'API de versionning
     API_URL: 'https://logotyps.vercel.app/api/version/latest',
+
+    // URL de l'API de mise à jour
+    UPDATES_API_URL: 'https://logotyps.vercel.app/api/updates',
 
     /**
      * Compare deux versions (format: x.y.z)
@@ -105,7 +108,98 @@ const UpdateChecker = {
     },
 
     /**
-     * Télécharge la mise à jour
+     * Installe la mise à jour automatiquement
+     */
+    installUpdate: async function() {
+        const modal = document.getElementById('update-modal');
+        const downloadBtn = document.getElementById('update-download-btn');
+        const skipBtn = document.getElementById('update-skip-btn');
+        const modalBody = modal.querySelector('.modal-body');
+
+        try {
+            // Désactiver les boutons
+            downloadBtn.disabled = true;
+            skipBtn.disabled = true;
+            downloadBtn.textContent = 'Installation en cours...';
+
+            // Afficher la progression
+            const progressDiv = document.createElement('div');
+            progressDiv.id = 'update-progress';
+            progressDiv.style.marginTop = '20px';
+            progressDiv.style.padding = '15px';
+            progressDiv.style.background = '#f0f0f0';
+            progressDiv.style.borderRadius = '8px';
+            progressDiv.innerHTML = '<strong>Installation...</strong><br><span id="progress-text">Téléchargement du manifest...</span>';
+            modalBody.appendChild(progressDiv);
+
+            const progressText = document.getElementById('progress-text');
+
+            // Télécharger le manifest de mise à jour
+            const manifestResponse = await fetch(`${this.UPDATES_API_URL}/manifest`);
+            if (!manifestResponse.ok) {
+                throw new Error('Impossible de récupérer le manifest de mise à jour');
+            }
+
+            const manifest = await manifestResponse.json();
+
+            // Effectuer la mise à jour avec AutoUpdater
+            const result = await AutoUpdater.performUpdate(manifest, (file, current, total) => {
+                progressText.textContent = `Mise à jour (${current}/${total}): ${file}`;
+            });
+
+            if (result.success) {
+                // Succès !
+                progressDiv.innerHTML = `
+                    <strong style="color: #4CAF50;">✅ Mise à jour installée avec succès !</strong><br><br>
+                    <p>${result.filesUpdated.length} fichier(s) mis à jour.</p>
+                    <p style="color: #ff9800;"><strong>⚠️ Veuillez fermer et rouvrir Illustrator pour appliquer les changements.</strong></p>
+                `;
+
+                // Changer le bouton
+                downloadBtn.textContent = 'Fermer';
+                downloadBtn.disabled = false;
+                downloadBtn.onclick = () => {
+                    modal.style.display = 'none';
+                };
+
+                // Masquer le bouton "Plus tard"
+                skipBtn.style.display = 'none';
+
+            } else {
+                // Échec
+                throw new Error('La mise à jour a échoué');
+            }
+
+        } catch (error) {
+            console.error('❌ Erreur d\'installation:', error);
+
+            // Afficher l'erreur
+            const errorDiv = document.createElement('div');
+            errorDiv.style.marginTop = '15px';
+            errorDiv.style.padding = '10px';
+            errorDiv.style.background = '#ffebee';
+            errorDiv.style.border = '1px solid #f44336';
+            errorDiv.style.borderRadius = '6px';
+            errorDiv.style.color = '#c62828';
+            errorDiv.innerHTML = `<strong>❌ Erreur :</strong> ${error.message}`;
+            modalBody.appendChild(errorDiv);
+
+            // Réactiver les boutons
+            downloadBtn.textContent = 'Télécharger manuellement';
+            downloadBtn.disabled = false;
+            downloadBtn.onclick = () => {
+                // Fallback : ouvrir le lien manuel
+                const manualUrl = downloadBtn.dataset.downloadUrl;
+                if (manualUrl) {
+                    window.open(manualUrl, '_blank');
+                }
+            };
+            skipBtn.disabled = false;
+        }
+    },
+
+    /**
+     * Télécharge la mise à jour (legacy - pour fallback)
      */
     downloadUpdate: function(downloadUrl) {
         // Ouvrir le lien de téléchargement dans le navigateur

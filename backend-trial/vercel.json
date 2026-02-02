@@ -47,6 +47,14 @@
     {
       "src": "/api/version/latest",
       "dest": "/api/version/latest.js"
+    },
+    {
+      "src": "/api/updates/manifest",
+      "dest": "/api/updates/manifest.js"
+    },
+    {
+      "src": "/api/updates/files",
+      "dest": "/api/updates/files.js"
     }
   ],
   "env": {

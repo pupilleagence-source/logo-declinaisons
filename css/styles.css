@@ -44,6 +44,25 @@
     --space-lg: 16px;
 }
 
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-color);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--primary-color);
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--primary-hover);
+}
+
 /* Base */
 body {
     font-family: 'RNS Physis', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -117,11 +136,11 @@ header {
     color: var(--text-color);
     font-family: 'Gelica';
     cursor: pointer;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 400;
     letter-spacing: 0.3px;
     transition: all 0.2s ease;
-    border-radius: var(--radius-lg);
+    border-radius: 20px;
 }
 
 .tab-button:hover {
@@ -135,8 +154,9 @@ header {
 }
 
 .tab-button.active {
-    color: var(--primary-color);
-    background: var(--hover-bg-dark);
+    color: #2B2626;
+    background: #F9B85D;
+    font-weight: 400;
 }
 
 /* Contenu des onglets */
@@ -156,7 +176,7 @@ h1 {
     font-size: 16px;
     font-weight: 600;
     color: var(--text-color);
-    margin-bottom: var(--space-xs);
+    margin-bottom: 2px;
     letter-spacing: 0.5px;
 }
 
@@ -232,7 +252,7 @@ main {
 }
 
 .selection-status.selected {
-    color: var(--success-color);
+    color: #2B2626;
     font-weight: 500;
 }
 
@@ -536,10 +556,10 @@ input[type="range"]:disabled::-moz-range-thumb {
    ======================================== */
 .btn-select {
     padding: 6px 12px;
-    background: var(--bg-color);
+    background: #D9D9D9;
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
+    border-radius: 20px;
     cursor: pointer;
     font-size: 11px;
     font-weight: 500;
@@ -561,12 +581,18 @@ input[type="range"]:disabled::-moz-range-thumb {
     transform: scale(0.98);
 }
 
+.btn-select.selected {
+    background: #98EEC6;
+    color: #2B2626;
+    border-color: #98EEC6;
+}
+
 .btn-primary {
     padding: var(--space-sm) var(--space-lg);
     background-color: var(--primary-color);
     color: var(--text-color);
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: 20px;
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
@@ -605,10 +631,10 @@ input[type="range"]:disabled::-moz-range-thumb {
     font-size: 11px;
     padding: 10px 20px;
     font-weight: 600;
-    color: var(--primary-color);
-    border-radius: var(--radius-sm);
+    color: #FFF8EE;
+    border-radius: 999px;
     cursor: pointer;
-    background-color: var(--text-color);
+    background-color: #2B2626;
     border: none;
     transition: all 0.2s ease;
 }
@@ -698,9 +724,9 @@ input[type="range"]:disabled::-moz-range-thumb {
 }
 
 .status-message.success {
-    color: var(--text-light);
-    border-color: var(--success-color);
-    background-color: rgba(127, 176, 105, 0.92);
+    color: #2B2626;
+    border-color: #98EEC6;
+    background-color: #98EEC6;
 }
 
 .status-message.error {
@@ -754,7 +780,7 @@ input[type="range"]:disabled::-moz-range-thumb {
     background-color: var(--bg-color);
     color: var(--text-color);
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-sm);
+    border-radius: 20px;
     cursor: pointer;
     font-size: 12px;
     font-weight: 500;
@@ -1132,16 +1158,16 @@ input[type="range"]:disabled::-moz-range-thumb {
 }
 
 .success-box {
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
-    border: 1px solid #10b981;
-    color: #047857;
+    background: #98EEC6;
+    border: 1px solid #98EEC6;
+    color: #2B2626;
 }
 
 /* Modal Buttons */
 .btn {
     padding: var(--space-md) var(--space-lg);
     border: none;
-    border-radius: var(--radius-md);
+    border-radius: 20px;
     cursor: pointer;
     font-weight: 500;
     font-size: 13px;
@@ -1237,29 +1263,30 @@ input[type="range"]:disabled::-moz-range-thumb {
 .license-key-btn {
     padding: 6px 12px;
     font-size: 11px;
-    background: transparent;
-    color: #999;
-    border: 1px solid #ddd;
-    border-radius: 6px;
+    background: #ffebee;
+    color: #c62828;
+    border: 1px solid #ef5350;
+    border-radius: 999px;
     cursor: pointer;
     font-weight: 500;
     transition: all 0.2s ease;
 }
 
 .license-key-btn:hover {
-    background: #f5f5f5;
-    color: #333;
-    border-color: #bbb;
+    background: #ffcdd2;
+    color: #b71c1c;
+    border-color: #e53935;
 }
 
 .license-key-btn.active {
-    background: #e6f7e6;
-    color: #0a8f0a;
-    border-color: #90ee90;
+    background: #98EEC6;
+    color: #2B2626;
+    border-color: #98EEC6;
+    border-radius: 999px;
 }
 
 .license-key-btn.active:hover {
-    background: #d4eed4;
+    background: #7dd4ad;
 }
 
 /* ============================================
@@ -1302,4 +1329,152 @@ input[type="range"]:disabled::-moz-range-thumb {
     padding: 10px;
     border-radius: 6px;
     color: #856404;
+}
+
+/* ─── Présentation InDesign ─── */
+
+#presentation-section {
+    margin-top: var(--space-md);
+    border-top: 1px solid var(--input-border);
+    padding-top: var(--space-lg);
+}
+
+#presentation-section h2 {
+    font-size: 13px;
+    margin-bottom: var(--space-sm);
+}
+
+.section-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-bottom: var(--space-md);
+    line-height: 1.4;
+}
+
+.template-selector {
+    display: flex;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-md);
+}
+
+.template-option {
+    flex: 1;
+    cursor: pointer;
+}
+
+.template-option input[type="radio"] {
+    display: none;
+}
+
+.template-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-sm) var(--space-xs);
+    border: 1.5px solid var(--input-border);
+    border-radius: var(--radius-md);
+    background: var(--bg-color);
+    transition: all 0.2s ease;
+}
+
+.template-option input[type="radio"]:checked + .template-preview {
+    border-color: var(--primary-color);
+    background: var(--bg-light-hover);
+    box-shadow: 0 0 0 2px var(--input-focus-glow);
+}
+
+.template-option:hover .template-preview {
+    border-color: var(--primary-color);
+}
+
+.template-name {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-color);
+    text-align: center;
+}
+
+.presentation-name {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+}
+
+.presentation-name label {
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.presentation-name input {
+    flex: 1;
+    padding: var(--space-xs) var(--space-sm);
+    border: 1px solid var(--input-border);
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    background: var(--input-bg);
+    color: var(--text-color);
+    transition: border-color 0.2s ease;
+}
+
+.presentation-name input:hover {
+    border-color: var(--input-border-hover);
+}
+
+.presentation-name input:focus {
+    outline: none;
+    border-color: var(--input-border-focus);
+    box-shadow: 0 0 0 2px var(--input-focus-glow);
+}
+
+.presentation-name input::placeholder {
+    color: var(--text-disabled);
+}
+
+/* Font autocomplete dropdown */
+.font-input-container {
+    flex: 1;
+    position: relative;
+}
+
+.font-input-container input {
+    width: 100%;
+}
+
+.font-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    max-height: 180px;
+    overflow-y: auto;
+    background: var(--bg-color);
+    border: 1.5px solid var(--input-border-focus);
+    border-top: none;
+    border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.font-dropdown.visible {
+    display: block;
+}
+
+.font-dropdown-item {
+    padding: 6px var(--space-sm);
+    font-size: 11px;
+    cursor: pointer;
+    color: var(--text-color);
+    transition: background 0.1s ease;
+}
+
+.font-dropdown-item:hover,
+.font-dropdown-item.active {
+    background: var(--bg-light-hover);
+    color: var(--primary-hover);
+}
+
+.font-dropdown-item .font-match {
+    font-weight: 700;
 }

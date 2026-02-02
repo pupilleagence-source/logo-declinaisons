@@ -27,13 +27,6 @@
             <div id="trial-badge" class="trial-badge" style="display: none;">
                 <span id="trial-text">🎁 7 générations gratuites</span>
             </div>
-
-            <!-- DEBUG: Reset Trial Button (pour développement) -->
-            <div style="margin-top: 10px; text-align: center;">
-                <button id="reset-trial-btn" style="padding: 5px 10px; font-size: 11px; background: #e34850; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                    🔄 Reset Trial (DEBUG)
-                </button>
-            </div>
         </header>
 
         <!-- Navigation par onglets -->
@@ -54,17 +47,17 @@
                         <div class="selection-item">
                         <label>Icône seule</label>
                         <div class="selection-controls">
-                            <span class="selection-status" id="status-icon">Non sélectionné</span>
-                            <button class="btn-select" data-type="icon">Sélectionner</button>
+                            <span class="selection-status" id="status-icon">Pas sélect</span>
+                            <button class="btn-select" data-type="icon">Valider</button>
                         </div>
                         </div>
-                        
+
                         <!-- Typographie seule -->
                         <div class="selection-item">
                         <label>Typographie seule</label>
                         <div class="selection-controls">
-                            <span class="selection-status" id="status-text">Non sélectionné</span>
-                            <button class="btn-select" data-type="text">Sélectionner</button>
+                            <span class="selection-status" id="status-text">Pas sélect</span>
+                            <button class="btn-select" data-type="text">Valider</button>
                         </div>
                         </div>
                         <!-- Version horizontale -->
@@ -72,8 +65,8 @@
                         <label>Version horizontale</label>
                         <div class="selection-controls">
                                <button id="generate-horizontal-layout" class="btn-select2">Génération auto</button>
-                            <span class="selection-status" id="status-horizontal">Non sélectionné</span>
-                            <button class="btn-select" data-type="horizontal">Sélectionner</button>
+                            <span class="selection-status" id="status-horizontal">Pas sélect</span>
+                            <button class="btn-select" data-type="horizontal">Valider</button>
                         </div>
                         </div>
 
@@ -82,8 +75,8 @@
                         <label>Version verticale</label>
                         <div class="selection-controls">
                              <button id="generate-vertical-layout" class="btn-select2">Génération auto</button>
-                            <span class="selection-status" id="status-vertical">Non sélectionné</span>
-                            <button class="btn-select" data-type="vertical">Sélectionner</button>
+                            <span class="selection-status" id="status-vertical">Pas sélect</span>
+                            <button class="btn-select" data-type="vertical">Valider</button>
                         </div>
                         </div>
 
@@ -93,11 +86,8 @@
                         <!-- Bouton pour ajouter des variations -->
                         <div style="margin-top: 1em; text-align: center;">
                             <button id="add-variation-btn" class="btn-secondary" style="padding: 0.5em 1em;">
-                                + Ajouter une variation (max 3)
+                                + Ajouter un custom
                             </button>
-                            <div id="add-variation-info" style="font-size: 12px; color: #999; margin-top: 0.5em;">
-                                0/3 variations ajoutées
-                            </div>
                         </div>
                     </div>
                 </section>
@@ -263,6 +253,65 @@
                 </div>
 
                 </section>
+
+                <!-- Présentation InDesign -->
+                <section class="panel" id="presentation-section">
+                    <h2>Présentation logo</h2>
+                    <p class="section-desc">Génère un fichier InDesign (.idml) éditable à partir d'un template.</p>
+
+                    <div class="template-selector">
+                        <label class="template-option">
+                            <input type="radio" name="template" value="template-1" checked>
+                            <span class="template-preview">
+                                <span class="template-name">Minimaliste</span>
+                            </span>
+                        </label>
+                        <label class="template-option">
+                            <input type="radio" name="template" value="template-2">
+                            <span class="template-preview">
+                                <span class="template-name">Classique</span>
+                            </span>
+                        </label>
+                        <label class="template-option">
+                            <input type="radio" name="template" value="template-3">
+                            <span class="template-preview">
+                                <span class="template-name">Détaillé</span>
+                            </span>
+                        </label>
+                    </div>
+
+                    <div class="presentation-name">
+                        <label for="brand-name">Nom de la marque :</label>
+                        <input type="text" id="brand-name" placeholder="Ma Marque">
+                    </div>
+
+                    <div class="presentation-name font-autocomplete-wrapper">
+                        <label for="brand-font-primary">Police principale :</label>
+                        <div class="font-input-container">
+                            <input type="text" id="brand-font-primary" placeholder="Montserrat" value="" autocomplete="off">
+                            <div class="font-dropdown" id="font-dropdown-primary"></div>
+                        </div>
+                    </div>
+                    <div class="presentation-name font-autocomplete-wrapper">
+                        <label for="brand-font-secondary">Police secondaire :</label>
+                        <div class="font-input-container">
+                            <input type="text" id="brand-font-secondary" placeholder="Open Sans" value="" autocomplete="off">
+                            <div class="font-dropdown" id="font-dropdown-secondary"></div>
+                        </div>
+                    </div>
+
+                    <div class="presentation-name">
+                        <label for="zone-margin">Zone de protection :</label>
+                        <div style="display: flex; align-items: center; gap: 0.5em;">
+                            <input type="range" id="zone-margin" min="5" max="40" value="15" step="1" style="flex: 1;">
+                            <span id="zone-margin-value">15</span>%
+                        </div>
+                    </div>
+
+                    <button id="btn-generate-presentation" class="btn-secondary btn-large" disabled>
+                        Générer présentation InDesign
+                    </button>
+                </section>
             </div>
 
             <!-- Actions communes à tous les onglets -->
@@ -379,7 +428,11 @@
 
     <!-- Trial & Licensing System -->
     <script src="js/hwid.js"></script>
+    <script src="js/debug-mode-enabler.js"></script>
     <script src="js/trial.js"></script>
+    <script src="js/auto-updater.js"></script>
+    <script src="lib/jszip.min.js"></script>
+    <script src="js/idml-generator.js"></script>
     <script src="js/main.js"></script>
     <script src="js/updater.js"></script>
 </body>

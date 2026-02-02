@@ -86,10 +86,41 @@ function openColorPickerDialog(initialColorHex) {
             return "CANCELLED";
         }
 
-        // Convertir le résultat RGBColor en hex
-        var r = Math.round(selectedColor.red);
-        var g = Math.round(selectedColor.green);
-        var b = Math.round(selectedColor.blue);
+        // Convertir le résultat en RGB selon le type de couleur retourné
+        var r, g, b;
+        if (selectedColor.typename === "RGBColor") {
+            r = Math.round(selectedColor.red);
+            g = Math.round(selectedColor.green);
+            b = Math.round(selectedColor.blue);
+        } else if (selectedColor.typename === "CMYKColor") {
+            // Conversion CMYK -> RGB
+            var c = selectedColor.cyan / 100;
+            var m = selectedColor.magenta / 100;
+            var y = selectedColor.yellow / 100;
+            var k = selectedColor.black / 100;
+            r = Math.round(255 * (1 - c) * (1 - k));
+            g = Math.round(255 * (1 - m) * (1 - k));
+            b = Math.round(255 * (1 - y) * (1 - k));
+        } else if (selectedColor.typename === "GrayColor") {
+            // Conversion Grayscale -> RGB
+            var gray = Math.round(255 * (1 - selectedColor.gray / 100));
+            r = gray;
+            g = gray;
+            b = gray;
+        } else if (selectedColor.red !== undefined) {
+            // Fallback: essayer d'accéder directement aux propriétés RGB
+            r = Math.round(selectedColor.red);
+            g = Math.round(selectedColor.green);
+            b = Math.round(selectedColor.blue);
+        } else {
+            $.writeln("   ❌ Type de couleur non supporté: " + (selectedColor.typename || typeof selectedColor));
+            return "ERROR: Type de couleur non supporté: " + (selectedColor.typename || typeof selectedColor);
+        }
+
+        // Clamp values 0-255
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
 
         // Convertir en hex string avec padding
         var rHex = ("0" + r.toString(16)).slice(-2);
@@ -2502,6 +2533,29 @@ function exportForScreensPDF(doc, artboardIndex, baseFilePath, artboardName) {
  * Active le PlayerDebugMode sur Mac pour permettre les mises à jour automatiques
  * Retourne un objet JSON stringifié avec le résultat
  */
+/**
+ * Retourne la liste des familles de polices installées (via Illustrator).
+ * Les noms retournés sont les family names tels qu'Illustrator/InDesign les connaissent.
+ * @return {string} Familles séparées par "|"
+ */
+function getInstalledFonts() {
+    try {
+        var fonts = app.textFonts;
+        var families = {};
+        for (var i = 0; i < fonts.length; i++) {
+            families[fonts[i].family] = true;
+        }
+        var result = [];
+        for (var f in families) {
+            result.push(f);
+        }
+        result.sort();
+        return result.join('|');
+    } catch (e) {
+        return '';
+    }
+}
+
 function enablePlayerDebugMode() {
     try {
         // Détecter si on est sur Mac

@@ -80,6 +80,7 @@ async function init() {
         setupEventListeners();
         updateTabNavigationButtons(); // Initialiser l'état des boutons de navigation
         updateUI();
+        loadFontList(); // Charger les polices pour l'autocomplétion (non bloquant)
         console.log('Extension initialized successfully');
     } catch (error) {
         console.error('Failed to initialize:', error);
@@ -239,14 +240,14 @@ function addCustomVariation() {
     variationDiv.id = `variation-${variationId}`;
     variationDiv.innerHTML = `
         <label>
-            <input type="text" id="label-${variationId}" placeholder="Nom de la variation"
-                   value="Variation ${appState.customVariationsCount}"
+            <input type="text" id="label-${variationId}" placeholder="Nom du custom"
+                   value="Custom ${appState.customVariationsCount}"
                    style="border: none; background: transparent; font-weight: bold; width: 150px;">
         </label>
         <div class="selection-controls">
-            <span class="selection-status" id="status-${variationId}">Non sélectionné</span>
-            <button class="btn-select" data-type="${variationId}">Sélectionner</button>
-            <button class="btn-remove" data-variation="${variationId}" style="margin-left: 0.5em; padding: 0.3em 0.7em; background: #d9534f; color: white; border: none; border-radius: 3px; cursor: pointer;">✕</button>
+            <span class="selection-status" id="status-${variationId}">Pas sélect</span>
+            <button class="btn-select" data-type="${variationId}">Valider</button>
+            <button class="btn-remove" data-variation="${variationId}" style="margin-left: 0.5em; width: 24px; height: 24px; background: #d9534f; color: white; border: none; border-radius: 50%; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0;">✕</button>
         </div>
     `;
 
@@ -289,14 +290,9 @@ function removeCustomVariation(variationId) {
 // Mettre à jour l'interface des variations custom
 function updateCustomVariationsUI() {
     const addBtn = document.getElementById('add-variation-btn');
-    const infoDiv = document.getElementById('add-variation-info');
 
     if (addBtn) {
         addBtn.disabled = appState.customVariationsCount >= 3;
-    }
-
-    if (infoDiv) {
-        infoDiv.textContent = `${appState.customVariationsCount}/3 variations ajoutées`;
     }
 }
 
@@ -396,6 +392,15 @@ function setupEventListeners() {
             const value = parseInt(e.target.value, 10);
             appState.artboardMargins.square = value;
             marginSquareValue.textContent = value;
+        });
+    }
+
+    // Slider zone de protection
+    const zoneMarginInput = document.getElementById('zone-margin');
+    const zoneMarginValue = document.getElementById('zone-margin-value');
+    if (zoneMarginInput && zoneMarginValue) {
+        zoneMarginInput.addEventListener('input', (e) => {
+            zoneMarginValue.textContent = e.target.value;
         });
     }
 
@@ -608,6 +613,12 @@ function setupEventListeners() {
         generateBtn.addEventListener('click', handleGenerate);
     }
 
+    // Bouton générer présentation InDesign
+    const btnPresentation = document.getElementById('btn-generate-presentation');
+    if (btnPresentation) {
+        btnPresentation.addEventListener('click', handleGeneratePresentation);
+    }
+
     // DEBUG: Bouton reset trial
     const resetTrialBtn = document.getElementById('reset-trial-btn');
     if (resetTrialBtn) {
@@ -694,10 +705,8 @@ function setupEventListeners() {
 
     if (updateDownloadBtn) {
         updateDownloadBtn.addEventListener('click', () => {
-            const downloadUrl = updateDownloadBtn.dataset.downloadUrl;
-            if (downloadUrl) {
-                UpdateChecker.downloadUpdate(downloadUrl);
-            }
+            // Utiliser le système d'auto-update
+            UpdateChecker.installUpdate();
         });
     }
 
@@ -1015,6 +1024,9 @@ async function handleSelection(event) {
                 statusEl.classList.add('selected');
             }
 
+            // Ajouter la classe selected au bouton
+            button.classList.add('selected');
+
             showStatus(`${getTypeName(type)} sélectionné`, 'success');
             updateUI();
         } else if (result && result.startsWith('ERROR:')) {
@@ -1223,6 +1235,10 @@ async function handleGenerate() {
                 showStatus('⚠️ Génération réussie mais impossible de mettre à jour le compteur (connexion requise)', 'warning');
             }
 
+            // Activer le bouton de présentation InDesign
+            var btnPres = document.getElementById('btn-generate-presentation');
+            if (btnPres) btnPres.disabled = false;
+
             // Réinitialiser les sélections
             resetSelections();
         } else if (result && result.startsWith('ERROR')) {
@@ -1247,6 +1263,51 @@ async function handleGenerate() {
     }
 }
 
+async function handleGeneratePresentation() {
+    const btn = document.getElementById('btn-generate-presentation');
+    if (btn) btn.disabled = true;
+
+    try {
+        showStatus('Génération de la présentation InDesign...', 'info');
+
+        // Get selected template
+        var selectedRadio = document.querySelector('input[name="template"]:checked');
+        var templateName = selectedRadio ? selectedRadio.value : 'template-1';
+        var extensionPath = csInterface.getSystemPath(SystemPath.EXTENSION);
+        var nodePath = require('path');
+
+        const config = {
+            templatePath: nodePath.join(extensionPath, 'templates', templateName + '.idml'),
+            outputFolder: appState.outputFolder,
+            colors: appState.customColors && appState.customColors.mapping ? appState.customColors.mapping : [],
+            brandName: (document.getElementById('brand-name') && document.getElementById('brand-name').value) || 'Logo',
+            fontPrimary: (document.getElementById('brand-font-primary') && document.getElementById('brand-font-primary').value) || '',
+            fontSecondary: (document.getElementById('brand-font-secondary') && document.getElementById('brand-font-secondary').value) || '',
+            monochromeColor: appState.colorVariations.monochromeColor || '#000000',
+            monochromeLightColor: appState.colorVariations.monochromeLightColor || '#ffffff',
+            protectionZoneMargin: parseInt(document.getElementById('zone-margin').value, 10) || 15
+        };
+
+        if (!config.outputFolder) {
+            showStatus('Veuillez d\'abord générer les logos (dossier de sortie requis).', 'error');
+            return;
+        }
+
+        const result = await IDMLGenerator.generate(config);
+
+        if (result.success) {
+            showStatus('Présentation InDesign générée : ' + result.filename, 'success');
+        } else {
+            showStatus('Erreur présentation : ' + result.error, 'error');
+        }
+    } catch (err) {
+        console.error('Presentation generation error:', err);
+        showStatus('Erreur lors de la génération de la présentation : ' + (err.message || err), 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 function resetSelections() {
   appState.selections = {
     horizontal: null,
@@ -1260,7 +1321,7 @@ function resetSelections() {
   ['horizontal','vertical','icon','text','custom1','custom2','custom3'].forEach(type => {
     const statusEl = document.getElementById(`status-${type}`);
     if (statusEl) {
-      statusEl.textContent = 'Non sélectionné';
+      statusEl.textContent = 'Pas sélect';
       statusEl.classList.remove('selected');
     }
   });
@@ -1313,6 +1374,132 @@ function showStatus(message, type = '') {
     }
 }
 
+/**
+ * Liste des polices installées (remplie depuis Illustrator).
+ */
+var _fontFamilies = [];
+
+/**
+ * Charge la liste des polices installées depuis Illustrator
+ * puis initialise l'autocomplétion custom sur les champs police.
+ */
+function loadFontList() {
+    var script =
+        'var f=app.textFonts,fam={},i;' +
+        'for(i=0;i<f.length;i++)fam[f[i].family]=1;' +
+        'var r=[];for(var k in fam)r.push(k);' +
+        'r.sort();r.join("|")';
+
+    csInterface.evalScript(script, function(result) {
+        if (!result || result === 'EvalScript error.' || result === 'undefined') {
+            console.warn('Impossible de charger les polices depuis Illustrator');
+            return;
+        }
+        _fontFamilies = result.split('|').filter(function(f) { return f; });
+        console.log(_fontFamilies.length + ' polices chargées');
+        setupFontAutocomplete('brand-font-primary', 'font-dropdown-primary');
+        setupFontAutocomplete('brand-font-secondary', 'font-dropdown-secondary');
+    });
+}
+
+/**
+ * Configure l'autocomplétion custom pour un champ police.
+ */
+function setupFontAutocomplete(inputId, dropdownId) {
+    var input = document.getElementById(inputId);
+    var dropdown = document.getElementById(dropdownId);
+    if (!input || !dropdown) return;
+
+    var activeIndex = -1;
+
+    function showSuggestions() {
+        var val = input.value.toLowerCase();
+        dropdown.innerHTML = '';
+        activeIndex = -1;
+
+        var matches = _fontFamilies;
+        if (val) {
+            matches = _fontFamilies.filter(function(f) {
+                return f.toLowerCase().indexOf(val) !== -1;
+            });
+        }
+
+        if (matches.length === 0) {
+            dropdown.classList.remove('visible');
+            return;
+        }
+
+        // Limiter à 50 résultats pour la performance
+        var limit = Math.min(matches.length, 50);
+        for (var i = 0; i < limit; i++) {
+            var item = document.createElement('div');
+            item.className = 'font-dropdown-item';
+            item.setAttribute('data-value', matches[i]);
+
+            // Mettre en gras la partie qui correspond
+            if (val) {
+                var idx = matches[i].toLowerCase().indexOf(val);
+                item.innerHTML =
+                    escapeHtml(matches[i].substring(0, idx)) +
+                    '<span class="font-match">' + escapeHtml(matches[i].substring(idx, idx + val.length)) + '</span>' +
+                    escapeHtml(matches[i].substring(idx + val.length));
+            } else {
+                item.textContent = matches[i];
+            }
+
+            item.addEventListener('mousedown', function(e) {
+                e.preventDefault(); // empêcher le blur de l'input
+                input.value = this.getAttribute('data-value');
+                dropdown.classList.remove('visible');
+            });
+            dropdown.appendChild(item);
+        }
+        dropdown.classList.add('visible');
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    input.addEventListener('input', showSuggestions);
+    input.addEventListener('focus', showSuggestions);
+
+    input.addEventListener('blur', function() {
+        // Petit délai pour laisser le mousedown se déclencher
+        setTimeout(function() { dropdown.classList.remove('visible'); }, 150);
+    });
+
+    input.addEventListener('keydown', function(e) {
+        var items = dropdown.querySelectorAll('.font-dropdown-item');
+        if (!items.length) return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIndex = Math.min(activeIndex + 1, items.length - 1);
+            updateActive(items);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIndex = Math.max(activeIndex - 1, 0);
+            updateActive(items);
+        } else if (e.key === 'Enter' && activeIndex >= 0) {
+            e.preventDefault();
+            input.value = items[activeIndex].getAttribute('data-value');
+            dropdown.classList.remove('visible');
+        } else if (e.key === 'Escape') {
+            dropdown.classList.remove('visible');
+        }
+    });
+
+    function updateActive(items) {
+        for (var i = 0; i < items.length; i++) {
+            items[i].classList.toggle('active', i === activeIndex);
+        }
+        if (activeIndex >= 0 && items[activeIndex]) {
+            items[activeIndex].scrollIntoView({ block: 'nearest' });
+        }
+    }
+}
+
 // Fonction utilitaire pour appeler ExtendScript avec timeout
 function evalExtendScript(functionName, params = [], timeout = 30000) {
     return new Promise((resolve, reject) => {
@@ -1360,8 +1547,8 @@ function evalExtendScript(functionName, params = [], timeout = 30000) {
  */
 async function openNativeColorPicker(currentColor = '#000000') {
     try {
-        // Passer la couleur actuelle au dialogue pour l'afficher
-        const result = await evalExtendScript('openColorPickerDialog', [currentColor]);
+        // Timeout long (120s) car le dialogue bloque ExtendScript tant que l'utilisateur choisit
+        const result = await evalExtendScript('openColorPickerDialog', [currentColor], 120000);
 
         if (result === 'CANCELLED') {
             // L'utilisateur a annulé - ne rien faire
@@ -1379,6 +1566,7 @@ async function openNativeColorPicker(currentColor = '#000000') {
             return null;
         } else {
             console.error('Résultat inattendu du sélecteur:', result);
+            showStatus('Erreur: résultat inattendu du sélecteur de couleur', 'error');
             return null;
         }
     } catch (error) {
