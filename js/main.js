@@ -1296,7 +1296,20 @@ async function handleGeneratePresentation() {
         const result = await IDMLGenerator.generate(config);
 
         if (result.success) {
-            showStatus('Présentation InDesign générée : ' + result.filename, 'success');
+            showStatus('Présentation InDesign générée, ouverture dans InDesign...', 'info');
+            var escapedPath = result.path.replace(/\\/g, '\\\\');
+            csInterface.evalScript('openInInDesignAndProcess("' + escapedPath + '")', function (res) {
+                try {
+                    var r = JSON.parse(res);
+                    if (r.success) {
+                        showStatus('Présentation ouverte dans InDesign : ' + result.filename, 'success');
+                    } else {
+                        showStatus('Présentation générée : ' + result.filename + ' (ouverture InDesign échouée : ' + r.error + ')', 'success');
+                    }
+                } catch (e) {
+                    showStatus('Présentation générée : ' + result.filename, 'success');
+                }
+            });
         } else {
             showStatus('Erreur présentation : ' + result.error, 'error');
         }

@@ -49,6 +49,159 @@ function sanitizeFilename(filename) {
 }
 
 /**
+ * Convertit n'importe quel type de couleur Illustrator en RGB
+ * Utilise un document RGB temporaire pour une conversion précise
+ * @param {Color} color - Objet couleur Illustrator (RGBColor, CMYKColor, LabColor, SpotColor, etc.)
+ * @return {Object} { r, g, b } avec valeurs 0-255, ou null si échec
+ */
+function convertAnyColorToRGB(color) {
+    if (!color) return null;
+
+    var colorType = color.typename || "";
+    $.writeln("   Conversion couleur type: " + colorType);
+
+    // Si c'est déjà RGB, retourner directement
+    if (colorType === "RGBColor") {
+        return {
+            r: Math.round(Math.max(0, Math.min(255, color.red))),
+            g: Math.round(Math.max(0, Math.min(255, color.green))),
+            b: Math.round(Math.max(0, Math.min(255, color.blue)))
+        };
+    }
+
+    // Pour tous les autres types, utiliser un document RGB temporaire pour la conversion
+    var tempDoc = null;
+    var tempItem = null;
+
+    try {
+        // Créer un document RGB temporaire (invisible)
+        tempDoc = app.documents.add(DocumentColorSpace.RGB, 10, 10);
+
+        // Créer un rectangle temporaire
+        tempItem = tempDoc.pathItems.rectangle(5, 0, 5, 5);
+
+        // Appliquer la couleur au rectangle
+        // Pour SpotColor, on doit créer un nouveau SpotColor dans le document
+        if (colorType === "SpotColor") {
+            // Extraire la couleur de base du spot
+            var baseColor = color.spot.color;
+            $.writeln("   SpotColor base: " + (baseColor.typename || typeof baseColor));
+
+            // Appliquer la couleur de base directement
+            tempItem.fillColor = baseColor;
+        } else {
+            tempItem.fillColor = color;
+        }
+
+        // Lire la couleur convertie (le document est RGB, donc la couleur est convertie automatiquement)
+        var fillColor = tempItem.fillColor;
+        $.writeln("   Couleur après conversion: " + (fillColor.typename || typeof fillColor));
+
+        var result = null;
+
+        if (fillColor.typename === "RGBColor") {
+            result = {
+                r: Math.round(Math.max(0, Math.min(255, fillColor.red))),
+                g: Math.round(Math.max(0, Math.min(255, fillColor.green))),
+                b: Math.round(Math.max(0, Math.min(255, fillColor.blue)))
+            };
+        } else if (fillColor.red !== undefined) {
+            // Fallback si typename n'est pas défini mais propriétés RGB existent
+            result = {
+                r: Math.round(Math.max(0, Math.min(255, fillColor.red))),
+                g: Math.round(Math.max(0, Math.min(255, fillColor.green))),
+                b: Math.round(Math.max(0, Math.min(255, fillColor.blue)))
+            };
+        }
+
+        // Nettoyer
+        tempItem.remove();
+        tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+
+        return result;
+
+    } catch (e) {
+        $.writeln("   Erreur conversion: " + e.toString());
+        // Nettoyer en cas d'erreur
+        try { if (tempItem) tempItem.remove(); } catch (e2) {}
+        try { if (tempDoc) tempDoc.close(SaveOptions.DONOTSAVECHANGES); } catch (e2) {}
+
+        // Fallback: conversion manuelle basique
+        return convertColorManually(color);
+    }
+}
+
+/**
+ * Conversion manuelle des couleurs (fallback si la méthode document temporaire échoue)
+ */
+function convertColorManually(color) {
+    if (!color) return null;
+
+    var colorType = color.typename || "";
+    var r, g, b;
+
+    if (colorType === "RGBColor") {
+        r = color.red;
+        g = color.green;
+        b = color.blue;
+    } else if (colorType === "CMYKColor") {
+        var c = color.cyan / 100;
+        var m = color.magenta / 100;
+        var y = color.yellow / 100;
+        var k = color.black / 100;
+        r = 255 * (1 - c) * (1 - k);
+        g = 255 * (1 - m) * (1 - k);
+        b = 255 * (1 - y) * (1 - k);
+    } else if (colorType === "GrayColor") {
+        var gray = 255 * (1 - color.gray / 100);
+        r = g = b = gray;
+    } else if (colorType === "LabColor") {
+        // Conversion Lab -> RGB
+        var L = color.l;
+        var A = color.a;
+        var B = color.b;
+
+        var fy = (L + 16) / 116;
+        var fx = A / 500 + fy;
+        var fz = fy - B / 200;
+
+        var delta = 6 / 29;
+        var xr = fx > delta ? fx * fx * fx : (fx - 16/116) / 7.787;
+        var yr = fy > delta ? fy * fy * fy : (fy - 16/116) / 7.787;
+        var zr = fz > delta ? fz * fz * fz : (fz - 16/116) / 7.787;
+
+        var X = xr * 0.95047;
+        var Y = yr * 1.0;
+        var Z = zr * 1.08883;
+
+        var rLin = X * 3.2406 + Y * -1.5372 + Z * -0.4986;
+        var gLin = X * -0.9689 + Y * 1.8758 + Z * 0.0415;
+        var bLin = X * 0.0557 + Y * -0.204 + Z * 1.057;
+
+        function gammaCorrect(c) {
+            return c > 0.0031308 ? 1.055 * Math.pow(c, 1/2.4) - 0.055 : 12.92 * c;
+        }
+        r = gammaCorrect(rLin) * 255;
+        g = gammaCorrect(gLin) * 255;
+        b = gammaCorrect(bLin) * 255;
+    } else if (colorType === "SpotColor") {
+        return convertColorManually(color.spot.color);
+    } else if (color.red !== undefined) {
+        r = color.red;
+        g = color.green;
+        b = color.blue;
+    } else {
+        return null;
+    }
+
+    return {
+        r: Math.round(Math.max(0, Math.min(255, r))),
+        g: Math.round(Math.max(0, Math.min(255, g))),
+        b: Math.round(Math.max(0, Math.min(255, b)))
+    };
+}
+
+/**
  * Ouvre le sélecteur de couleur NATIF d'Illustrator via app.showColorPicker()
  * Affiche le dialogue natif avec onglets RGB/CMYK/HSB/Grayscale/Web Safe RGB
  * Permet l'utilisation de la pipette pour prélever des couleurs dans Illustrator
@@ -57,8 +210,6 @@ function sanitizeFilename(filename) {
  */
 function openColorPickerDialog(initialColorHex) {
     try {
-        $.writeln("🎨 Ouverture du sélecteur de couleur natif Illustrator...");
-
         // Créer un objet RGBColor pour la couleur initiale
         var initialColor = new RGBColor();
 
@@ -69,55 +220,25 @@ function openColorPickerDialog(initialColorHex) {
             initialColor.green = parseInt(hex.substring(2, 4), 16);
             initialColor.blue = parseInt(hex.substring(4, 6), 16);
         } else {
-            // Par défaut: noir
             initialColor.red = 0;
             initialColor.green = 0;
             initialColor.blue = 0;
         }
 
-        $.writeln("   Couleur initiale: R=" + initialColor.red + " G=" + initialColor.green + " B=" + initialColor.blue);
-
-        // Ouvrir le sélecteur de couleur NATIF d'Illustrator (avec onglets RGB/CMYK/HSB/etc)
+        // Ouvrir le sélecteur de couleur NATIF d'Illustrator
         var selectedColor = app.showColorPicker(initialColor);
 
         // L'utilisateur a annulé
         if (!selectedColor || selectedColor === false) {
-            $.writeln("   ℹ️ Sélection de couleur annulée par l'utilisateur");
             return "CANCELLED";
         }
 
-        // Convertir le résultat en RGB selon le type de couleur retourné
-        var r, g, b;
-        if (selectedColor.typename === "RGBColor") {
-            r = Math.round(selectedColor.red);
-            g = Math.round(selectedColor.green);
-            b = Math.round(selectedColor.blue);
-        } else if (selectedColor.typename === "CMYKColor") {
-            // Conversion CMYK -> RGB
-            var c = selectedColor.cyan / 100;
-            var m = selectedColor.magenta / 100;
-            var y = selectedColor.yellow / 100;
-            var k = selectedColor.black / 100;
-            r = Math.round(255 * (1 - c) * (1 - k));
-            g = Math.round(255 * (1 - m) * (1 - k));
-            b = Math.round(255 * (1 - y) * (1 - k));
-        } else if (selectedColor.typename === "GrayColor") {
-            // Conversion Grayscale -> RGB
-            var gray = Math.round(255 * (1 - selectedColor.gray / 100));
-            r = gray;
-            g = gray;
-            b = gray;
-        } else if (selectedColor.red !== undefined) {
-            // Fallback: essayer d'accéder directement aux propriétés RGB
-            r = Math.round(selectedColor.red);
-            g = Math.round(selectedColor.green);
-            b = Math.round(selectedColor.blue);
-        } else {
-            $.writeln("   ❌ Type de couleur non supporté: " + (selectedColor.typename || typeof selectedColor));
-            return "ERROR: Type de couleur non supporté: " + (selectedColor.typename || typeof selectedColor);
-        }
+        // Lire les valeurs RGB (showColorPicker retourne toujours un RGBColor)
+        var r = Math.round(selectedColor.red);
+        var g = Math.round(selectedColor.green);
+        var b = Math.round(selectedColor.blue);
 
-        // Clamp values 0-255
+        // Clamp 0-255
         r = Math.max(0, Math.min(255, r));
         g = Math.max(0, Math.min(255, g));
         b = Math.max(0, Math.min(255, b));
@@ -128,7 +249,7 @@ function openColorPickerDialog(initialColorHex) {
         var bHex = ("0" + b.toString(16)).slice(-2);
         var hexColor = "#" + (rHex + gHex + bHex).toUpperCase();
 
-        $.writeln("   ✅ Couleur sélectionnée: " + hexColor + " (R:" + r + " G:" + g + " B:" + b + ")");
+        $.writeln("   ✅ Couleur sélectionnée: " + hexColor);
         return "COLOR:" + hexColor;
 
     } catch (e) {
@@ -2553,6 +2674,62 @@ function getInstalledFonts() {
         return result.join('|');
     } catch (e) {
         return '';
+    }
+}
+
+/**
+ * Ouvre un fichier IDML dans InDesign via BridgeTalk et exécute
+ * le post-traitement des frames PROHIB (resize à 50% + centrage).
+ * @param {string} idmlPath - Chemin absolu vers le fichier IDML
+ * @return {string} JSON result
+ */
+function openInInDesignAndProcess(idmlPath) {
+    try {
+        // Script qui sera exécuté dans InDesign
+        var inddScript =
+            'var f = new File("' + idmlPath.replace(/\\/g, '/') + '");' +
+            'if (f.exists) {' +
+            '    var doc = app.open(f);' +
+            '    var count = 0;' +
+            '    for (var p = 0; p < doc.pages.length; p++) {' +
+            '        var items = doc.pages[p].allPageItems;' +
+            '        for (var i = 0; i < items.length; i++) {' +
+            '            var frame = items[i];' +
+            '            var n = frame.name || "";' +
+            '            if (n.indexOf("PROHIB_SHADOW") !== 0 && n.indexOf("PROHIB_COLOR") !== 0) continue;' +
+            '            if (!frame.allGraphics || frame.allGraphics.length === 0) continue;' +
+            '            var image = frame.allGraphics[0];' +
+            '            var fb = frame.geometricBounds;' +
+            '            var frameW = fb[3] - fb[1];' +
+            '            var frameH = fb[2] - fb[0];' +
+            '            var ib = image.geometricBounds;' +
+            '            var imgW = ib[3] - ib[1];' +
+            '            var imgH = ib[2] - ib[0];' +
+            '            var ratio = imgW / imgH;' +
+            '            var newW, newH;' +
+            '            if (frameW / frameH <= ratio) {' +
+            '                newW = frameW * 0.75;' +
+            '                newH = newW / ratio;' +
+            '            } else {' +
+            '                newH = frameH * 0.75;' +
+            '                newW = newH * ratio;' +
+            '            }' +
+            '            var offsetX = fb[1] + (frameW - newW) / 2;' +
+            '            var offsetY = fb[0] + (frameH - newH) / 2;' +
+            '            image.geometricBounds = [offsetY, offsetX, offsetY + newH, offsetX + newW];' +
+            '            count++;' +
+            '        }' +
+            '    }' +
+            '}';
+
+        var bt = new BridgeTalk();
+        bt.target = 'indesign';
+        bt.body = inddScript;
+        bt.send();
+
+        return JSON.stringify({ success: true });
+    } catch (e) {
+        return JSON.stringify({ success: false, error: e.toString() });
     }
 }
 

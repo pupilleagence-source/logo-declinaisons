@@ -11,6 +11,15 @@ Les placeholders non-utilisés seront remplacés par `-`.
 |---|---|
 | `{{BRAND_NAME}}` | `Ma Marque` |
 
+### Typographies (saisies par l'utilisateur)
+
+| Variable | Exemple de sortie |
+|---|---|
+| `{{FONT_PRIMARY}}` | `Montserrat` |
+| `{{FONT_SECONDARY}}` | `Open Sans` |
+
+> Affiche le nom de la police saisie dans les champs "Police principale" et "Police secondaire" de l'UI. Si le champ est vide, affiche `-`.
+
 ### Couleurs de la marque (issues de "Analyser les couleurs")
 
 | Variable | Exemple de sortie |
@@ -161,11 +170,25 @@ Si la donnee correspondante n'existe pas, le bloc est **supprime** du document g
 | `BLOCK_CUSTOM_3` | Pas de couleur custom 3 |
 | `BLOCK_CUSTOM_4` | Pas de couleur custom 4 |
 
+### Blocs logos
+
+| Nom du bloc | Supprime si... |
+|---|---|
+| `BLOCK_LOGO_HORIZONTAL` | Aucun logo horizontal exporte |
+| `BLOCK_LOGO_VERTICAL` | Aucun logo vertical exporte |
+| `BLOCK_LOGO_ICON` | Aucun insigne/icone exporte |
+| `BLOCK_LOGO_TEXT` | Aucun logo texte exporte |
+| `BLOCK_LOGO_CUSTOM1` | Aucune variation custom 1 exportee |
+| `BLOCK_LOGO_CUSTOM2` | Aucune variation custom 2 exportee |
+| `BLOCK_LOGO_CUSTOM3` | Aucune variation custom 3 exportee |
+
+> Le bloc est supprime si l'utilisateur n'a pas selectionne/exporte la variation correspondante. Si au moins une couleur (original, blackwhite, monochrome...) existe pour ce type, le bloc reste.
+
 ### Comment utiliser
 
 1. Creer un **Group** dans InDesign contenant tous les elements du bloc (rectangle de couleur, texte hex, label...)
-2. Nommer le Group dans le panneau Calques (ex: `BLOCK_COLOR_3`)
-3. Si la couleur 3 n'existe pas, le Group entier sera supprime
+2. Nommer le Group dans le panneau Calques (ex: `BLOCK_COLOR_3` ou `BLOCK_LOGO_VERTICAL`)
+3. Si la donnee n'existe pas, le Group entier sera supprime
 
 > Les blocs mono (dark/light) n'ont pas besoin de condition car ils sont toujours presents.
 > Fonctionne aussi avec des Rectangle ou TextFrame individuels (pas seulement des Groups).
@@ -187,6 +210,13 @@ Page 2 (customs) — page conditionnelle
   BLOCK_CUSTOM_2         (Group: rectangle + texte hex)
   BLOCK_CUSTOM_3         (Group: rectangle + texte hex)
   BLOCK_CUSTOM_4         (Group: rectangle + texte hex)
+
+Page 3 (logos)
+  BLOCK_LOGO_HORIZONTAL  (Group: logo horizontal + label)
+  BLOCK_LOGO_VERTICAL    (Group: logo vertical + label)
+  BLOCK_LOGO_ICON        (Group: insigne + label)
+  BLOCK_LOGO_TEXT        (Group: logo texte + label)
+  BLOCK_LOGO_CUSTOM1     (Group: variation custom 1 + label)
 ```
 
 ---
@@ -200,17 +230,24 @@ Si la condition n'est pas remplie, **la page entiere est supprimee** du document
 | Nom du marqueur | Page supprimee si... |
 |---|---|
 | `PAGE_CUSTOM` | Aucune couleur custom n'a ete modifiee par l'utilisateur |
+| `PAGE_TYPO_SECONDARY` | Aucune typographie secondaire n'a ete definie par l'utilisateur |
 
 ### Comment utiliser
 
-1. Creer la page dediee aux couleurs customs dans le template InDesign
+1. Creer la page dediee (customs, typographie secondaire, etc.) dans le template InDesign
 2. Placer un petit element (rectangle 1x1 pt) n'importe ou sur cette page
-3. Nommer cet element `PAGE_CUSTOM` dans le panneau Calques
-4. Si l'utilisateur n'a pas de couleurs customs → la page disparait du document genere
-5. Si l'utilisateur a au moins 1 couleur custom → la page reste
+3. Nommer cet element avec le marqueur approprie (`PAGE_CUSTOM`, `PAGE_TYPO_SECONDARY`) dans le panneau Calques
+4. Si la condition n'est pas remplie → la page disparait du document genere
+5. Sinon → la page reste
 
 > L'element marqueur peut etre minuscule et place hors de la zone visible de la page.
 > Combiner avec `BLOCK_CUSTOM_N` sur la meme page pour afficher/masquer chaque couleur individuellement.
+
+### Note sur la typographie secondaire
+
+Quand l'utilisateur ne definit qu'une seule typographie (primaire) :
+- La page marquee `PAGE_TYPO_SECONDARY` est supprimee du document
+- Le style de paragraphe `BRAND_SECONDARY` utilise automatiquement la typographie primaire
 
 ---
 
@@ -223,10 +260,14 @@ Le code place le logo, calcule ses dimensions reelles, puis repositionne les ele
 
 | Nom de l'element | Type | Role |
 |---|---|---|
-| `ZONE_{TYPE}_{COLOR}` | Rectangle | Frame pour le logo (ex: `ZONE_HORIZONTAL_ORIGINAL`) |
-| `ZONE_BORDER` | Rectangle | Bordure autour du logo rendu (repositionne automatiquement) |
-| `ZONE_EXCLUSION` | Rectangle | Zone d'exclusion = logo + marge (repositionne automatiquement) |
-| `ZONE_FILL` | Rectangle | Remplissage de la zone d'exclusion (optionnel, repositionne automatiquement) |
+| `ZONE_{TYPE}_{COLOR}` | Rectangle | Frame pour le logo (ex: `ZONE_HORIZONTAL_MONOCHROME`) |
+| `ZONE_BORDER_{TYPE}` | Rectangle | Bordure autour du logo rendu (repositionne automatiquement) |
+| `ZONE_EXCLUSION_{TYPE}` | Rectangle | Zone d'exclusion = logo + marge (repositionne automatiquement) |
+| `ZONE_FILL_{TYPE}` | Rectangle | Remplissage de la zone d'exclusion (optionnel, repositionne automatiquement) |
+| `ZONE_MARGIN_TEXT_{TYPE}` | TextFrame | Texte affichant la valeur de marge (repositionne dans la zone d'exclusion) |
+
+> Pour les pages avec **une seule zone**, les noms generiques `ZONE_BORDER`, `ZONE_EXCLUSION`, `ZONE_FILL`, `ZONE_MARGIN_TEXT` (sans suffixe `_{TYPE}`) fonctionnent aussi.
+> Pour les pages avec **plusieurs zones**, le suffixe `_{TYPE}` est obligatoire pour distinguer les elements.
 
 ### Types et couleurs disponibles
 
@@ -234,59 +275,167 @@ Memes valeurs que pour les frames `LOGO_` :
 - Types : `HORIZONTAL`, `VERTICAL`, `ICON`, `TEXT`, `CUSTOM1`, `CUSTOM2`, `CUSTOM3`
 - Couleurs : `ORIGINAL`, `BLACKWHITE`, `MONOCHROME`, `MONOCHROMELIGHT`, `CUSTOM`
 
-### Placeholder texte
+### Placeholders texte
 
-| Variable | Exemple de sortie |
-|---|---|
-| `{{ZONE_MARGIN_PCT}}` | `15` |
+| Variable | Exemple de sortie | Description |
+|---|---|---|
+| `{{ZONE_MARGIN_PCT}}` | `15` | Pourcentage de marge choisi par l'utilisateur (nombre seul) |
+| `{{ZONE_MARGIN_VALUE}}` | `9%` | Pourcentage relatif a la largeur du logo horizontal |
+| `{{ZONE_MARGIN_VALUE_HORIZONTAL}}` | `9%` | Idem (pour affichage sur zone horizontal) |
+| `{{ZONE_MARGIN_VALUE_ICON}}` | `15%` | Pourcentage choisi par l'utilisateur (pour affichage sur zone icon) |
 
-> Affiche la valeur du pourcentage de marge choisie par l'utilisateur (slider 5-40%, defaut 15%).
+> **Calcul de la marge :**
+> 1. La marge en pixels est calculee a partir du logo **icon** : `marginPx = icon.max * pourcentage`
+> 2. Cette **meme marge en pixels** est appliquee a toutes les zones
+> 3. Pour l'affichage :
+>    - **Icon** : affiche le pourcentage utilisateur (ex: 15%)
+>    - **Horizontal** : affiche le pourcentage recalcule relatif a sa largeur (ex: 9%)
+>
+> **Exemple :** Utilisateur choisit 15%. Icon 100x100 → marginPx = 15px. Horizontal 166x50 → affichage = 15/166 = **9%**
 
 ### Comment utiliser
 
-1. Creer une page dediee pour chaque variante de logo souhaitee
-2. Placer un grand Rectangle nomme `ZONE_HORIZONTAL_ORIGINAL` (frame logo)
-3. Placer un Rectangle `ZONE_BORDER` avec contour tirete (style libre dans InDesign)
-4. Placer un Rectangle `ZONE_EXCLUSION` avec contour tirete + fond semi-transparent
-5. Optionnel : Rectangle `ZONE_FILL` pour un fond colore
-6. Optionnel : TextFrame avec `{{ZONE_MARGIN_PCT}}%` pour afficher la valeur
+1. Placer un grand Rectangle nomme `ZONE_HORIZONTAL_MONOCHROME` (frame logo)
+2. Placer un Rectangle `ZONE_BORDER_HORIZONTAL` avec contour tirete (style libre dans InDesign)
+3. Placer un Rectangle `ZONE_EXCLUSION_HORIZONTAL` avec contour tirete + fond semi-transparent
+4. Optionnel : Rectangle `ZONE_FILL_HORIZONTAL` pour un fond colore
+5. Optionnel : TextFrame avec `{{ZONE_MARGIN_PCT}}%` pour afficher la valeur
+6. Repeter pour chaque variante souhaitee sur la meme page ou sur des pages separees
 
 > Les positions initiales de ZONE_BORDER, ZONE_EXCLUSION et ZONE_FILL n'ont pas d'importance.
 > Le code les repositionnera automatiquement autour du logo rendu.
 
 ### Suppression automatique
 
-Si le logo correspondant au `ZONE_{TYPE}_{COLOR}` n'existe pas dans l'export,
-**la page entiere est supprimee** du document genere.
+- Si **toutes** les zones d'une page ont un logo absent → **la page entiere est supprimee**
+- Si **certaines** zones ont un logo absent (page multi-zones) → seuls les elements de cette zone sont supprimes, la page reste
 
-### Exemple de structure dans le panneau Calques
+### Exemple 1 : une zone par page
 
 ```
 Page 3 — Zone protection horizontal
-  ZONE_HORIZONTAL_ORIGINAL   (frame logo, ex: 300x300 pt)
-  ZONE_BORDER                (rectangle tirete, position quelconque)
-  ZONE_EXCLUSION             (rectangle tirete + fond 15% opacite)
+  ZONE_HORIZONTAL_MONOCHROME  (frame logo, ex: 300x300 pt)
+  ZONE_BORDER                 (rectangle tirete, position quelconque)
+  ZONE_EXCLUSION              (rectangle tirete + fond 15% opacite)
   Texte: "Zone de protection : {{ZONE_MARGIN_PCT}}%"
-
-Page 4 — Zone protection icon
-  ZONE_ICON_ORIGINAL         (frame logo)
-  ZONE_BORDER                (rectangle tirete)
-  ZONE_EXCLUSION             (rectangle tirete + fond)
-
-Page 5 — Zone protection vertical
-  ZONE_VERTICAL_ORIGINAL     (frame logo)
-  ZONE_BORDER                (rectangle tirete)
-  ZONE_EXCLUSION             (rectangle tirete + fond)
 ```
 
-> Si l'utilisateur n'a pas exporte de logo icon → la page 4 est supprimee automatiquement.
+> Avec une seule zone par page, les noms generiques `ZONE_BORDER` / `ZONE_EXCLUSION` suffisent.
+
+### Exemple 2 : plusieurs zones sur la meme page
+
+```
+Page 3 — Zones de protection
+  ZONE_HORIZONTAL_MONOCHROME  (frame logo horizontal)
+  ZONE_BORDER_HORIZONTAL      (rectangle tirete pour horizontal)
+  ZONE_EXCLUSION_HORIZONTAL   (zone d'exclusion pour horizontal)
+  ZONE_MARGIN_TEXT_HORIZONTAL (TextFrame avec "{{ZONE_MARGIN_VALUE_HORIZONTAL}}")
+
+  ZONE_ICON_MONOCHROME        (frame logo icon)
+  ZONE_BORDER_ICON            (rectangle tirete pour icon)
+  ZONE_EXCLUSION_ICON         (zone d'exclusion pour icon)
+  ZONE_MARGIN_TEXT_ICON       (TextFrame avec "{{ZONE_MARGIN_VALUE_ICON}}")
+```
+
+> Le suffixe `_{TYPE}` (ex: `_HORIZONTAL`, `_ICON`) lie chaque element indicateur a sa zone.
+> Si le logo icon n'existe pas, seuls les elements `*_ICON` sont supprimes — le reste de la page est conserve.
+> Le TextFrame `ZONE_MARGIN_TEXT_{TYPE}` est repositionne automatiquement dans la bande de marge superieure.
 
 ### Calcul de la marge
 
-La marge est calculee en pourcentage de la plus grande dimension du logo rendu :
-`marginPx = max(largeur, hauteur) * pourcentage / 100`
+La marge est **unifiee** pour toutes les zones, basee sur le logo de reference :
 
-Exemple : logo rendu de 200x100 pt avec marge 15% → `margin = 200 * 0.15 = 30 pt`
+1. **Logo de reference** : icon (prioritaire) ou text
+2. **Calcul** : `marginPx = max(refLogo.width, refLogo.height) * pourcentage / 100`
+3. **Application** : cette marge en pixels est appliquee a TOUTES les zones
+4. **Affichage** : `displayPct = marginPx / horizontal.width * 100`
+
+**Exemple :**
+- Utilisateur choisit 10% de marge
+- Icon = 100x100 pt → marginPx = 100 * 0.10 = **10 pt**
+- Horizontal = 200x50 pt → meme marge de 10 pt appliquee
+- Affichage = 10 / 200 * 100 = **5%** (relatif a la largeur du logo horizontal)
+
+---
+
+## Interdictions (mauvais usages du logo)
+
+Page montrant les exemples d'utilisation incorrecte du logo.
+Le code place automatiquement le logo horizontal avec des transformations specifiques.
+
+### Convention de nommage
+
+```
+PROHIB_{TYPE}_{COLOR}
+
+TYPE = STRETCH | SHADOW | ZONE | VARIATION | COLOR | FONT | ELEMENT
+COLOR = ORIGINAL | BLACKWHITE | MONOCHROME | MONOCHROMELIGHT | CUSTOM
+```
+
+### Types de transformation
+
+| Type | Effet applique | Description |
+|---|---|---|
+| `STRETCH` | **Automatique** | Logo etire (deformation non-uniforme) |
+| `SHADOW` | **Automatique** | Ombre portee ajoutee |
+| `COLOR` | **Automatique** | Teinte magenta appliquee (mauvaise couleur) |
+| `ZONE` | Semi-auto | Logo normal, designer ajoute texte qui chevauche |
+| `VARIATION` | Semi-auto | Logo normal, designer cree mauvais agencement |
+| `FONT` | Semi-auto | Logo normal, designer ajoute texte avec mauvaise font |
+| `ELEMENT` | Semi-auto | Logo normal, designer ajoute forme (etoile, etc.) |
+
+**Automatique** = le code applique la transformation sur l'image placee
+**Semi-auto** = le code place le logo normalement, le designer cree l'element "mauvais" dans InDesign
+
+### Exemple de structure
+
+```
+Page 7 — Interdictions
+  Titre: "Utilisation incorrecte du logo"
+
+  Rangee 1:
+    PROHIB_STRETCH_ORIGINAL    + texte "Ne pas deformer"
+    PROHIB_SHADOW_ORIGINAL     + texte "Ne pas ajouter d'effet"
+    PROHIB_ZONE_ORIGINAL       + texte "Respecter la zone" + [texte chevauche]
+    PROHIB_VARIATION_ORIGINAL  + texte "Ne pas modifier" + [arrangement manuel]
+
+  Rangee 2:
+    PROHIB_COLOR_ORIGINAL      + texte "Respecter les couleurs"
+    PROHIB_FONT_ORIGINAL       + texte "Conserver la typo" + [mauvaise font]
+    PROHIB_ELEMENT_ORIGINAL    + texte "Ne pas ajouter" + [forme ajoutee]
+```
+
+### Comment utiliser
+
+1. Creer 8 rectangles graphiques sur la page interdictions
+2. Nommer chaque frame selon le type d'interdiction (ex: `PROHIB_STRETCH_ORIGINAL`)
+3. Pour les types **automatiques** (STRETCH, SHADOW, COLOR), le frame reste vide — le code appliquera la transformation
+4. Pour les types **semi-auto**, ajouter manuellement l'element "mauvais" (texte qui chevauche, forme, etc.)
+5. Ajouter les textes descriptifs a cote de chaque exemple
+
+> Le logo est selectionne par ordre de priorite : **vertical** > **horizontal** > **text** > **icon**.
+> Le premier type disponible dans la couleur demandee est utilise.
+> Si aucun logo n'est disponible, le frame sera supprime.
+
+### Transformations techniques
+
+**STRETCH (etirement):**
+- scaleX = 1.4 (140% en largeur)
+- scaleY = 0.7 (70% en hauteur)
+- Resultat: logo deforme horizontalement
+
+**SHADOW (ombre portee):**
+- XOffset/YOffset: 5 pt
+- Blur: 8 pt
+- Opacite: 75%
+- Couleur: noir
+
+**COLOR (mauvaise couleur):**
+- Effet: InnerShadow avec blend mode "Color"
+- Couleur: RVB Magenta (R=255 G=0 B=255)
+- ChokeAmount: 100% (remplit toute la forme)
+- Opacite: 80%
+- Resultat: logo teinte en magenta
 
 ---
 
@@ -310,11 +459,14 @@ Si le champ est laisse vide, la police du template est conservee.
 ```
 TEXTES:
   {{BRAND_NAME}}              Nom de la marque
+  {{FONT_PRIMARY}}            Police principale (saisie par l'utilisateur)
+  {{FONT_SECONDARY}}          Police secondaire (saisie par l'utilisateur)
   {{COLOR_N_HEX/RGB/CMYK}}   Couleurs originales detectees
   {{CUSTOM_N_HEX/RGB/CMYK}}  Couleurs customs choisies
   {{MONO_DARK_HEX/RGB/CMYK}}  Monochromie dark
   {{MONO_LIGHT_HEX/RGB/CMYK}} Monochromie light
-  {{ZONE_MARGIN_PCT}}          Pourcentage de marge zone protection
+  {{ZONE_MARGIN_PCT}}          Pourcentage de marge choisi par l'utilisateur
+  {{ZONE_MARGIN_VALUE}}         Pourcentage relatif a la largeur du logo horizontal
 
 NUANCIER:
   BRAND_COLOR_1, _2, _3...    Couleurs originales
@@ -328,15 +480,32 @@ FRAMES IMAGES:
 BLOCS CONDITIONNELS:
   BLOCK_COLOR_N                Supprime si couleur N absente
   BLOCK_CUSTOM_N               Supprime si custom N absent
+  BLOCK_LOGO_HORIZONTAL        Supprime si logo horizontal absent
+  BLOCK_LOGO_VERTICAL          Supprime si logo vertical absent
+  BLOCK_LOGO_ICON              Supprime si insigne absent
+  BLOCK_LOGO_TEXT              Supprime si logo texte absent
+  BLOCK_LOGO_CUSTOM1/2/3      Supprime si variation custom absente
 
 PAGES CONDITIONNELLES:
   PAGE_CUSTOM                  Page supprimee si aucun custom
+  PAGE_TYPO_SECONDARY          Page supprimee si typo secondaire absente
 
 ZONES DE PROTECTION:
-  ZONE_{TYPE}_{COLOR}          Frame logo (ex: ZONE_HORIZONTAL_ORIGINAL)
-  ZONE_BORDER                  Bordure du logo rendu (repositionne)
-  ZONE_EXCLUSION               Zone d'exclusion logo+marge (repositionne)
-  ZONE_FILL                    Remplissage zone (optionnel, repositionne)
+  ZONE_{TYPE}_{COLOR}          Frame logo (ex: ZONE_HORIZONTAL_MONOCHROME)
+  ZONE_BORDER_{TYPE}           Bordure du logo rendu (repositionne)
+  ZONE_EXCLUSION_{TYPE}        Zone d'exclusion logo+marge (repositionne)
+  ZONE_FILL_{TYPE}             Remplissage zone (optionnel, repositionne)
+  ZONE_MARGIN_TEXT_{TYPE}      Texte de marge (repositionne dans zone exclusion)
+  (noms generiques sans _{TYPE} aussi supportes en mono-zone)
+
+INTERDICTIONS (mauvais usages):
+  PROHIB_STRETCH_{COLOR}       Logo etire (transformation auto)
+  PROHIB_SHADOW_{COLOR}        Logo avec ombre portee (effet auto)
+  PROHIB_COLOR_{COLOR}         Logo teinte magenta (effet auto)
+  PROHIB_ZONE_{COLOR}          Logo normal (designer ajoute texte chevauche)
+  PROHIB_VARIATION_{COLOR}     Logo normal (designer cree mauvais agencement)
+  PROHIB_FONT_{COLOR}          Logo normal (designer ajoute mauvaise font)
+  PROHIB_ELEMENT_{COLOR}       Logo normal (designer ajoute forme)
 
 STYLES DE PARAGRAPHE:
   BRAND_PRIMARY                Police principale

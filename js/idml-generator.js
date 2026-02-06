@@ -183,7 +183,9 @@ const IDMLGenerator = (function () {
             '(<Rectangle[^>]*Name="' + elementName + '"[\\s\\S]*?<\\/Rectangle>)', 'g'
         );
 
+        var matchFound = false;
         xml = xml.replace(regex, function(rectXml) {
+            matchFound = true;
             // Extract ItemTransform for spread → local conversion
             var tm = rectXml.match(/ItemTransform="([^"]*)"/);
             var rtx = 0, rty = 0;
@@ -213,6 +215,74 @@ const IDMLGenerator = (function () {
             return rectXml.replace(/<PathPointArray>[\s\S]*?<\/PathPointArray>/, newPath);
         });
 
+        if (!matchFound) {
+            console.log('[ZONE] Warning: element "' + elementName + '" not found in XML');
+        }
+
+        return xml;
+    }
+
+    /**
+     * Reposition a named TextFrame element by modifying its ItemTransform.
+     * targetCenter is in spread coordinates { x, y }.
+     * The TextFrame is moved so its center is at the target position.
+     */
+    function repositionTextFrame(xml, elementName, targetCenter) {
+        var regex = new RegExp(
+            '(<TextFrame[^>]*Name="' + elementName + '"[\\s\\S]*?<\\/TextFrame>)', 'g'
+        );
+
+        xml = xml.replace(regex, function(frameXml) {
+            // Get current bounds from PathPointArray to calculate center offset
+            var pathMatch = frameXml.match(/<PathPointArray>([\s\S]*?)<\/PathPointArray>/);
+            if (!pathMatch) return frameXml;
+
+            // Extract current ItemTransform
+            var tm = frameXml.match(/ItemTransform="([^"]*)"/);
+            var matrix = [1, 0, 0, 1, 0, 0];
+            if (tm) {
+                var p = tm[1].split(/\s+/);
+                for (var i = 0; i < Math.min(p.length, 6); i++) {
+                    matrix[i] = parseFloat(p[i]);
+                }
+            }
+
+            // Parse PathPointArray to get local bounds
+            var anchors = pathMatch[1].match(/Anchor="([^"]*)"/g);
+            if (!anchors || anchors.length < 2) return frameXml;
+
+            var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (var i = 0; i < anchors.length; i++) {
+                var coords = anchors[i].match(/Anchor="([^ ]+) ([^"]+)"/);
+                if (coords) {
+                    var x = parseFloat(coords[1]);
+                    var y = parseFloat(coords[2]);
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                }
+            }
+
+            // Current center in spread coordinates
+            var localCenterX = (minX + maxX) / 2;
+            var localCenterY = (minY + maxY) / 2;
+            var currentSpreadX = localCenterX + matrix[4];
+            var currentSpreadY = localCenterY + matrix[5];
+
+            // Calculate delta to move to target
+            var deltaX = targetCenter.x - currentSpreadX;
+            var deltaY = targetCenter.y - currentSpreadY;
+
+            // Update ItemTransform translation
+            var newTx = matrix[4] + deltaX;
+            var newTy = matrix[5] + deltaY;
+            var newTransform = matrix[0] + ' ' + matrix[1] + ' ' + matrix[2] + ' ' + matrix[3] + ' ' +
+                newTx.toFixed(2) + ' ' + newTy.toFixed(2);
+
+            return frameXml.replace(/ItemTransform="[^"]*"/, 'ItemTransform="' + newTransform + '"');
+        });
+
         return xml;
     }
 
@@ -220,11 +290,10 @@ const IDMLGenerator = (function () {
 
     /**
      * Find the best available logo file in the output folder.
-     * Priority: SVG > AI > PNG > JPG.
+     * Priority: SVG > AI > PDF > PNG > JPG (vectors ALWAYS before rasters)
      *
-     * First tries exact expected filenames, then falls back to scanning
-     * the directory for any file matching the priority order
-     * (exportForScreens can create subfolders or different naming).
+     * Scans the entire directory tree to ensure vector files are found
+     * regardless of folder structure created by Illustrator's export.
      *
      * Returns a path relative to outputFolder, or null.
      */
@@ -239,83 +308,107 @@ const IDMLGenerator = (function () {
         var fileName = baseName + suffix;
         var selDir = nodePath.join(outputFolder, selectionName, colorVariation);
 
-        // 1. Try exact filenames first (fastest) — SVG > AI > PNG
-        var exactCandidates = [
-            nodePath.join(selDir, fileName + '.svg'),
-            nodePath.join(selDir, fileName + '.ai'),
-            nodePath.join(selDir, fileName + '.pdf'),
-            nodePath.join(selDir, 'PNG', 'moyen_' + fileName + '.png'),
-            nodePath.join(selDir, 'PNG', 'grand_' + fileName + '.png'),
-            nodePath.join(selDir, 'PNG', 'petit_' + fileName + '.png')
-        ];
+        // Priority order: vectors first, then rasters
+        var vectorExts = ['.svg', '.ai', '.pdf'];
+        var rasterExts = ['.png', '.jpg', '.jpeg'];
 
-        for (var i = 0; i < exactCandidates.length; i++) {
+        // Helper: collect all files with given extensions from a directory (non-recursive)
+        function collectFiles(dir, extensions) {
+            var results = [];
             try {
-                if (fs.existsSync(exactCandidates[i])) {
-                    return nodePath.relative(outputFolder, exactCandidates[i]);
+                if (!fs.existsSync(dir)) return results;
+                var entries = fs.readdirSync(dir);
+                for (var i = 0; i < entries.length; i++) {
+                    var entry = entries[i];
+                    var fullPath = nodePath.join(dir, entry);
+                    try {
+                        if (!fs.statSync(fullPath).isFile()) continue;
+                        var lower = entry.toLowerCase();
+                        for (var e = 0; e < extensions.length; e++) {
+                            if (lower.endsWith(extensions[e])) {
+                                results.push({ path: fullPath, ext: extensions[e], priority: e });
+                                break;
+                            }
+                        }
+                    } catch (err) { /* skip */ }
+                }
+            } catch (err) { /* skip */ }
+            return results;
+        }
+
+        // Helper: collect all subdirectories
+        function getSubdirs(dir) {
+            var subdirs = [];
+            try {
+                if (!fs.existsSync(dir)) return subdirs;
+                var entries = fs.readdirSync(dir);
+                for (var i = 0; i < entries.length; i++) {
+                    var fullPath = nodePath.join(dir, entries[i]);
+                    try {
+                        if (fs.statSync(fullPath).isDirectory()) {
+                            subdirs.push(fullPath);
+                        }
+                    } catch (err) { /* skip */ }
+                }
+            } catch (err) { /* skip */ }
+            return subdirs;
+        }
+
+        // 1. Try exact expected filename first (fastest path)
+        for (var v = 0; v < vectorExts.length; v++) {
+            var exactPath = nodePath.join(selDir, fileName + vectorExts[v]);
+            try {
+                if (fs.existsSync(exactPath)) {
+                    return nodePath.relative(outputFolder, exactPath);
                 }
             } catch (e) { /* skip */ }
         }
 
-        // 2. Fallback: scan directory for vector files (SVG > AI > PDF)
-        var vectorExts = ['.svg', '.ai', '.pdf'];
-        try {
-            var files = fs.readdirSync(selDir);
+        // 2. Collect ALL vector files from selDir and ALL subdirectories
+        var allVectors = [];
 
-            // Check root of color folder
-            for (var e = 0; e < vectorExts.length; e++) {
-                for (var f = 0; f < files.length; f++) {
-                    if (files[f].toLowerCase().endsWith(vectorExts[e])) {
-                        return nodePath.relative(outputFolder, nodePath.join(selDir, files[f]));
-                    }
-                }
-            }
+        // Root folder
+        allVectors = allVectors.concat(collectFiles(selDir, vectorExts));
 
-            // Check subfolders (exportForScreens may create them)
-            for (var f = 0; f < files.length; f++) {
-                var subPath = nodePath.join(selDir, files[f]);
-                try {
-                    if (!fs.statSync(subPath).isDirectory()) continue;
-                    var folderUpper = files[f].toUpperCase();
-                    if (folderUpper === 'PNG' || folderUpper === 'JPG' || folderUpper === 'JPEG') continue;
-                    var subFiles = fs.readdirSync(subPath);
-                    for (var e = 0; e < vectorExts.length; e++) {
-                        for (var sf = 0; sf < subFiles.length; sf++) {
-                            if (subFiles[sf].toLowerCase().endsWith(vectorExts[e])) {
-                                return nodePath.relative(outputFolder, nodePath.join(subPath, subFiles[sf]));
-                            }
-                        }
-                    }
-                } catch (e2) { /* skip */ }
+        // All subdirectories (including PNG, SVG, 1x, 2x, etc.)
+        var subdirs = getSubdirs(selDir);
+        for (var s = 0; s < subdirs.length; s++) {
+            allVectors = allVectors.concat(collectFiles(subdirs[s], vectorExts));
+            // Also check one level deeper (e.g., selDir/1x/SVG/)
+            var subsubdirs = getSubdirs(subdirs[s]);
+            for (var ss = 0; ss < subsubdirs.length; ss++) {
+                allVectors = allVectors.concat(collectFiles(subsubdirs[ss], vectorExts));
             }
+        }
 
-            // 3. Fallback: PNG
-            var rasterExts = ['.png', '.jpg', '.jpeg'];
-            var rasterDirs = ['PNG', 'JPG', 'JPEG'];
-            for (var rd = 0; rd < rasterDirs.length; rd++) {
-                var rasterDir = nodePath.join(selDir, rasterDirs[rd]);
-                try {
-                    if (!fs.existsSync(rasterDir)) continue;
-                    var rasterFiles = fs.readdirSync(rasterDir);
-                    for (var re = 0; re < rasterExts.length; re++) {
-                        for (var rf = 0; rf < rasterFiles.length; rf++) {
-                            if (rasterFiles[rf].toLowerCase().endsWith(rasterExts[re])) {
-                                return nodePath.relative(outputFolder, nodePath.join(rasterDir, rasterFiles[rf]));
-                            }
-                        }
-                    }
-                } catch (e3) { /* skip */ }
-            }
+        // If ANY vector found, return the best one (SVG > AI > PDF)
+        if (allVectors.length > 0) {
+            // Sort by priority (lower = better: SVG=0, AI=1, PDF=2)
+            allVectors.sort(function(a, b) { return a.priority - b.priority; });
+            return nodePath.relative(outputFolder, allVectors[0].path);
+        }
 
-            // 4. Last resort: any raster in root folder
-            for (var re = 0; re < rasterExts.length; re++) {
-                for (var f = 0; f < files.length; f++) {
-                    if (files[f].toLowerCase().endsWith(rasterExts[re])) {
-                        return nodePath.relative(outputFolder, nodePath.join(selDir, files[f]));
-                    }
-                }
+        // 3. No vectors found — now look for rasters
+        var allRasters = [];
+
+        // Root folder
+        allRasters = allRasters.concat(collectFiles(selDir, rasterExts));
+
+        // Subdirectories
+        for (var s = 0; s < subdirs.length; s++) {
+            allRasters = allRasters.concat(collectFiles(subdirs[s], rasterExts));
+            var subsubdirs = getSubdirs(subdirs[s]);
+            for (var ss = 0; ss < subsubdirs.length; ss++) {
+                allRasters = allRasters.concat(collectFiles(subsubdirs[ss], rasterExts));
             }
-        } catch (e) { /* skip */ }
+        }
+
+        // If ANY raster found, return the best one (PNG > JPG)
+        if (allRasters.length > 0) {
+            // Sort by priority (lower = better: PNG=0, JPG=1)
+            allRasters.sort(function(a, b) { return a.priority - b.priority; });
+            return nodePath.relative(outputFolder, allRasters[0].path);
+        }
 
         return null;
     }
@@ -473,8 +566,10 @@ const IDMLGenerator = (function () {
         if (fontPrimary) {
             xml = setFontOnStyle(xml, 'BRAND_PRIMARY', fontPrimary);
         }
-        if (fontSecondary) {
-            xml = setFontOnStyle(xml, 'BRAND_SECONDARY', fontSecondary);
+        // Use fontSecondary if specified, otherwise fallback to fontPrimary
+        var secondaryFont = fontSecondary || fontPrimary;
+        if (secondaryFont) {
+            xml = setFontOnStyle(xml, 'BRAND_SECONDARY', secondaryFont);
         }
         return xml;
     }
@@ -591,29 +686,119 @@ const IDMLGenerator = (function () {
     }
 
     /**
+     * Normalize a hex color for comparison (lowercase, no #).
+     */
+    function normalizeHex(hex) {
+        if (!hex || typeof hex !== 'string') return '';
+        return hex.replace('#', '').toLowerCase();
+    }
+
+    /**
      * Process conditional blocks in a Spread XML.
      * Removes named blocks whose data is not available:
-     *   BLOCK_COLOR_N   → removed if brand color N does not exist
-     *   BLOCK_CUSTOM_N  → removed if custom color N was not changed by user
+     *   BLOCK_COLOR_N         → removed if brand color N does not exist
+     *   BLOCK_CUSTOM_N        → removed if custom color N is not unique
+     *                           (for dedicated custom page when >2 original colors)
+     *   BLOCK_CUSTOM_INLINE_N → removed if custom color N is not unique OR >2 original colors
+     *                           (for inline display on main page when ≤2 original colors)
+     *   BLOCK_LOGO_HORIZONTAL → removed if horizontal logo not exported
+     *   BLOCK_LOGO_VERTICAL   → removed if vertical logo not exported
+     *   BLOCK_LOGO_ICON       → removed if icon logo not exported
+     *   BLOCK_LOGO_TEXT       → removed if text logo not exported
+     *   BLOCK_LOGO_CUSTOM1    → removed if custom1 logo not exported
+     *   BLOCK_LOGO_CUSTOM2    → removed if custom2 logo not exported
+     *   BLOCK_LOGO_CUSTOM3    → removed if custom3 logo not exported
      *
      * Blocks can be Group, Rectangle, or TextFrame elements.
      * Name them in InDesign's Layers panel.
      */
-    function processConditionalBlocks(xml, config) {
+    function processConditionalBlocks(xml, config, scan) {
         var colors = config.colors || [];
         var maxSlots = 10; // support up to 10 color slots
+
+        // Count original colors
+        var originalColorCount = 0;
+        for (var i = 0; i < colors.length; i++) {
+            var orig = colors[i] && (colors[i].original || colors[i]);
+            if (orig && typeof orig === 'string') {
+                originalColorCount++;
+            }
+        }
+
+        // Build set of all "known" colors to detect duplicates:
+        // - All original brand colors
+        // - Monochrome dark color
+        // - Monochrome light color
+        var knownColors = {};
+
+        // Add original colors
+        for (var i = 0; i < colors.length; i++) {
+            var orig = colors[i] && (colors[i].original || colors[i]);
+            if (orig && typeof orig === 'string') {
+                knownColors[normalizeHex(orig)] = true;
+            }
+        }
+
+        // Add monochrome colors
+        if (config.monochromeColor) {
+            knownColors[normalizeHex(config.monochromeColor)] = true;
+        }
+        if (config.monochromeLightColor) {
+            knownColors[normalizeHex(config.monochromeLightColor)] = true;
+        }
+
+        // Track custom colors we've already shown (to avoid duplicates among customs)
+        var shownCustomColors = {};
 
         for (var i = 1; i <= maxSlots; i++) {
             var colorEntry = colors[i - 1];
             var hasColor = colorEntry && (typeof (colorEntry.original || colorEntry) === 'string');
-            var hasCustom = hasColor && colorEntry.custom &&
-                colorEntry.custom !== (colorEntry.original || colorEntry);
+
+            // Check if custom color is truly unique
+            var hasUniqueCustom = false;
+            if (hasColor && colorEntry.custom) {
+                var customNorm = normalizeHex(colorEntry.custom);
+                var origNorm = normalizeHex(colorEntry.original || colorEntry);
+
+                // Custom is unique if:
+                // 1. Different from its original color
+                // 2. Not already in known colors (originals + monochrome)
+                // 3. Not already shown as another custom
+                var isDifferentFromOriginal = customNorm !== origNorm;
+                var isNotKnownColor = !knownColors[customNorm];
+                var isNotAlreadyShown = !shownCustomColors[customNorm];
+
+                hasUniqueCustom = isDifferentFromOriginal && isNotKnownColor && isNotAlreadyShown;
+
+                if (hasUniqueCustom) {
+                    shownCustomColors[customNorm] = true;
+                }
+            }
 
             if (!hasColor) {
                 xml = removeNamedBlock(xml, 'BLOCK_COLOR_' + i);
             }
-            if (!hasCustom) {
+
+            // BLOCK_CUSTOM_N: for dedicated custom page (shown only when >2 original colors)
+            if (!hasUniqueCustom || originalColorCount <= 2) {
                 xml = removeNamedBlock(xml, 'BLOCK_CUSTOM_' + i);
+            }
+
+            // BLOCK_CUSTOM_INLINE_N: for inline on main page (shown only when ≤2 original colors)
+            if (!hasUniqueCustom || originalColorCount > 2) {
+                xml = removeNamedBlock(xml, 'BLOCK_CUSTOM_INLINE_' + i);
+            }
+        }
+
+        // Logo variation blocks
+        if (scan && scan.logos) {
+            var logoTypes = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
+            for (var t = 0; t < logoTypes.length; t++) {
+                var type = logoTypes[t];
+                var hasLogo = scan.logos[type] && Object.keys(scan.logos[type]).length > 0;
+                if (!hasLogo) {
+                    xml = removeNamedBlock(xml, 'BLOCK_LOGO_' + type.toUpperCase());
+                }
             }
         }
 
@@ -623,22 +808,61 @@ const IDMLGenerator = (function () {
     /**
      * Remove entire spreads (pages) from the IDML based on conditional markers.
      * Place a small element named PAGE_CUSTOM anywhere on a page in InDesign.
-     * If no custom colors were set by the user, that entire spread is removed.
+     * PAGE_CUSTOM is removed if:
+     *   - No unique custom colors were set by the user, OR
+     *   - There are ≤2 original brand colors (customs shown inline on main page)
      *
      * Also updates designmap.xml to keep the IDML valid.
      */
     async function processConditionalPages(zip, config) {
         var colors = config.colors || [];
-        var hasAnyCustom = false;
+
+        // Count original colors
+        var originalColorCount = 0;
         for (var i = 0; i < colors.length; i++) {
-            if (colors[i].custom && colors[i].custom !== (colors[i].original || colors[i])) {
-                hasAnyCustom = true;
-                break;
+            var orig = colors[i] && (colors[i].original || colors[i]);
+            if (orig && typeof orig === 'string') {
+                originalColorCount++;
             }
         }
 
-        // If custom colors exist, keep all pages
-        if (hasAnyCustom) return;
+        // Check if any unique custom colors exist (same logic as processConditionalBlocks)
+        var knownColors = {};
+        for (var i = 0; i < colors.length; i++) {
+            var orig = colors[i] && (colors[i].original || colors[i]);
+            if (orig && typeof orig === 'string') {
+                knownColors[normalizeHex(orig)] = true;
+            }
+        }
+        if (config.monochromeColor) {
+            knownColors[normalizeHex(config.monochromeColor)] = true;
+        }
+        if (config.monochromeLightColor) {
+            knownColors[normalizeHex(config.monochromeLightColor)] = true;
+        }
+
+        var shownCustomColors = {};
+        var hasAnyUniqueCustom = false;
+        for (var i = 0; i < colors.length; i++) {
+            var colorEntry = colors[i];
+            if (colorEntry && colorEntry.custom) {
+                var customNorm = normalizeHex(colorEntry.custom);
+                var origNorm = normalizeHex(colorEntry.original || colorEntry);
+                var isDifferentFromOriginal = customNorm !== origNorm;
+                var isNotKnownColor = !knownColors[customNorm];
+                var isNotAlreadyShown = !shownCustomColors[customNorm];
+
+                if (isDifferentFromOriginal && isNotKnownColor && isNotAlreadyShown) {
+                    hasAnyUniqueCustom = true;
+                    shownCustomColors[customNorm] = true;
+                }
+            }
+        }
+
+        // Keep PAGE_CUSTOM only if:
+        // - There are unique custom colors AND
+        // - There are more than 2 original colors (otherwise customs shown inline)
+        if (hasAnyUniqueCustom && originalColorCount > 2) return;
 
         var allFiles = Object.keys(zip.files);
         var spreadFiles = allFiles.filter(function (f) {
@@ -677,16 +901,64 @@ const IDMLGenerator = (function () {
         }
     }
 
+    /**
+     * Remove the secondary typography page if no secondary font is specified.
+     * Place an element named PAGE_TYPO_SECONDARY on the page in InDesign.
+     * When fontSecondary is empty, this page is removed from the IDML.
+     */
+    async function processTypoSecondaryPage(zip, config) {
+        // Keep the page if secondary font is specified
+        if (config.fontSecondary) return;
+
+        var allFiles = Object.keys(zip.files);
+        var spreadFiles = allFiles.filter(function (f) {
+            return f.indexOf('Spreads/') === 0 && f.endsWith('.xml');
+        });
+
+        var spreadsToRemove = [];
+        for (var i = 0; i < spreadFiles.length; i++) {
+            var xml = await zip.file(spreadFiles[i]).async('string');
+            if (/Name="PAGE_TYPO_SECONDARY"/.test(xml)) {
+                spreadsToRemove.push(spreadFiles[i]);
+            }
+        }
+
+        if (spreadsToRemove.length === 0) return;
+
+        // Remove spread files from ZIP
+        for (var i = 0; i < spreadsToRemove.length; i++) {
+            zip.remove(spreadsToRemove[i]);
+        }
+
+        // Update designmap.xml to remove references to deleted spreads
+        var designmapFile = allFiles.filter(function (f) {
+            return f === 'designmap.xml';
+        })[0];
+        if (designmapFile) {
+            var designmap = await zip.file(designmapFile).async('string');
+            for (var i = 0; i < spreadsToRemove.length; i++) {
+                var escaped = spreadsToRemove[i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                designmap = designmap.replace(
+                    new RegExp('\\s*<idPkg:Spread\\s+src="' + escaped + '"\\s*/?>', 'g'),
+                    ''
+                );
+            }
+            zip.file(designmapFile, designmap);
+        }
+    }
+
     // ─── Protection zones ────────────────────────────────────────────
 
     /**
      * Process protection zone pages in a Spread XML.
-     * Finds ZONE_{TYPE}_{COLOR} frames, places the logo, computes rendered
-     * bounds, then repositions ZONE_BORDER, ZONE_EXCLUSION, and ZONE_FILL
-     * elements to match the actual logo dimensions + configurable margin.
+     * Supports multiple ZONE_{TYPE}_{COLOR} frames on the same page.
      *
-     * Returns the modified XML, or null if the logo doesn't exist
-     * (signal to remove the entire page).
+     * Margin calculation:
+     * 1. Find reference logo (icon > text) to calculate margin in pixels
+     * 2. Apply SAME pixel margin to all zones (consistent visual protection)
+     * 3. Display margin as percentage of horizontal logo width
+     *
+     * Returns the modified XML, or null if ALL logos are missing (remove page).
      */
     function processProtectionZones(xml, scan, outputFolder, config) {
         var colorMap = {
@@ -696,36 +968,368 @@ const IDMLGenerator = (function () {
             'monochromelight': 'monochromeLight',
             'custom': 'custom'
         };
+        var knownTypes = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
 
-        // Find the ZONE_{TYPE}_{COLOR} frame
-        var zoneRegex = /(<Rectangle[^>]*?Name="ZONE_\{?([A-Za-z0-9]+)\}?_\{?([A-Za-z]+)\}?"[\s\S]*?<\/Rectangle>)/;
-        var zoneMatch = zoneRegex.exec(xml);
-        if (!zoneMatch) return xml; // no zone frame on this page
-
-        var rectXml = zoneMatch[1];
-        var sel = zoneMatch[2].toLowerCase();
-        var col = colorMap[zoneMatch[3].toLowerCase()] || zoneMatch[3].toLowerCase();
-
-        // Check if logo exists
-        if (!scan.logos[sel] || !scan.logos[sel][col]) {
-            return null; // signal: remove this page
+        // Find all ZONE_{TYPE}_{COLOR} frames (skip helpers like ZONE_BORDER_*)
+        var nameRegex = /Name="(ZONE_\{?([A-Za-z0-9]+)\}?_\{?([A-Za-z]+)\}?)"/g;
+        var zoneInfos = [];
+        var m;
+        while ((m = nameRegex.exec(xml)) !== null) {
+            if (knownTypes.indexOf(m[2].toLowerCase()) >= 0) {
+                zoneInfos.push({
+                    fullName: m[1],
+                    type: m[2].toLowerCase(),
+                    typeUpper: m[2].toUpperCase(),
+                    colorMapped: colorMap[m[3].toLowerCase()] || m[3].toLowerCase()
+                });
+            }
         }
 
-        var relPath = scan.logos[sel][col];
-        var absPath = nodePath.join(outputFolder, relPath);
+        if (zoneInfos.length === 0) return xml;
 
-        // 1. Place logo in the ZONE_ frame (same logic as processSpreadXml)
-        var uriPath = 'file:///' + absPath.replace(/\\/g, '/').replace(/^\//, '');
+        var isMultiZone = zoneInfos.length > 1;
 
-        if (rectXml.indexOf('LinkResourceURI=') >= 0) {
-            // Frame already has an image — replace URI
-            var newRectXml = rectXml.replace(
-                /LinkResourceURI="[^"]*"/,
-                'LinkResourceURI="' + escXml(uriPath) + '"'
+        // ─── PASS 1: Collect zone data and find reference logo ───────────────
+        var zoneData = [];
+        var refLogoSize = null;  // Reference logo (icon > text) for margin calculation
+        var horizontalLogoWidth = null;  // For percentage display
+
+        for (var z = 0; z < zoneInfos.length; z++) {
+            var info = zoneInfos[z];
+            var sel = info.type;
+            var col = info.colorMapped;
+
+            if (!scan.logos[sel] || !scan.logos[sel][col]) {
+                // Logo missing — mark for removal
+                zoneData.push({ info: info, valid: false });
+                continue;
+            }
+
+            var relPath = scan.logos[sel][col];
+            var absPath = nodePath.join(outputFolder, relPath);
+
+            // Find the Rectangle
+            var rectRegex = new RegExp(
+                '(<Rectangle[^>]*?Name="' + info.fullName.replace(/[{}]/g, '\\$&') + '"[\\s\\S]*?<\\/Rectangle>)'
             );
-            xml = xml.replace(rectXml, newRectXml);
-        } else {
-            // Empty graphic frame — insert FrameFittingOption + Image+Link
+            var rectMatch = rectRegex.exec(xml);
+            if (!rectMatch) {
+                zoneData.push({ info: info, valid: false });
+                continue;
+            }
+
+            var rectXml = rectMatch[1];
+            var bounds = computeLogoRenderedBounds(rectXml, absPath);
+            if (!bounds) {
+                zoneData.push({ info: info, valid: false });
+                continue;
+            }
+
+            zoneData.push({
+                info: info,
+                valid: true,
+                relPath: relPath,
+                absPath: absPath,
+                rectXml: rectXml,
+                bounds: bounds
+            });
+
+            // Determine reference logo size (icon > text)
+            var logoMaxDim = Math.max(bounds.scaledW, bounds.scaledH);
+            if (sel === 'icon' || (sel === 'text' && !refLogoSize)) {
+                refLogoSize = logoMaxDim;
+            }
+
+            // Track horizontal logo width for percentage display
+            if (sel === 'horizontal') {
+                horizontalLogoWidth = bounds.scaledW;
+            }
+        }
+
+        // If no reference logo found, use first valid zone
+        if (!refLogoSize) {
+            for (var i = 0; i < zoneData.length; i++) {
+                if (zoneData[i].valid) {
+                    refLogoSize = Math.max(zoneData[i].bounds.scaledW, zoneData[i].bounds.scaledH);
+                    break;
+                }
+            }
+        }
+
+        // If no horizontal logo, use reference for percentage display
+        if (!horizontalLogoWidth) {
+            horizontalLogoWidth = refLogoSize;
+        }
+
+        // Calculate margin in pixels from reference logo
+        var marginPct = config.protectionZoneMargin || 15;
+        var marginPx = refLogoSize ? refLogoSize * (marginPct / 100) : 0;
+
+        // Calculate display percentage (relative to horizontal logo width)
+        var displayPct = horizontalLogoWidth ? (marginPx / horizontalLogoWidth * 100) : marginPct;
+
+        // ─── PASS 2: Process each zone with unified margin ───────────────────
+        var validCount = 0;
+
+        for (var z = 0; z < zoneData.length; z++) {
+            var data = zoneData[z];
+            var info = data.info;
+
+            if (!data.valid) {
+                // Logo missing — remove this zone's frame and its helpers
+                xml = removeNamedBlock(xml, info.fullName);
+                xml = removeNamedBlock(xml, 'ZONE_BORDER_' + info.typeUpper);
+                xml = removeNamedBlock(xml, 'ZONE_EXCLUSION_' + info.typeUpper);
+                xml = removeNamedBlock(xml, 'ZONE_FILL_' + info.typeUpper);
+                xml = removeNamedBlock(xml, 'ZONE_MARGIN_TEXT_' + info.typeUpper);
+                if (!isMultiZone) {
+                    xml = removeNamedBlock(xml, 'ZONE_BORDER');
+                    xml = removeNamedBlock(xml, 'ZONE_EXCLUSION');
+                    xml = removeNamedBlock(xml, 'ZONE_FILL');
+                    xml = removeNamedBlock(xml, 'ZONE_MARGIN_TEXT');
+                }
+                continue;
+            }
+
+            validCount++;
+            var relPath = data.relPath;
+            var absPath = data.absPath;
+            var rectXml = data.rectXml;
+            var bounds = data.bounds;
+
+            // Place logo in the zone frame
+            var uriPath = 'file:///' + absPath.replace(/\\/g, '/').replace(/^\//, '');
+
+            if (rectXml.indexOf('LinkResourceURI=') >= 0) {
+                var newRectXml = rectXml.replace(
+                    /LinkResourceURI="[^"]*"/,
+                    'LinkResourceURI="' + escXml(uriPath) + '"'
+                );
+                xml = xml.replace(rectXml, newRectXml);
+            } else {
+                var ext = relPath.split('.').pop().toLowerCase();
+                var imageType = '$ID/';
+                if (ext === 'svg') imageType = '$ID/SVG';
+                else if (ext === 'ai') imageType = '$ID/Adobe Illustrator';
+                else if (ext === 'pdf') imageType = '$ID/Portable Document Format (PDF)';
+                else if (ext === 'png') imageType = '$ID/Portable Network Graphics (PNG)';
+                else if (ext === 'jpg' || ext === 'jpeg') imageType = '$ID/JPEG';
+
+                var frameBounds = getFrameBounds(rectXml);
+                var imgDims = getImageDimensions(absPath);
+                var imgTransform = '1 0 0 1 0 0';
+                var graphicBoundsXml = '';
+
+                if (frameBounds && imgDims && imgDims.width > 0 && imgDims.height > 0) {
+                    var scaleX = frameBounds.width / imgDims.width;
+                    var scaleY = frameBounds.height / imgDims.height;
+                    var scale = Math.min(scaleX, scaleY);
+                    var scaledW = imgDims.width * scale;
+                    var scaledH = imgDims.height * scale;
+                    var tx = frameBounds.left + (frameBounds.width - scaledW) / 2;
+                    var ty = frameBounds.top + (frameBounds.height - scaledH) / 2;
+
+                    imgTransform = scale.toFixed(6) + ' 0 0 ' + scale.toFixed(6) + ' ' +
+                        tx.toFixed(2) + ' ' + ty.toFixed(2);
+                    graphicBoundsXml =
+                        '<Properties><GraphicBounds Left="0" Top="0" ' +
+                        'Right="' + imgDims.width.toFixed(2) + '" ' +
+                        'Bottom="' + imgDims.height.toFixed(2) + '" /></Properties>';
+                }
+
+                var fittingXml =
+                    '<FrameFittingOption AutoFit="true" ' +
+                    'LeftCrop="0" TopCrop="0" RightCrop="0" BottomCrop="0" ' +
+                    'FittingOnEmptyFrame="Proportional" ' +
+                    'FittingAlignment="CenterAnchor" />';
+
+                var zoneImgId = 'uZoneImg_' + info.type + '_' + data.info.colorMapped;
+                var zoneLnkId = 'uZoneLnk_' + info.type + '_' + data.info.colorMapped;
+
+                var imageXml =
+                    '<Image Self="' + zoneImgId + '" ' +
+                    'ItemTransform="' + imgTransform + '" ' +
+                    'ImageTypeName="' + imageType + '" ' +
+                    'ImageRenderingIntent="UseColorSettings" ' +
+                    'LocalDisplaySetting="Default">' +
+                    graphicBoundsXml +
+                    '<Link Self="' + zoneLnkId + '" AssetURL="$ID/" AssetID="$ID/" ' +
+                    'LinkResourceURI="' + escXml(uriPath) + '" ' +
+                    'LinkClassID="35906" StoredState="Normal" LinkObjectModified="false" />' +
+                    '</Image>';
+
+                var newRectXml = rectXml.replace(/<\/Rectangle>/, fittingXml + imageXml + '</Rectangle>');
+                xml = xml.replace(rectXml, newRectXml);
+            }
+
+            // Calculate bounds with UNIFIED margin (same px for all zones)
+            var logoBounds = bounds.spread;
+            var exclusionBounds = {
+                left: logoBounds.left - marginPx,
+                top: logoBounds.top - marginPx,
+                right: logoBounds.right + marginPx,
+                bottom: logoBounds.bottom + marginPx
+            };
+
+            // Debug: log computed values to file
+            var debugMsg = '[ZONE] ' + info.typeUpper + ':\n' +
+                '  Logo file: ' + relPath + '\n' +
+                '  Logo rendered: ' + bounds.scaledW.toFixed(1) + 'x' + bounds.scaledH.toFixed(1) + ' pt\n' +
+                '  Reference logo size: ' + (refLogoSize ? refLogoSize.toFixed(1) : 'N/A') + ' pt\n' +
+                '  Unified margin: ' + marginPx.toFixed(1) + ' pt\n' +
+                '  Display percentage: ' + displayPct.toFixed(1) + '%\n';
+            console.log(debugMsg);
+
+            try {
+                var debugPath = nodePath.join(config.outputFolder, 'zone-debug.txt');
+                fs.appendFileSync(debugPath, debugMsg + '\n');
+            } catch (e) { /* ignore */ }
+
+            // Reposition type-specific helpers
+            xml = repositionNamedRect(xml, 'ZONE_BORDER_' + info.typeUpper, logoBounds);
+            xml = repositionNamedRect(xml, 'ZONE_EXCLUSION_' + info.typeUpper, exclusionBounds);
+            xml = repositionNamedRect(xml, 'ZONE_FILL_' + info.typeUpper, exclusionBounds);
+
+            // Reposition margin text label
+            var marginTextCenter = {
+                x: (exclusionBounds.left + exclusionBounds.right) / 2,
+                y: exclusionBounds.top + (marginPx * 0.5)
+            };
+            xml = repositionTextFrame(xml, 'ZONE_MARGIN_TEXT_' + info.typeUpper, marginTextCenter);
+
+            // For single-zone pages, also handle generic names
+            if (!isMultiZone) {
+                xml = repositionNamedRect(xml, 'ZONE_BORDER', logoBounds);
+                xml = repositionNamedRect(xml, 'ZONE_EXCLUSION', exclusionBounds);
+                xml = repositionNamedRect(xml, 'ZONE_FILL', exclusionBounds);
+                xml = repositionTextFrame(xml, 'ZONE_MARGIN_TEXT', marginTextCenter);
+            }
+        }
+
+        // Store margin values for Story processing
+        config.zoneMarginValues = config.zoneMarginValues || {};
+
+        // DISPLAY = percentage relative to horizontal width (main display value)
+        config.zoneMarginValues['DISPLAY'] = displayPct.toFixed(0) + '%';
+
+        // HORIZONTAL = percentage relative to horizontal width
+        config.zoneMarginValues['HORIZONTAL'] = displayPct.toFixed(0) + '%';
+
+        // ICON = user's original selected percentage (since icon is the reference)
+        config.zoneMarginValues['ICON'] = marginPct + '%';
+
+        // TEXT = user's original percentage (fallback reference)
+        config.zoneMarginValues['TEXT'] = marginPct + '%';
+
+        if (validCount === 0) return null; // all logos missing — remove page
+        return xml;
+    }
+
+    // ─── Prohibitions (logo misuse examples) ──────────────────────────
+
+    /**
+     * Build drop shadow XML for an Image element.
+     * The shadow follows the image's actual shape (alpha channel).
+     *
+     * @returns {string} TransparencySetting XML string
+     */
+    function buildDropShadowXml() {
+        return '<TransparencySetting>' +
+                '<DropShadowSetting Mode="Drop" ' +
+                'XOffset="5" YOffset="5" ' +
+                'Blur="8" ' +
+                'SpreadAmount="0" ' +
+                'Noise="0" ' +
+                'EffectColor="Swatch/Black" ' +
+                'Opacity="75" ' +
+                'BlendMode="Multiply" />' +
+            '</TransparencySetting>';
+    }
+
+    /**
+     * Build wrong color tint XML for an Image element.
+     * Uses InnerShadow with high spread to create a color overlay effect.
+     * This fills the logo shape with a wrong color (magenta).
+     *
+     * @returns {string} TransparencySetting XML string
+     */
+    function buildWrongColorXml() {
+        // Use InnerShadowSetting with high spread to fill the entire shape
+        // with a visible "wrong" color (magenta)
+        return '<TransparencySetting>' +
+                '<InnerShadowSetting Applied="true" ' +
+                'Mode="InnerShadow" ' +
+                'BlendMode="Color" ' +
+                'Opacity="80" ' +
+                'Noise="0" ' +
+                'ChokeAmount="100" ' +
+                'Size="500" ' +
+                'XOffset="0" ' +
+                'YOffset="0" ' +
+                'UseGlobalLight="false" ' +
+                'Angle="0" ' +
+                'Distance="0" ' +
+                'EffectColor="Color/RVB Magenta" />' +
+            '</TransparencySetting>';
+    }
+
+    /**
+     * Process prohibition frames in a Spread XML.
+     * Places logos with specific transformations (stretch, rotate, shadow, etc.)
+     *
+     * Frame naming: PROHIB_{TYPE}_{COLOR}
+     * TYPE: STRETCH, SHADOW, ROTATE, ZONE, VARIATION, COLOR, FONT, ELEMENT
+     * COLOR: ORIGINAL, BLACKWHITE, MONOCHROME, MONOCHROMELIGHT, CUSTOM
+     *
+     * @param {string} xml - Spread XML
+     * @param {object} scan - Logo scan results
+     * @param {string} outputFolder - Output folder path
+     * @param {object} config - Configuration
+     * @returns {string} Modified XML
+     */
+    function processProhibitions(xml, scan, outputFolder, config) {
+        var colorMap = {
+            'original': 'original',
+            'blackwhite': 'blackwhite',
+            'monochrome': 'monochrome',
+            'monochromelight': 'monochromeLight',
+            'custom': 'custom'
+        };
+
+        var imgCounter = 0;
+
+        // Use EXACT same pattern as processSpreadXml: regex.replace with callback
+        var regex = /<Rectangle[^>]*?Name="PROHIB_([A-Z]+)_([A-Za-z]+)"[\s\S]*?<\/Rectangle>\s*/g;
+
+        xml = xml.replace(regex, function (match, prohibType, color) {
+            var colorMapped = colorMap[color.toLowerCase()] || color.toLowerCase();
+
+            // Try logo types in priority order: vertical > horizontal > text > icon
+            var logoSel = null;
+            var logoFallbacks = ['vertical', 'horizontal', 'text', 'icon'];
+            for (var f = 0; f < logoFallbacks.length; f++) {
+                var tryType = logoFallbacks[f];
+                if (scan.logos[tryType] && scan.logos[tryType][colorMapped]) {
+                    logoSel = tryType;
+                    break;
+                }
+            }
+
+            // No logo found - remove frame
+            if (!logoSel) {
+                return '';
+            }
+
+            // Skip if already has an image
+            if (match.indexOf('<Image') >= 0 || match.indexOf('LinkResourceURI=') >= 0) {
+                return match;
+            }
+
+            var relPath = scan.logos[logoSel][colorMapped];
+            var absPath = nodePath.join(outputFolder, relPath).replace(/\\/g, '/');
+            var uriPath = 'file:///' + absPath.replace(/^\//, '');
+
+            imgCounter++;
             var ext = relPath.split('.').pop().toLowerCase();
             var imageType = '$ID/';
             if (ext === 'svg') imageType = '$ID/SVG';
@@ -734,74 +1338,75 @@ const IDMLGenerator = (function () {
             else if (ext === 'png') imageType = '$ID/Portable Network Graphics (PNG)';
             else if (ext === 'jpg' || ext === 'jpeg') imageType = '$ID/JPEG';
 
-            var frameBounds = getFrameBounds(rectXml);
+            // Get frame bounds and image dimensions — identique à processSpreadXml
+            var frameBounds = getFrameBounds(match);
             var imgDims = getImageDimensions(absPath);
             var imgTransform = '1 0 0 1 0 0';
             var graphicBoundsXml = '';
+            var effectXml = '';
 
             if (frameBounds && imgDims && imgDims.width > 0 && imgDims.height > 0) {
                 var scaleX = frameBounds.width / imgDims.width;
                 var scaleY = frameBounds.height / imgDims.height;
-                var scale = Math.min(scaleX, scaleY);
-                var scaledW = imgDims.width * scale;
-                var scaledH = imgDims.height * scale;
+                var scale, finalScaleX, finalScaleY;
+
+                if (prohibType === 'STRETCH') {
+                    scale = Math.min(scaleX / 1.4, scaleY / 0.7) * 0.75;
+                    finalScaleX = scale * 1.4;
+                    finalScaleY = scale * 0.7;
+                } else {
+                    // SHADOW, COLOR: 100% contain identique à processSpreadXml
+                    // Le resize 75% est fait en post-traitement via BridgeTalk
+                    scale = Math.min(scaleX, scaleY);
+                    finalScaleX = scale;
+                    finalScaleY = scale;
+                }
+
+                var scaledW = imgDims.width * finalScaleX;
+                var scaledH = imgDims.height * finalScaleY;
+
                 var tx = frameBounds.left + (frameBounds.width - scaledW) / 2;
                 var ty = frameBounds.top + (frameBounds.height - scaledH) / 2;
 
-                imgTransform = scale.toFixed(6) + ' 0 0 ' + scale.toFixed(6) + ' ' +
+                imgTransform = finalScaleX.toFixed(6) + ' 0 0 ' + finalScaleY.toFixed(6) + ' ' +
                     tx.toFixed(2) + ' ' + ty.toFixed(2);
+
                 graphicBoundsXml =
                     '<Properties><GraphicBounds Left="0" Top="0" ' +
                     'Right="' + imgDims.width.toFixed(2) + '" ' +
                     'Bottom="' + imgDims.height.toFixed(2) + '" /></Properties>';
             }
 
+            // Build effect XML
+            if (prohibType === 'SHADOW') {
+                effectXml = buildDropShadowXml();
+            } else if (prohibType === 'COLOR') {
+                effectXml = buildWrongColorXml();
+            }
+
+            // Image XML with effect
+            var imageXml =
+                '<Image Self="uProhibImg' + imgCounter + '" ' +
+                'ItemTransform="' + imgTransform + '" ' +
+                'ImageTypeName="' + imageType + '" ' +
+                'ImageRenderingIntent="UseColorSettings" ' +
+                'LocalDisplaySetting="Default">' +
+                effectXml +
+                graphicBoundsXml +
+                '<Link Self="uProhibLnk' + imgCounter + '" AssetURL="$ID/" AssetID="$ID/" ' +
+                'LinkResourceURI="' + escXml(uriPath) + '" ' +
+                'LinkClassID="35906" StoredState="Normal" LinkObjectModified="false" />' +
+                '</Image>';
+
+            // FrameFittingOption identique à processSpreadXml
             var fittingXml =
                 '<FrameFittingOption AutoFit="true" ' +
                 'LeftCrop="0" TopCrop="0" RightCrop="0" BottomCrop="0" ' +
                 'FittingOnEmptyFrame="Proportional" ' +
                 'FittingAlignment="CenterAnchor" />';
 
-            var zoneImgId = 'uZoneImg_' + sel + '_' + col;
-            var zoneLnkId = 'uZoneLnk_' + sel + '_' + col;
-
-            var imageXml =
-                '<Image Self="' + zoneImgId + '" ' +
-                'ItemTransform="' + imgTransform + '" ' +
-                'ImageTypeName="' + imageType + '" ' +
-                'ImageRenderingIntent="UseColorSettings" ' +
-                'LocalDisplaySetting="Default">' +
-                graphicBoundsXml +
-                '<Link Self="' + zoneLnkId + '" AssetURL="$ID/" AssetID="$ID/" ' +
-                'LinkResourceURI="' + escXml(uriPath) + '" ' +
-                'LinkClassID="35906" StoredState="Normal" LinkObjectModified="false" />' +
-                '</Image>';
-
-            var newRectXml = rectXml.replace(/<\/Rectangle>/, fittingXml + imageXml + '</Rectangle>');
-            xml = xml.replace(rectXml, newRectXml);
-        }
-
-        // 2. Compute rendered bounds of the logo in the frame
-        var bounds = computeLogoRenderedBounds(rectXml, absPath);
-        if (!bounds) return xml;
-
-        // 3. Calculate margin (based on largest dimension)
-        var marginPct = config.protectionZoneMargin || 15;
-        var marginPx = Math.max(bounds.scaledW, bounds.scaledH) * (marginPct / 100);
-
-        // 4. Define target bounds
-        var logoBounds = bounds.spread;
-        var exclusionBounds = {
-            left: logoBounds.left - marginPx,
-            top: logoBounds.top - marginPx,
-            right: logoBounds.right + marginPx,
-            bottom: logoBounds.bottom + marginPx
-        };
-
-        // 5. Reposition indicator elements
-        xml = repositionNamedRect(xml, 'ZONE_BORDER', logoBounds);
-        xml = repositionNamedRect(xml, 'ZONE_EXCLUSION', exclusionBounds);
-        xml = repositionNamedRect(xml, 'ZONE_FILL', exclusionBounds);
+            return match.replace(/<\/Rectangle>/, fittingXml + imageXml + '</Rectangle>');
+        });
 
         return xml;
     }
@@ -999,8 +1604,27 @@ const IDMLGenerator = (function () {
             xml = xml.replace(/\{\{MONO_LIGHT_CMYK\}\}/g, 'C:' + monoLightCmyk.c + ' M:' + monoLightCmyk.m + ' Y:' + monoLightCmyk.y + ' K:' + monoLightCmyk.k);
         }
 
-        // Zone margin placeholder
+        // Zone margin placeholder (percentage)
         xml = xml.replace(/\{\{ZONE_MARGIN_PCT\}\}/g, String(config.protectionZoneMargin || 15));
+
+        // Zone margin values (percentage relative to horizontal logo width)
+        // Supports: {{ZONE_MARGIN_VALUE}}, {{ZONE_MARGIN_VALUE_HORIZONTAL}}, {{ZONE_MARGIN_VALUE_ICON}}, etc.
+        if (config.zoneMarginValues) {
+            // Replace type-specific placeholders
+            for (var type in config.zoneMarginValues) {
+                if (type !== 'DISPLAY') {
+                    var marginRegex = new RegExp('\\{\\{ZONE_MARGIN_VALUE_' + type + '\\}\\}', 'g');
+                    xml = xml.replace(marginRegex, config.zoneMarginValues[type]);
+                }
+            }
+            // Generic {{ZONE_MARGIN_VALUE}} uses the unified display value
+            var displayValue = config.zoneMarginValues['DISPLAY'] || '-';
+            xml = xml.replace(/\{\{ZONE_MARGIN_VALUE\}\}/g, displayValue);
+        } else {
+            xml = xml.replace(/\{\{ZONE_MARGIN_VALUE\}\}/g, '-');
+        }
+        // Clean up any remaining type-specific placeholders
+        xml = xml.replace(/\{\{ZONE_MARGIN_VALUE_[A-Z]+\}\}/g, '-');
 
         // Clean up remaining color placeholders (unused slots)
         xml = xml.replace(/\{\{COLOR_\d+_(?:HEX|RGB|CMYK)\}\}/g, '-');
@@ -1011,8 +1635,10 @@ const IDMLGenerator = (function () {
         if (config.fontPrimary) {
             xml = replaceStoryFonts(xml, 'BRAND_PRIMARY', config.fontPrimary);
         }
-        if (config.fontSecondary) {
-            xml = replaceStoryFonts(xml, 'BRAND_SECONDARY', config.fontSecondary);
+        // Use fontSecondary if specified, otherwise fallback to fontPrimary
+        var secondaryFont = config.fontSecondary || config.fontPrimary;
+        if (secondaryFont) {
+            xml = replaceStoryFonts(xml, 'BRAND_SECONDARY', secondaryFont);
         }
 
         return xml;
@@ -1064,6 +1690,11 @@ const IDMLGenerator = (function () {
                 return { success: false, error: 'Template introuvable : ' + nodePath.basename(config.templatePath) };
             }
 
+            console.log('[IDML] Config: fontPrimary="' + (config.fontPrimary || '') +
+                '", fontSecondary="' + (config.fontSecondary || '') +
+                '", brandName="' + (config.brandName || '') +
+                '", template="' + nodePath.basename(config.templatePath) + '"');
+
             // 1. Scan available logos in the output folder
             var scan = scanAvailableLogos(config.outputFolder);
 
@@ -1085,6 +1716,7 @@ const IDMLGenerator = (function () {
 
             // 3. Remove conditional pages (before processing content)
             await processConditionalPages(zip, config);
+            await processTypoSecondaryPage(zip, config);
 
             // 4. Process Spread files (image frames)
             var allFiles = Object.keys(zip.files);
@@ -1094,7 +1726,7 @@ const IDMLGenerator = (function () {
 
             for (var i = 0; i < spreadFiles.length; i++) {
                 var spreadXml = await zip.file(spreadFiles[i]).async('string');
-                spreadXml = processConditionalBlocks(spreadXml, config);
+                spreadXml = processConditionalBlocks(spreadXml, config, scan);
                 spreadXml = processSpreadXml(spreadXml, scan, config.outputFolder);
                 zip.file(spreadFiles[i], spreadXml);
             }
@@ -1105,7 +1737,7 @@ const IDMLGenerator = (function () {
             });
             for (var i = 0; i < masterFiles.length; i++) {
                 var masterXml = await zip.file(masterFiles[i]).async('string');
-                masterXml = processConditionalBlocks(masterXml, config);
+                masterXml = processConditionalBlocks(masterXml, config, scan);
                 masterXml = processSpreadXml(masterXml, scan, config.outputFolder);
                 zip.file(masterFiles[i], masterXml);
             }
@@ -1137,6 +1769,16 @@ const IDMLGenerator = (function () {
                         );
                     }
                     zip.file(dmFile, dm);
+                }
+            }
+
+            // 4c. Process prohibition pages (logo misuse examples)
+            for (var i = 0; i < spreadFiles.length; i++) {
+                if (zoneSpreadsToRemove.indexOf(spreadFiles[i]) >= 0) continue;
+                var prohibXml = await zip.file(spreadFiles[i]).async('string');
+                if (/Name="PROHIB_/.test(prohibXml)) {
+                    prohibXml = processProhibitions(prohibXml, scan, config.outputFolder, config);
+                    zip.file(spreadFiles[i], prohibXml);
                 }
             }
 
