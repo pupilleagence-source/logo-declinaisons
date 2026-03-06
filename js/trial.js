@@ -78,7 +78,7 @@ const Trial = {
 
                     if (data.valid) {
                         // Licence valide, mettre à jour le cache
-                        this.saveCachedStatus({
+                        this.cacheStatus({
                             type: 'licensed',
                             unlimitedGenerations: true,
                             expiry: Date.now() + (24 * 60 * 60 * 1000) // 24h
@@ -92,10 +92,32 @@ const Trial = {
                             email: license.email
                         };
                     } else {
-                        // Licence révoquée ou expirée
+                        // HWID inconnu du serveur → peut-être changé après MAJ Illustrator
+                        // Tenter une ré-activation automatique avec la clé stockée
+                        if (license.key) {
+                            console.log('⚠️ HWID non reconnu, tentative de ré-activation automatique...');
+                            const reactivated = await this._tryReactivate(license.key, hwid);
+                            if (reactivated) {
+                                console.log('✓ Licence ré-activée automatiquement après changement de HWID');
+                                this.cacheStatus({
+                                    type: 'licensed',
+                                    unlimitedGenerations: true,
+                                    expiry: Date.now() + (24 * 60 * 60 * 1000)
+                                });
+                                return {
+                                    type: 'licensed',
+                                    unlimitedGenerations: true,
+                                    licenseKey: license.key,
+                                    email: license.email
+                                };
+                            }
+                        }
+
+                        // Ré-activation échouée → licence vraiment révoquée
                         console.warn('⚠️ Licence révoquée:', data.message);
                         localStorage.removeItem('_license');
                         localStorage.removeItem('_trial_cache');
+                        this._removeLicenseFromDisk();
 
                         // Basculer en mode trial
                         const trialStatus = await this.validateWithServer();
@@ -251,7 +273,17 @@ const Trial = {
                         console.log('✓ License valide (vérification temps réel)');
                         return { allowed: true, reason: 'licensed' };
                     } else {
-                        // Licence révoquée → Désactiver sur Lemon Squeezy pour libérer le slot
+                        // HWID inconnu → tenter ré-activation automatique
+                        if (license.key) {
+                            console.log('⚠️ HWID non reconnu (canGenerate), tentative de ré-activation...');
+                            const reactivated = await this._tryReactivate(license.key, hwid);
+                            if (reactivated) {
+                                console.log('✓ Licence ré-activée, génération autorisée');
+                                return { allowed: true, reason: 'licensed' };
+                            }
+                        }
+
+                        // Ré-activation échouée → licence vraiment révoquée
                         console.warn('⚠️ Licence révoquée:', data.message);
 
                         // Libérer le slot Lemon Squeezy
@@ -262,11 +294,13 @@ const Trial = {
                             console.warn('⚠️ Impossible de libérer le slot:', deactivateError);
                         }
 
+                        this._removeLicenseFromDisk();
+
                         return {
                             allowed: false,
                             reason: 'license_revoked',
                             message: 'Votre licence a été révoquée.\n\nVeuillez contacter le support.',
-                            needsUIUpdate: true // Signal pour mettre à jour l'interface
+                            needsUIUpdate: true
                         };
                     }
                 } else {
@@ -381,6 +415,62 @@ const Trial = {
     },
 
     /**
+     * Tente de ré-activer une licence avec un nouveau HWID
+     * (après MAJ Illustrator qui a changé le HWID)
+     */
+    _tryReactivate: async function(licenseKey, newHwid) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+            const response = await fetch('https://logotyps.vercel.app/api/license/activate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    licenseKey: licenseKey,
+                    email: 'user@license.local',
+                    hwid: newHwid
+                }),
+                signal: controller.signal
+            });
+
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                const data = await response.json();
+                if (data.success) {
+                    // Mettre à jour la licence stockée avec le nouveau HWID
+                    this.storeLicense({
+                        active: true,
+                        key: licenseKey,
+                        email: 'user@license.local',
+                        type: data.licenseType || 'lifetime',
+                        activatedAt: Date.now()
+                    });
+                    return true;
+                }
+            }
+            return false;
+        } catch (e) {
+            console.warn('⚠️ Ré-activation automatique échouée:', e.message);
+            return false;
+        }
+    },
+
+    /**
+     * Supprime le fichier licence du disque
+     */
+    _removeLicenseFromDisk: function() {
+        try {
+            const fs = require('fs');
+            const filePath = this.getLicensePersistPath();
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        } catch (e) {}
+    },
+
+    /**
      * Cache le statut localement (avec expiration)
      */
     cacheStatus: function(status) {
@@ -421,26 +511,70 @@ const Trial = {
     },
 
     /**
-     * Récupère la license stockée (si activée)
+     * Chemin du fichier de licence sur disque (survit aux MAJ Illustrator)
      */
+    getLicensePersistPath: function() {
+        const os = require('os');
+        const path = require('path');
+        return path.join(os.homedir(), '.logotyps-license');
+    },
+
     getStoredLicense: function() {
+        // 1. Essayer localStorage
         try {
             const encoded = localStorage.getItem('_license');
-            if (!encoded) return null;
+            if (encoded) {
+                const decoded = atob(encoded);
+                const license = JSON.parse(decoded);
+                if (license && license.active) {
+                    // S'assurer que c'est aussi sur disque
+                    this._writeLicenseToDisk(license);
+                    return license;
+                }
+            }
+        } catch (error) {}
 
-            const decoded = atob(encoded);
-            return JSON.parse(decoded);
-        } catch (error) {
-            return null;
+        // 2. Fallback : lire depuis le disque (localStorage vidé par MAJ Illustrator)
+        try {
+            const fs = require('fs');
+            const filePath = this.getLicensePersistPath();
+            if (fs.existsSync(filePath)) {
+                const content = fs.readFileSync(filePath, 'utf8');
+                const license = JSON.parse(content);
+                if (license && license.active) {
+                    // Restaurer dans localStorage
+                    const encoded = btoa(JSON.stringify(license));
+                    localStorage.setItem('_license', encoded);
+                    console.log('✓ Licence restaurée depuis le disque');
+                    return license;
+                }
+            }
+        } catch (diskError) {
+            console.warn('⚠️ Impossible de lire licence depuis disque:', diskError.message);
         }
+
+        return null;
     },
 
     /**
-     * Stocke une license activée
+     * Stocke une license activée (localStorage + disque)
      */
     storeLicense: function(licenseData) {
         const encoded = btoa(JSON.stringify(licenseData));
         localStorage.setItem('_license', encoded);
+        this._writeLicenseToDisk(licenseData);
+    },
+
+    /**
+     * Ecrit la licence sur disque
+     */
+    _writeLicenseToDisk: function(licenseData) {
+        try {
+            const fs = require('fs');
+            fs.writeFileSync(this.getLicensePersistPath(), JSON.stringify(licenseData), 'utf8');
+        } catch (e) {
+            console.warn('⚠️ Impossible d\'écrire licence sur disque:', e.message);
+        }
     },
 
     /**
@@ -451,10 +585,12 @@ const Trial = {
             // Récupérer le HWID actuel avant de le supprimer
             const hwid = await HWID.get();
 
-            // Supprimer les données locales
+            // Supprimer les données locales + disque
             localStorage.removeItem('_trial_cache');
             localStorage.removeItem('_license');
             localStorage.removeItem('_hwid');
+            this._removeLicenseFromDisk();
+            try { const fs = require('fs'); const hwidPath = require('path').join(require('os').homedir(), '.logotyps-hwid'); if (fs.existsSync(hwidPath)) fs.unlinkSync(hwidPath); } catch(e) {}
 
             // Appeler le serveur pour supprimer la clé Redis
             try {
@@ -484,10 +620,12 @@ const Trial = {
 
         } catch (error) {
             console.error('❌ Erreur reset trial:', error);
-            // Quand même supprimer les données locales
+            // Quand même supprimer les données locales + disque
             localStorage.removeItem('_trial_cache');
             localStorage.removeItem('_license');
             localStorage.removeItem('_hwid');
+            this._removeLicenseFromDisk();
+            try { const fs = require('fs'); const hwidPath = require('path').join(require('os').homedir(), '.logotyps-hwid'); if (fs.existsSync(hwidPath)) fs.unlinkSync(hwidPath); } catch(e) {}
         }
     },
 
@@ -499,8 +637,9 @@ const Trial = {
         try {
             const hwid = await HWID.get();
 
-            // Supprimer localement d'abord
+            // Supprimer localement d'abord (localStorage + disque)
             localStorage.removeItem('_license');
+            this._removeLicenseFromDisk();
 
             // Appeler le serveur pour supprimer de Redis
             try {

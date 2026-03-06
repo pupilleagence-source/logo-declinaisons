@@ -464,6 +464,40 @@ const IDMLGenerator = (function () {
         return { logos: logos, selNames: selNames, colorNames: colorNames };
     }
 
+    /**
+     * Scan templates/mockups/ folder for PSD files.
+     * Returns { mockups: [{name, filename, path}], count }
+     */
+    function scanAvailableMockups(extensionPath) {
+        var mockupsFolder = nodePath.join(extensionPath, 'templates', 'mockups');
+        var mockups = [];
+
+        try {
+            if (!fs.existsSync(mockupsFolder)) {
+                return { mockups: mockups, count: 0 };
+            }
+
+            var entries = fs.readdirSync(mockupsFolder);
+            for (var i = 0; i < entries.length; i++) {
+                var entry = entries[i];
+                if (!entry.toLowerCase().endsWith('.psd')) continue;
+
+                var basename = entry.substring(0, entry.length - 4);
+                var frameName = 'MOCKUP_' + basename.toUpperCase().replace(/[^A-Z0-9_-]/g, '-');
+
+                mockups.push({
+                    name: frameName,
+                    filename: entry,
+                    path: nodePath.join(mockupsFolder, entry)
+                });
+            }
+        } catch (e) {
+            console.log('[MOCKUP] Scan error:', e);
+        }
+
+        return { mockups: mockups, count: mockups.length };
+    }
+
     // ─── Color & Font processors ────────────────────────────────────
 
     /**
@@ -1181,7 +1215,9 @@ const IDMLGenerator = (function () {
             console.log(debugMsg);
 
             try {
-                var debugPath = nodePath.join(config.outputFolder, 'zone-debug.txt');
+                var tempDbgDir = nodePath.join(config.outputFolder, '_temp');
+                if (!fs.existsSync(tempDbgDir)) fs.mkdirSync(tempDbgDir);
+                var debugPath = nodePath.join(tempDbgDir, 'zone-debug.txt');
                 fs.appendFileSync(debugPath, debugMsg + '\n');
             } catch (e) { /* ignore */ }
 
@@ -1404,6 +1440,88 @@ const IDMLGenerator = (function () {
                 'LeftCrop="0" TopCrop="0" RightCrop="0" BottomCrop="0" ' +
                 'FittingOnEmptyFrame="Proportional" ' +
                 'FittingAlignment="CenterAnchor" />';
+
+            return match.replace(/<\/Rectangle>/, fittingXml + imageXml + '</Rectangle>');
+        });
+
+        return xml;
+    }
+
+    /**
+     * Process MOCKUP_{NAME} frames in Spread XML.
+     * Sets LinkResourceURI pointing to the future PNG export path
+     * (the PNG will be created later by Photoshop via BridgeTalk).
+     *
+     * @param {string} xml - Spread XML content
+     * @param {object} mockupScan - Result of scanAvailableMockups()
+     * @param {string} outputFolder - Output folder path
+     * @returns {string} Modified XML
+     */
+    function processMockupFrames(xml, mockupScan, outputFolder) {
+        if (!mockupScan || !mockupScan.mockups || mockupScan.count === 0) {
+            return xml;
+        }
+
+        var imgCounter = 0;
+
+        // Build lookup map: frameName → mockup info
+        var mockupMap = {};
+        for (var i = 0; i < mockupScan.mockups.length; i++) {
+            var m = mockupScan.mockups[i];
+            mockupMap[m.name] = m;
+        }
+
+        // Match MOCKUP_{NAME} rectangles (full block including closing tag)
+        var regex = /(<Rectangle[^>]*?Name="(MOCKUP_[A-Z0-9_-]+)"[\s\S]*?<\/Rectangle>)\s*/g;
+
+        xml = xml.replace(regex, function (match, fullRect, frameName) {
+            var mockup = mockupMap[frameName];
+
+            // No matching PSD found → remove the frame
+            if (!mockup) {
+                console.log('[MOCKUP] No PSD for frame: ' + frameName + ', removing');
+                return '';
+            }
+
+            // Skip if already has an image
+            if (match.indexOf('<Image') >= 0 || match.indexOf('LinkResourceURI=') >= 0) {
+                return match;
+            }
+
+            imgCounter++;
+
+            // Predicted output path (Photoshop will create this PNG later)
+            var mockupOutputName = mockup.filename.replace(/\.psd$/i, '.png').toLowerCase();
+            var mockupAbsPath = nodePath.join(outputFolder, 'mockups', mockupOutputName).replace(/\\/g, '/');
+            var uriPath = 'file:///' + mockupAbsPath.replace(/^\//, '');
+
+            // Get frame bounds for transform
+            var frameBounds = getFrameBounds(match);
+            var imgTransform = '1 0 0 1 0 0';
+            if (frameBounds) {
+                imgTransform = '1 0 0 1 ' + frameBounds.left.toFixed(2) + ' ' + frameBounds.top.toFixed(2);
+            }
+
+            // Build Image element (PNG type)
+            var imageXml =
+                '<Image Self="uMockupImg' + imgCounter + '" ' +
+                'ItemTransform="' + imgTransform + '" ' +
+                'ImageTypeName="$ID/Portable Network Graphics (PNG)" ' +
+                'ImageRenderingIntent="UseColorSettings" ' +
+                'LocalDisplaySetting="Default">' +
+                '<Link Self="uMockupLnk' + imgCounter + '" AssetURL="$ID/" AssetID="$ID/" ' +
+                'LinkResourceURI="' + escXml(uriPath) + '" ' +
+                'LinkClassID="35906" StoredState="Normal" LinkObjectModified="false" />' +
+                '</Image>';
+
+            // FrameFittingOption: AutoFit + Proportional (same as other frame types)
+            var fittingXml =
+                '<FrameFittingOption AutoFit="true" ' +
+                'LeftCrop="0" TopCrop="0" RightCrop="0" BottomCrop="0" ' +
+                'FittingOnEmptyFrame="Proportional" ' +
+                'FittingAlignment="CenterAnchor" />';
+
+            console.log('[MOCKUP] Placed: ' + frameName + ' → ' + mockupOutputName);
 
             return match.replace(/<\/Rectangle>/, fittingXml + imageXml + '</Rectangle>');
         });
@@ -1697,6 +1815,10 @@ const IDMLGenerator = (function () {
 
             // 1. Scan available logos in the output folder
             var scan = scanAvailableLogos(config.outputFolder);
+            var mockupScan = config.extensionPath ? scanAvailableMockups(config.extensionPath) : { mockups: [], count: 0 };
+            if (mockupScan.count > 0) {
+                console.log('[IDML] Found ' + mockupScan.count + ' mockup PSD(s)');
+            }
 
             var hasLogos = false;
             for (var s in scan.logos) {
@@ -1782,6 +1904,16 @@ const IDMLGenerator = (function () {
                 }
             }
 
+            // 4d. Process mockup frames (Photoshop integration)
+            for (var i = 0; i < spreadFiles.length; i++) {
+                if (zoneSpreadsToRemove.indexOf(spreadFiles[i]) >= 0) continue;
+                var mockupXml = await zip.file(spreadFiles[i]).async('string');
+                if (/Name="MOCKUP_/.test(mockupXml)) {
+                    mockupXml = processMockupFrames(mockupXml, mockupScan, config.outputFolder);
+                    zip.file(spreadFiles[i], mockupXml);
+                }
+            }
+
             // 5. Process Story files (text placeholders)
             var storyFiles = allFiles.filter(function (f) {
                 return f.indexOf('Stories/') === 0 && f.endsWith('.xml');
@@ -1826,7 +1958,11 @@ const IDMLGenerator = (function () {
             return {
                 success: true,
                 filename: 'presentation-logo.idml',
-                path: outputPath
+                path: outputPath,
+                mockupData: {
+                    mockups: mockupScan.mockups,
+                    count: mockupScan.count
+                }
             };
 
         } catch (err) {

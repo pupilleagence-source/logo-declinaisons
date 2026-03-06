@@ -619,6 +619,12 @@ function setupEventListeners() {
         btnPresentation.addEventListener('click', handleGeneratePresentation);
     }
 
+    // Bouton re-tester mockups (PS → InDesign) sans tout regénérer
+    const btnRerunMockups = document.getElementById('btn-rerun-mockups');
+    if (btnRerunMockups) {
+        btnRerunMockups.addEventListener('click', handleRerunMockups);
+    }
+
     // DEBUG: Bouton reset trial
     const resetTrialBtn = document.getElementById('reset-trial-btn');
     if (resetTrialBtn) {
@@ -1270,6 +1276,46 @@ async function handleGeneratePresentation() {
     try {
         showStatus('Génération de la présentation InDesign...', 'info');
 
+        // Auto-extraire les couleurs originales depuis les SVG exportés sur disque
+        // Ne dépend PAS de la sélection Illustrator ni de l'analyse manuelle
+        if (!appState.customColors.mapping || appState.customColors.mapping.length === 0) {
+            try {
+                var fs = require('fs');
+                var nodePath = require('path');
+                var extractedColors = {};
+                var colorBlacklist = { '#000000': 1, '#ffffff': 1, '#fff': 1, '#000': 1, 'none': 1, 'transparent': 1 };
+                var logoTypes = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
+                for (var lt = 0; lt < logoTypes.length; lt++) {
+                    var svgDir = nodePath.join(appState.outputFolder, logoTypes[lt], 'original', 'SVG');
+                    if (!fs.existsSync(svgDir)) continue;
+                    var svgFiles = fs.readdirSync(svgDir).filter(function(f) { return f.toLowerCase().endsWith('.svg'); });
+                    for (var sf = 0; sf < svgFiles.length && Object.keys(extractedColors).length < 10; sf++) {
+                        var svgContent = fs.readFileSync(nodePath.join(svgDir, svgFiles[sf]), 'utf8');
+                        // Extraire fill="..." et stroke="..."
+                        var colorMatches = svgContent.match(/(?:fill|stroke)="(#[0-9a-fA-F]{3,8})"/g) || [];
+                        for (var cm = 0; cm < colorMatches.length; cm++) {
+                            var hex = colorMatches[cm].match(/#[0-9a-fA-F]{3,8}/);
+                            if (hex) {
+                                var c = hex[0].toLowerCase();
+                                // Normaliser les hex courts (#abc → #aabbcc)
+                                if (c.length === 4) c = '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3];
+                                if (!colorBlacklist[c]) extractedColors[c] = true;
+                            }
+                        }
+                    }
+                    if (Object.keys(extractedColors).length > 0) break; // Un seul type suffit
+                }
+                var uniqueColors = Object.keys(extractedColors);
+                if (uniqueColors.length > 0) {
+                    appState.customColors.mapping = uniqueColors.map(function(c) {
+                        return { original: c, custom: c };
+                    });
+                }
+            } catch (autoColorErr) {
+                console.warn('Auto SVG color extraction failed:', autoColorErr);
+            }
+        }
+
         // Get selected template
         var selectedRadio = document.querySelector('input[name="template"]:checked');
         var templateName = selectedRadio ? selectedRadio.value : 'template-1';
@@ -1279,6 +1325,7 @@ async function handleGeneratePresentation() {
         const config = {
             templatePath: nodePath.join(extensionPath, 'templates', templateName + '.idml'),
             outputFolder: appState.outputFolder,
+            extensionPath: extensionPath,
             colors: appState.customColors && appState.customColors.mapping ? appState.customColors.mapping : [],
             brandName: (document.getElementById('brand-name') && document.getElementById('brand-name').value) || 'Logo',
             fontPrimary: (document.getElementById('brand-font-primary') && document.getElementById('brand-font-primary').value) || '',
@@ -1296,20 +1343,149 @@ async function handleGeneratePresentation() {
         const result = await IDMLGenerator.generate(config);
 
         if (result.success) {
-            showStatus('Présentation InDesign générée, ouverture dans InDesign...', 'info');
-            var escapedPath = result.path.replace(/\\/g, '\\\\');
-            csInterface.evalScript('openInInDesignAndProcess("' + escapedPath + '")', function (res) {
-                try {
-                    var r = JSON.parse(res);
-                    if (r.success) {
-                        showStatus('Présentation ouverte dans InDesign : ' + result.filename, 'success');
-                    } else {
-                        showStatus('Présentation générée : ' + result.filename + ' (ouverture InDesign échouée : ' + r.error + ')', 'success');
+            var hasMockups = result.mockupData && result.mockupData.count > 0;
+            // Toujours normaliser en forward slashes (évite les problèmes d'échappement Windows)
+            var safePath = result.path.replace(/\\/g, '/');
+
+            // Stocker pour le bouton "Re-tester mockups"
+            window._lastIdmlPath = safePath;
+            window._lastOutputFolder = config.outputFolder.replace(/\\/g, '/');
+            if (hasMockups) {
+                var btnRerun = document.getElementById('btn-rerun-mockups');
+                if (btnRerun) btnRerun.style.display = 'block';
+            }
+
+            // DEBUG: écrire un fichier debug.txt dans le dossier _temp/
+            var debugLines = [];
+            var fsDbg = require('fs');
+            var tempDir = nodePath.join(config.outputFolder, '_temp');
+            try { if (!fsDbg.existsSync(tempDir)) fsDbg.mkdirSync(tempDir); } catch(e) {}
+            var dbgPath = nodePath.join(tempDir, 'debug-mockups.txt');
+            var writeDebug = function(line) {
+                debugLines.push(new Date().toISOString() + ' ' + line);
+                try { fsDbg.writeFileSync(dbgPath, debugLines.join('\n') + '\n'); } catch(e) {}
+            };
+            writeDebug('=== DEBUG MOCKUPS ===');
+            writeDebug('outputFolder: ' + config.outputFolder);
+            writeDebug('extensionPath: ' + config.extensionPath);
+            writeDebug('result.mockupData: ' + JSON.stringify(result.mockupData));
+            writeDebug('hasMockups: ' + hasMockups);
+
+            if (hasMockups) {
+                // Trouver les logos pour CHAQUE variation (horizontal, vertical, icon, text, custom1-3)
+                var fs = require('fs');
+                var logoVariations = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
+                var logoPaths = {};
+                var preferred = ['svg', 'png', 'ai', 'pdf', 'jpg'];
+
+                function findFirstLogo(varFolder) {
+                    if (!fs.existsSync(varFolder)) return '';
+                    var files = fs.readdirSync(varFolder);
+                    var dirs = [varFolder];
+                    for (var d = 0; d < files.length; d++) {
+                        var sub = nodePath.join(varFolder, files[d]);
+                        try { if (fs.statSync(sub).isDirectory()) dirs.push(sub); } catch(e) {}
                     }
-                } catch (e) {
-                    showStatus('Présentation générée : ' + result.filename, 'success');
+                    for (var p = 0; p < preferred.length; p++) {
+                        for (var di = 0; di < dirs.length; di++) {
+                            var dirFiles = fs.readdirSync(dirs[di]);
+                            for (var f = 0; f < dirFiles.length; f++) {
+                                if (dirFiles[f].toLowerCase().endsWith('.' + preferred[p])) {
+                                    return nodePath.join(dirs[di], dirFiles[f]);
+                                }
+                            }
+                        }
+                    }
+                    return '';
                 }
-            });
+
+                for (var lv = 0; lv < logoVariations.length; lv++) {
+                    var varName = logoVariations[lv];
+                    var origDir = nodePath.join(config.outputFolder, varName, 'original');
+                    var found = findFirstLogo(origDir);
+                    if (found) logoPaths[varName] = found.replace(/\\/g, '/');
+                }
+                writeDebug('logoPaths: ' + JSON.stringify(logoPaths));
+
+                // logoPath par défaut = horizontal (rétrocompatibilité)
+                var logoPath = logoPaths.horizontal || logoPaths.vertical || logoPaths.icon || '';
+
+                if (logoPath) {
+                    writeDebug('→ calling processPhotoshopThenInDesign');
+                    showStatus('Traitement des mockups Photoshop (' + result.mockupData.count + ')...', 'info');
+
+                    // Couleurs de la marque pour les calques COLOR_N du PSD
+                    var brandColors = [];
+                    if (config.colors && config.colors.length > 0) {
+                        for (var ci = 0; ci < config.colors.length; ci++) {
+                            brandColors.push(config.colors[ci].original || config.colors[ci] || '');
+                        }
+                    }
+
+                    var mockupData = {
+                        mockups: result.mockupData.mockups.map(function (m) {
+                            return { name: m.name, filename: m.filename, path: m.path.replace(/\\/g, '/') };
+                        }),
+                        logoPath: logoPath.replace(/\\/g, '/'),
+                        logoPaths: logoPaths,
+                        outputFolder: config.outputFolder.replace(/\\/g, '/'),
+                        primaryColor: brandColors[0] || '',
+                        brandColors: brandColors,
+                        darkColor: config.monochromeColor || brandColors[0] || '#000000',
+                        lightColor: config.monochromeLightColor || '#ffffff',
+                        brandName: config.brandName || 'Logo'
+                    };
+
+                    // Plus de backslashes dans les données → JSON.stringify simple
+                    // Seules les apostrophes doivent être échappées pour le wrapper de l'evalScript
+                    var mockupDataStr = JSON.stringify(mockupData).replace(/'/g, "\\'");
+
+                    csInterface.evalScript("processPhotoshopThenInDesign('" + safePath + "', '" + mockupDataStr + "')", function (res) {
+                        try {
+                            var r = JSON.parse(res);
+                            if (r.success) {
+                                showStatus('Présentation avec mockups ouverte dans InDesign : ' + result.filename, 'success');
+                            } else {
+                                showStatus('Présentation générée : ' + result.filename + ' (erreur mockups : ' + r.error + ')', 'success');
+                            }
+                        } catch (e) {
+                            showStatus('Présentation générée : ' + result.filename, 'success');
+                        }
+                    });
+                } else {
+                    // No horizontal logo found → skip mockups, open InDesign directly
+                    writeDebug('→ NO logoPath, skipping Photoshop, opening InDesign directly');
+                    showStatus('Présentation InDesign générée, ouverture dans InDesign...', 'info');
+                    csInterface.evalScript('openInInDesignAndProcess("' + safePath + '")', function (res) {
+                        try {
+                            var r = JSON.parse(res);
+                            if (r.success) {
+                                showStatus('Présentation ouverte dans InDesign : ' + result.filename, 'success');
+                            } else {
+                                showStatus('Présentation générée : ' + result.filename, 'success');
+                            }
+                        } catch (e) {
+                            showStatus('Présentation générée : ' + result.filename, 'success');
+                        }
+                    });
+                }
+            } else {
+                // No mockups → direct InDesign opening (existing flow)
+                writeDebug('→ hasMockups=false, opening InDesign directly (no mockup processing)');
+                showStatus('Présentation InDesign générée, ouverture dans InDesign...', 'info');
+                csInterface.evalScript('openInInDesignAndProcess("' + safePath + '")', function (res) {
+                    try {
+                        var r = JSON.parse(res);
+                        if (r.success) {
+                            showStatus('Présentation ouverte dans InDesign : ' + result.filename, 'success');
+                        } else {
+                            showStatus('Présentation générée : ' + result.filename + ' (ouverture InDesign échouée : ' + r.error + ')', 'success');
+                        }
+                    } catch (e) {
+                        showStatus('Présentation générée : ' + result.filename, 'success');
+                    }
+                });
+            }
         } else {
             showStatus('Erreur présentation : ' + result.error, 'error');
         }
@@ -1319,6 +1495,28 @@ async function handleGeneratePresentation() {
     } finally {
         if (btn) btn.disabled = false;
     }
+}
+
+function handleRerunMockups() {
+    var outputFolder = window._lastOutputFolder;
+    var idmlPath = window._lastIdmlPath;
+    if (!outputFolder || !idmlPath) {
+        showStatus('Aucune génération précédente trouvée. Générez d\'abord la présentation.', 'error');
+        return;
+    }
+    showStatus('Re-lancement mockups PS → InDesign...', 'info');
+    csInterface.evalScript("rerunMockupsFromDisk('" + outputFolder + "', '" + idmlPath + "')", function (res) {
+        try {
+            var r = JSON.parse(res);
+            if (r.success) {
+                showStatus('Mockups relancés. Photoshop traite les PSD puis InDesign ouvrira.', 'success');
+            } else {
+                showStatus('Erreur re-run mockups : ' + r.error, 'error');
+            }
+        } catch (e) {
+            showStatus('Re-run mockups envoyé.', 'success');
+        }
+    });
 }
 
 function resetSelections() {

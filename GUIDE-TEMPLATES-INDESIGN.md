@@ -439,6 +439,114 @@ Page 7 — Interdictions
 
 ---
 
+## Mockups Photoshop (integration automatique)
+
+Integre automatiquement les logos dans des mockups PSD, exporte en PNG et lie au IDML.
+
+### Ajouter un mockup en 3 etapes
+
+1. Placer le fichier PSD dans `templates/mockups/` (ex: `tote-bag.psd`)
+2. Nommer les calques speciaux dans le PSD (voir conventions ci-dessous)
+3. Creer une frame dans le template InDesign nommee `MOCKUP_TOTE-BAG`
+
+C'est tout. Le reste est automatique.
+
+### Convention de nommage des calques PSD
+
+#### Calques Logo (Smart Object)
+
+| Nom du calque | Logo insere |
+|---|---|
+| `LOGO` | Horizontal (defaut) |
+| `LOGO_HORIZONTAL` | Horizontal |
+| `LOGO_VERTICAL` | Vertical |
+| `LOGO_ICON` | Icone |
+| `LOGO_TEXT` | Texte seul |
+| `LOGO_CUSTOM1` | Custom 1 |
+| `LOGO_CUSTOM2` | Custom 2 |
+| `LOGO_CUSTOM3` | Custom 3 |
+
+Le logo est redimensionne a **75% du canvas** du smart object et centre.
+Un meme PSD peut contenir **plusieurs calques LOGO_*** pour placer differentes variations.
+
+#### Calques Couleur (Solid Fill / Aplat)
+
+| Nom du calque | Couleur appliquee |
+|---|---|
+| `COLOR_1` | Couleur principale de la marque |
+| `COLOR_2` | 2eme couleur |
+| `COLOR_3` | 3eme couleur |
+| `COLOR_4` | 4eme couleur |
+| `COLOR_5` | 5eme couleur |
+
+Les couleurs sont extraites automatiquement du logo. Seuls les calques de type **Solid Fill** (aplat de couleur) sont modifies.
+
+#### Calques ignores
+
+Tous les autres calques (groupes, effets de lumiere, ombres, fond, textures...) ne sont **pas touches** par le script.
+
+### Exemple de structure PSD
+
+```
+tote-bag.psd
+  Bag [Group]
+    LOGO [SmartObject]         <- logo horizontal insere ici
+    Bag [Normal]
+  Handle [Group]
+    COLOR_1 [SolidFill]        <- colore avec la couleur principale
+    Handle [Normal]
+    Light Effects [Group]
+  Background [Group]
+    Photo [Normal]
+```
+
+```
+business-card.psd
+  Front [Group]
+    LOGO_HORIZONTAL [SmartObject]  <- logo horizontal
+    COLOR_1 [SolidFill]            <- fond couleur principale
+  Back [Group]
+    LOGO_ICON [SmartObject]        <- icone au dos
+    COLOR_2 [SolidFill]            <- accent 2eme couleur
+```
+
+### Convention Frame IDML
+
+Format : `MOCKUP_{NOM_DU_PSD}` en MAJUSCULES
+
+| Fichier PSD | Nom du frame IDML | Image exportee |
+|---|---|---|
+| `business-card.psd` | `MOCKUP_BUSINESS-CARD` | `mockups/business-card.png` |
+| `letterhead.psd` | `MOCKUP_LETTERHEAD` | `mockups/letterhead.png` |
+| `tote-bag.psd` | `MOCKUP_TOTE-BAG` | `mockups/tote-bag.png` |
+
+### Flux de traitement
+
+1. Le generateur IDML scanne `templates/mockups/` pour les fichiers `.psd`
+2. Les frames `MOCKUP_*` recoivent un lien vers le futur PNG
+3. Illustrator pre-convertit les logos vectoriels (SVG) en PNG haute resolution
+4. BridgeTalk envoie un script a Photoshop qui, pour chaque PSD :
+   - Ouvre le PSD
+   - Applique les couleurs aux calques `COLOR_N`
+   - Remplace chaque calque `LOGO_*` avec la variation correspondante
+   - Exporte en PNG-24 avec transparence
+   - Ferme le PSD sans sauvegarder
+5. Photoshop envoie un BridgeTalk a InDesign pour ouvrir le IDML
+
+### Gestion des erreurs
+
+| Cas | Comportement |
+|---|---|
+| Pas de Photoshop installe | Ouverture InDesign sans mockups, liens manquants |
+| Pas de fichiers PSD | Aucun traitement Photoshop, ouverture InDesign directe |
+| PSD sans calque `LOGO_*` | Fallback: utilise le premier Smart Object trouve |
+| Variation demandee absente | Fallback: utilise le logo horizontal |
+| Pas de logo exporte | Tous les mockups sont ignores |
+| Frame `MOCKUP_*` sans PSD | Frame supprime du document |
+| Pas de couleurs detectees | Les calques `COLOR_N` restent inchanges |
+
+---
+
 ## Styles de paragraphe (typographie dynamique)
 
 Creer ces styles de paragraphe dans InDesign.
@@ -506,6 +614,11 @@ INTERDICTIONS (mauvais usages):
   PROHIB_VARIATION_{COLOR}     Logo normal (designer cree mauvais agencement)
   PROHIB_FONT_{COLOR}          Logo normal (designer ajoute mauvaise font)
   PROHIB_ELEMENT_{COLOR}       Logo normal (designer ajoute forme)
+
+MOCKUPS PHOTOSHOP:
+  MOCKUP_{NOM_DU_PSD}          Ex: MOCKUP_BUSINESS-CARD (→ business-card.psd)
+  Dossier PSD: templates/mockups/
+  Calque requis: Smart Object nomme "LOGO"
 
 STYLES DE PARAGRAPHE:
   BRAND_PRIMARY                Police principale
