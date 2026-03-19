@@ -29,3 +29,6 @@ nul
 
 # Adobe specific
 *.aip
+
+# Mockup PSD files (too large for GitHub)
+templates/mockups/*.psd
