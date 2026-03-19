@@ -14,6 +14,7 @@
             <div class="header-content">
                 <div class="header-left">
                     <img class="logo" src="./media/logo.svg">
+                    <button id="reset-btn" class="btn-reset" title="Réinitialiser">Reset</button>
                     <p class="subtitle">Logo variations in 3 clics.</p>
                 </div>
                 <div class="header-right">
@@ -254,83 +255,80 @@
 
                 </section>
 
-                <!-- Présentation InDesign -->
+                <!-- Présentation InDesign (checkbox intégrée à l'export) -->
                 <section class="panel" id="presentation-section">
-                    <h2>Présentation logo</h2>
-                    <p class="section-desc">Génère un fichier InDesign (.idml) éditable à partir d'un template.</p>
+                    <label class="checkbox-label" style="font-weight: 600;">
+                        <input type="checkbox" id="presentation-enable">
+                        <span>Présentation InDesign (.idml)</span>
+                    </label>
 
-                    <div class="template-selector">
-                        <label class="template-option">
-                            <input type="radio" name="template" value="template-1" checked>
-                            <span class="template-preview">
-                                <span class="template-name">Minimaliste</span>
-                            </span>
-                        </label>
-                        <label class="template-option">
-                            <input type="radio" name="template" value="template-2">
-                            <span class="template-preview">
-                                <span class="template-name">Classique</span>
-                            </span>
-                        </label>
-                        <label class="template-option">
-                            <input type="radio" name="template" value="template-3">
-                            <span class="template-preview">
-                                <span class="template-name">Détaillé</span>
-                            </span>
-                        </label>
-                    </div>
-
-                    <div class="presentation-name">
-                        <label for="brand-name">Nom de la marque :</label>
-                        <input type="text" id="brand-name" placeholder="Ma Marque">
-                    </div>
-
-                    <div class="presentation-name font-autocomplete-wrapper">
-                        <label for="brand-font-primary">Police principale :</label>
-                        <div class="font-input-container">
-                            <input type="text" id="brand-font-primary" placeholder="Montserrat" value="" autocomplete="off">
-                            <div class="font-dropdown" id="font-dropdown-primary"></div>
+                    <div id="presentation-options" style="display: none; margin-top: 0.75em;">
+                        <div class="template-selector">
+                            <label class="template-option">
+                                <input type="radio" name="template" value="template-1" checked>
+                                <span class="template-preview">
+                                    <span class="template-name">Minimaliste</span>
+                                </span>
+                            </label>
+                            <label class="template-option">
+                                <input type="radio" name="template" value="template-2">
+                                <span class="template-preview">
+                                    <span class="template-name">Classique</span>
+                                </span>
+                            </label>
+                            <label class="template-option">
+                                <input type="radio" name="template" value="template-3">
+                                <span class="template-preview">
+                                    <span class="template-name">Détaillé</span>
+                                </span>
+                            </label>
                         </div>
-                    </div>
-                    <div class="presentation-name font-autocomplete-wrapper">
-                        <label for="brand-font-secondary">Police secondaire :</label>
-                        <div class="font-input-container">
-                            <input type="text" id="brand-font-secondary" placeholder="Open Sans" value="" autocomplete="off">
-                            <div class="font-dropdown" id="font-dropdown-secondary"></div>
-                        </div>
-                    </div>
 
-                    <div class="presentation-name">
-                        <label for="zone-margin">Zone de protection :</label>
-                        <div style="display: flex; align-items: center; gap: 0.5em;">
-                            <input type="range" id="zone-margin" min="5" max="40" value="15" step="1" style="flex: 1;">
-                            <span id="zone-margin-value">15</span>%
+                        <div class="presentation-name">
+                            <label for="brand-name">Nom de la marque :</label>
+                            <input type="text" id="brand-name" placeholder="Ma Marque">
                         </div>
-                    </div>
 
-                    <button id="btn-generate-presentation" class="btn-secondary btn-large" disabled>
-                        Générer présentation InDesign
-                    </button>
-                    <button id="btn-rerun-mockups" class="btn-secondary btn-large" style="display:none; margin-top:6px; font-size:11px; opacity:0.8;">
-                        Re-tester mockups (PS → InDesign)
-                    </button>
+                        <div class="presentation-name font-autocomplete-wrapper">
+                            <label for="brand-font-primary">Police principale :</label>
+                            <div class="font-input-container">
+                                <input type="text" id="brand-font-primary" placeholder="Montserrat" value="" autocomplete="off">
+                                <div class="font-dropdown" id="font-dropdown-primary"></div>
+                            </div>
+                        </div>
+                        <div class="presentation-name font-autocomplete-wrapper">
+                            <label for="brand-font-secondary">Police secondaire :</label>
+                            <div class="font-input-container">
+                                <input type="text" id="brand-font-secondary" placeholder="Open Sans" value="" autocomplete="off">
+                                <div class="font-dropdown" id="font-dropdown-secondary"></div>
+                            </div>
+                        </div>
+
+                        <div class="presentation-name">
+                            <label for="zone-margin">Zone de protection :</label>
+                            <div style="display: flex; align-items: center; gap: 0.5em;">
+                                <input type="range" id="zone-margin" min="5" max="40" value="15" step="1" style="flex: 1;">
+                                <span id="zone-margin-value">15</span>%
+                            </div>
+                        </div>
+
+                        <button id="btn-rerun-mockups" class="btn-secondary btn-large" style="display:none; margin-top:6px; font-size:11px; opacity:0.8;">
+                            Re-tester mockups (PS → InDesign)
+                        </button>
+                    </div>
                 </section>
             </div>
 
             <!-- Actions communes à tous les onglets -->
             <section class="panel actions-panel">
-                <!-- Navigation entre onglets -->
-                <div class="tab-navigation">
-                    <button id="prev-tab-btn" class="btn-secondary" disabled>← Précédent</button>
-                    <button id="next-tab-btn" class="btn-secondary">Suivant →</button>
+                <div class="actions-row">
+                    <button id="prev-tab-btn" class="btn-nav" disabled>←</button>
+                    <button id="generate-btn" class="btn-action btn-generate" disabled>Générer</button>
+                    <button id="export-btn" class="btn-action btn-export" disabled>Exporter</button>
+                    <button id="next-tab-btn" class="btn-nav">→</button>
                 </div>
-
-                <button id="generate-btn" class="btn-primary btn-large" disabled>
-                    Générer les plans de travail
-                </button>
-
                 <div class="summary" id="summary" style="display: none;">
-                    <p>Plans de travail à créer : <strong id="artboard-count">0</strong></p>
+                    <p>Plans de travail : <strong id="artboard-count">0</strong></p>
                 </div>
             </section>
 

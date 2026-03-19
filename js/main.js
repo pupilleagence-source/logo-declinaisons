@@ -521,6 +521,8 @@ function setupEventListeners() {
                         statusEl.textContent = 'Sélectionné ✓';
                         statusEl.classList.add('selected');
                     }
+                    const btnEl = document.querySelector('.btn-select[data-type="horizontal"]');
+                    if (btnEl) btnEl.classList.add('selected');
                     updateUI();
                     showStatus('Version horizontale générée et sélectionnée !', 'success');
                 }
@@ -554,6 +556,8 @@ function setupEventListeners() {
                         statusEl.textContent = 'Sélectionné ✓';
                         statusEl.classList.add('selected');
                     }
+                    const btnEl = document.querySelector('.btn-select[data-type="vertical"]');
+                    if (btnEl) btnEl.classList.add('selected');
                     updateUI();
                     showStatus('Version verticale générée et sélectionnée !', 'success');
                 }
@@ -607,16 +611,43 @@ function setupEventListeners() {
         addVariationBtn.addEventListener('click', addCustomVariation);
     }
 
-    // Bouton générer
+    // Bouton générer (artboards seulement)
     const generateBtn = document.getElementById('generate-btn');
     if (generateBtn) {
         generateBtn.addEventListener('click', handleGenerate);
     }
 
-    // Bouton générer présentation InDesign
-    const btnPresentation = document.getElementById('btn-generate-presentation');
-    if (btnPresentation) {
-        btnPresentation.addEventListener('click', handleGeneratePresentation);
+    // Bouton exporter (artboards + fichiers)
+    const exportBtnEl = document.getElementById('export-btn');
+    if (exportBtnEl) {
+        exportBtnEl.addEventListener('click', handleExport);
+    }
+
+    // Checkbox présentation InDesign : toggle options
+    const presentationCheckbox = document.getElementById('presentation-enable');
+    if (presentationCheckbox) {
+        presentationCheckbox.addEventListener('change', function() {
+            var opts = document.getElementById('presentation-options');
+            if (opts) opts.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+
+    // Bouton reset
+    const resetBtn = document.getElementById('reset-btn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', function() {
+            resetSelections();
+            // Réinitialiser aussi les inputs de présentation
+            var brandNameInput = document.getElementById('brand-name');
+            if (brandNameInput) brandNameInput.value = '';
+            var fontPrimary = document.getElementById('brand-font-primary');
+            if (fontPrimary) fontPrimary.value = '';
+            var fontSecondary = document.getElementById('brand-font-secondary');
+            if (fontSecondary) fontSecondary.value = '';
+            // Réinitialiser les sélections ExtendScript
+            evalExtendScript('clearStoredSelections').catch(function() {});
+            showStatus('Paramètres réinitialisés.', 'success');
+        });
     }
 
     // Bouton re-tester mockups (PS → InDesign) sans tout regénérer
@@ -1163,40 +1194,96 @@ function updateUI() {
     summaryEl.style.display = 'none';
   }
 
-  // Activer le bouton seulement si tous les critères sont remplis
-  document.getElementById('generate-btn').disabled = !(selectedCount > 0 && typeCount > 0 && sizeCount > 0 && colorCount > 0);
+  // "Générer" : sélections + types + couleurs suffisent
+  document.getElementById('generate-btn').disabled = !(selectedCount > 0 && typeCount > 0 && colorCount > 0);
+
+  // "Exporter" : il faut en plus un dossier, au moins un format et au moins une taille
+  const hasFolder = appState.outputFolder && appState.outputFolder !== '';
+  const hasFormat = appState.exportFormats.png || appState.exportFormats.jpg || appState.exportFormats.svg || appState.exportFormats.ai || appState.exportFormats.pdf;
+  const exportBtn = document.getElementById('export-btn');
+  if (exportBtn) {
+    exportBtn.disabled = !(selectedCount > 0 && typeCount > 0 && colorCount > 0 && sizeCount > 0 && hasFolder && hasFormat);
+  }
 }
 
+// Logique commune de vérification trial
+async function checkTrialAllowed() {
+    const canGenerate = await Trial.canGenerate();
+    if (!canGenerate.allowed) {
+        showStatus(canGenerate.message, 'error');
+        if (canGenerate.needsUIUpdate) {
+            const newStatus = await Trial.getStatus();
+            updateTrialBadge(newStatus);
+            updateLicenseKeyButton();
+        }
+        return false;
+    }
+    return true;
+}
+
+// Générer les plans de travail SEULEMENT (pas d'export fichiers)
 async function handleGenerate() {
     const generateBtn = document.getElementById('generate-btn');
 
     try {
-        // 🔒 VÉRIFIER LE TRIAL AVANT GÉNÉRATION
-        const canGenerate = await Trial.canGenerate();
+        if (!(await checkTrialAllowed())) return;
 
-        if (!canGenerate.allowed) {
-            // Trial épuisé → Bloquer et afficher message
-            showStatus(canGenerate.message, 'error');
-            console.log('❌ Génération bloquée:', canGenerate.reason);
+        if (generateBtn) generateBtn.disabled = true;
+        showStatus('Génération des plans de travail...', 'warning');
 
-            // Si la licence a été révoquée, mettre à jour l'interface
-            if (canGenerate.needsUIUpdate) {
+        const params = {
+            selections: appState.selections,
+            artboardTypes: appState.artboardTypes,
+            artboardMargins: appState.artboardMargins,
+            colorVariations: appState.colorVariations,
+            customColors: appState.customColors,
+            exportFormats: { png: false, jpg: false, svg: false, ai: false, pdf: false },
+            exportSizes: {},
+            customSizeEnabled: false,
+            customSize: appState.customSize,
+            faviconEnabled: appState.faviconEnabled,
+            outputFolder: '',
+            documentSettings: appState.documentSettings
+        };
+
+        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 120000);
+
+        if (result && result.startsWith('SUCCESS')) {
+            const count = result.split(':')[1];
+            showStatus(`${count} plans de travail créés !`, 'success');
+
+            try {
+                await Trial.incrementGeneration();
                 const newStatus = await Trial.getStatus();
                 updateTrialBadge(newStatus);
-                updateLicenseKeyButton();
+            } catch (e) {
+                console.error('Erreur incrémentation trial:', e);
             }
-
-            return; // Arrêter ici
+        } else if (result && result.startsWith('ERROR')) {
+            showStatus(result.substring(6).trim() || 'Erreur inconnue', 'error');
+        } else {
+            showStatus('Erreur: Réponse invalide', 'error');
         }
+    } catch (error) {
+        console.error('Generate error:', error);
+        showStatus(`Erreur: ${error.message || 'Erreur inconnue'}`, 'error');
+    } finally {
+        if (generateBtn) generateBtn.disabled = false;
+        updateUI();
+    }
+}
 
-        console.log('✓ Génération autorisée:', canGenerate.reason);
+// Exporter les fichiers (génère artboards + exporte dans le dossier)
+async function handleExport() {
+    const exportBtnEl = document.getElementById('export-btn');
 
-        // Désactiver le bouton pendant la génération
-        if (generateBtn) generateBtn.disabled = true;
+    try {
+        if (!(await checkTrialAllowed())) return;
 
-        showStatus('Génération en cours...', 'warning');
+        if (exportBtnEl) exportBtnEl.disabled = true;
+        showStatus('Exportation en cours...', 'warning');
+        document.body.classList.add('exporting');
 
-        // Préparer les paramètres
         const params = {
             selections: appState.selections,
             artboardTypes: appState.artboardTypes,
@@ -1212,67 +1299,51 @@ async function handleGenerate() {
             documentSettings: appState.documentSettings
         };
 
-        console.log('Generate params:', params);
-
-        // Appeler la fonction de génération avec timeout étendu (2 minutes pour grandes générations)
-        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 120000);
+        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 300000);
 
         if (result && result.startsWith('SUCCESS')) {
             const count = result.split(':')[1];
-            let successMsg = `${count} plans de travail créés avec succès !`;
 
-            // Ajouter info sur l'enregistrement si un dossier d'export est défini
-            if (appState.outputFolder && appState.outputFolder !== '') {
-                successMsg += ' Fichier Illustrator enregistré : logo-export-variation.ai';
-            }
-
-            showStatus(successMsg, 'success');
-
-            // 🎁 INCRÉMENTER LE COMPTEUR DE TRIAL (si en mode trial)
             try {
                 await Trial.incrementGeneration();
-
-                // Mettre à jour le badge avec le nouveau statut
                 const newStatus = await Trial.getStatus();
                 updateTrialBadge(newStatus);
-            } catch (incrementError) {
-                // Erreur lors de l'incrémentation (serveur offline pour trial)
-                console.error('❌ Erreur incrémentation trial:', incrementError);
-                showStatus('⚠️ Génération réussie mais impossible de mettre à jour le compteur (connexion requise)', 'warning');
+            } catch (e) {
+                console.error('Erreur incrémentation trial:', e);
             }
 
-            // Activer le bouton de présentation InDesign
-            var btnPres = document.getElementById('btn-generate-presentation');
-            if (btnPres) btnPres.disabled = false;
+            // Si la présentation InDesign est cochée, la générer maintenant
+            var presentationChecked = document.getElementById('presentation-enable');
+            if (presentationChecked && presentationChecked.checked) {
+                showStatus('Génération de la présentation InDesign...', 'warning');
+                try {
+                    await handleGeneratePresentation();
+                } catch (presErr) {
+                    console.error('Erreur présentation:', presErr);
+                    showStatus(`Export OK (${count} artboards) mais erreur présentation: ${presErr.message}`, 'warning');
+                }
+            }
 
-            // Réinitialiser les sélections
-            resetSelections();
+            showStatus(`Exportation terminée ! ${count} plans de travail exportés.`, 'success');
+
+            // Popup de confirmation
+            showExportDonePopup();
         } else if (result && result.startsWith('ERROR')) {
-            const errorMsg = result.substring(6).trim();
-            if (!errorMsg) {
-                showStatus('Erreur inconnue lors de la génération', 'error');
-            } else {
-                showStatus(errorMsg, 'error');
-            }
+            showStatus(result.substring(6).trim() || 'Erreur inconnue', 'error');
         } else {
-            showStatus('Erreur: Réponse invalide du serveur ExtendScript', 'error');
+            showStatus('Erreur: Réponse invalide', 'error');
         }
-
     } catch (error) {
-        console.error('Generate error:', error);
-        const errorMsg = error.message || 'Erreur inconnue';
-        showStatus(`Erreur lors de la génération: ${errorMsg}`, 'error');
+        console.error('Export error:', error);
+        showStatus(`Erreur: ${error.message || 'Erreur inconnue'}`, 'error');
     } finally {
-        // Réactiver le bouton
-        if (generateBtn) generateBtn.disabled = false;
-        updateUI(); // Re-vérifier l'état du bouton
+        if (exportBtnEl) exportBtnEl.disabled = false;
+        document.body.classList.remove('exporting');
+        updateUI();
     }
 }
 
 async function handleGeneratePresentation() {
-    const btn = document.getElementById('btn-generate-presentation');
-    if (btn) btn.disabled = true;
-
     try {
         showStatus('Génération de la présentation InDesign...', 'info');
 
@@ -1492,8 +1563,6 @@ async function handleGeneratePresentation() {
     } catch (err) {
         console.error('Presentation generation error:', err);
         showStatus('Erreur lors de la génération de la présentation : ' + (err.message || err), 'error');
-    } finally {
-        if (btn) btn.disabled = false;
     }
 }
 
@@ -1535,6 +1604,8 @@ function resetSelections() {
       statusEl.textContent = 'Pas sélect';
       statusEl.classList.remove('selected');
     }
+    const btnEl = document.querySelector(`.btn-select[data-type="${type}"]`);
+    if (btnEl) btnEl.classList.remove('selected');
   });
   updateUI();
 }
@@ -1557,6 +1628,19 @@ function getTypeName(type) {
   }
 
   return names[type] || type;
+}
+
+function showExportDonePopup() {
+    // Overlay popup simple
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+    var popup = document.createElement('div');
+    popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 32px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:280px;';
+    popup.innerHTML = '<div style="font-size:32px;margin-bottom:12px;">&#10003;</div><p style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--text-color);">Exportation terminée !</p><button style="padding:8px 24px;background:var(--primary-color);border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">OK</button>';
+    popup.querySelector('button').addEventListener('click', function() { overlay.remove(); });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
 }
 
 function showStatus(message, type = '') {
@@ -1723,14 +1807,16 @@ function evalExtendScript(functionName, params = [], timeout = 30000) {
         let timeoutId = null;
         let completed = false;
 
-        // Configurer le timeout
-        timeoutId = setTimeout(() => {
-            if (!completed) {
-                completed = true;
-                console.error('ExtendScript timeout après', timeout, 'ms');
-                reject(new Error(`Timeout: L'opération a pris plus de ${timeout/1000}s`));
-            }
-        }, timeout);
+        // Configurer le timeout (0 = pas de timeout)
+        if (timeout > 0) {
+            timeoutId = setTimeout(() => {
+                if (!completed) {
+                    completed = true;
+                    console.error('ExtendScript timeout après', timeout, 'ms');
+                    reject(new Error(`Timeout: L'opération a pris plus de ${timeout/1000}s`));
+                }
+            }, timeout);
+        }
 
         csInterface.evalScript(script, (result) => {
             if (!completed) {
@@ -1918,7 +2004,7 @@ function displayColorMapping() {
 
 async function browseFolder() {
   try {
-    const folder = await evalExtendScript('selectExportFolder');
+    const folder = await evalExtendScript('selectExportFolder', [], 0);
     if (folder) {
       appState.outputFolder = folder;
       document.getElementById('output-folder').value = folder;

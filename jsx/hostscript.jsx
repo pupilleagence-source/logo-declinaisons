@@ -427,6 +427,12 @@ function getSelectionInfo() {
     }
 }
 
+// Réinitialiser toutes les sélections stockées
+function clearStoredSelections() {
+    storedSelections = { icon: null, text: null, horizontal: null, vertical: null, custom1: null, custom2: null, custom3: null };
+    return "OK";
+}
+
 // Stocker la sélection actuelle
 function storeSelection(type) {
     try {
@@ -1935,6 +1941,11 @@ function generateArtboards(paramsJSON) {
         // 🆕 Le nouveau document reste actif (décision 1.A)
         // app.activeDocument est déjà targetDoc, pas besoin de changer
 
+        // Zoom pour voir tout le document
+        try {
+            app.executeMenuCommand('fitall');
+        } catch (zoomErr) {}
+
         return "SUCCESS:" + artboardCount;
 
     } catch (e) {
@@ -2331,25 +2342,20 @@ function generateVerticalVersion() {
         var insigneWidth = bInsigneNew[2] - bInsigneNew[0];
         var insigneHeightNew = bInsigneNew[1] - bInsigneNew[3];
 
-        // ✨ TROUVER POSITION SÛRE pour le nouvel artboard
+        // ✨ TROUVER POSITION SÛRE pour le nouvel artboard (en dessous des existants)
         var spacing = 100;
-        var maxX = 0;
+        var minY = 0;
 
-        // Trouver la position la plus à droite des artboards existants
+        // Trouver la position la plus basse des artboards existants
         if (doc.artboards.length > 0) {
             for (var i = 0; i < doc.artboards.length; i++) {
                 var ab = doc.artboards[i].artboardRect;
-                if (ab[2] > maxX) maxX = ab[2];
+                if (ab[3] < minY) minY = ab[3]; // ab[3] = bottom (le plus négatif = le plus bas)
             }
         }
 
-        // S'assurer que maxX n'est pas trop grand
-        if (maxX > 10000) {
-            maxX = 0; // Réinitialiser si trop de décalage
-        }
-
-        var startX = maxX + spacing;
-        var startY = 0;
+        var startX = 0;
+        var startY = minY - spacing;
 
         // Centrage horizontal
         var widest = Math.max(insigneWidth, logotypeWidth);
@@ -2406,6 +2412,7 @@ function generateVerticalVersion() {
         group.selected = true;
 
         $.writeln("✓ Version verticale générée avec succès");
+        try { app.executeMenuCommand('fitall'); } catch(e) {}
         return "OK";
 
     } catch (e) {
@@ -2472,25 +2479,20 @@ function generateHorizontalVersion() {
         var insigneWidth = bInsigneNew[2] - bInsigneNew[0];
         var insigneHeightNew = bInsigneNew[1] - bInsigneNew[3];
 
-        // ✨ TROUVER POSITION SÛRE pour le nouvel artboard
+        // ✨ TROUVER POSITION SÛRE pour le nouvel artboard (en dessous des existants)
         var spacing = 100;
-        var maxX = 0;
+        var minY = 0;
 
-        // Trouver la position la plus à droite des artboards existants
+        // Trouver la position la plus basse des artboards existants
         if (doc.artboards.length > 0) {
             for (var i = 0; i < doc.artboards.length; i++) {
                 var ab = doc.artboards[i].artboardRect;
-                if (ab[2] > maxX) maxX = ab[2];
+                if (ab[3] < minY) minY = ab[3];
             }
         }
 
-        // S'assurer que maxX n'est pas trop grand
-        if (maxX > 10000) {
-            maxX = 0; // Réinitialiser si trop de décalage
-        }
-
-        var startX = maxX + spacing;
-        var startY = 0;
+        var startX = 0;
+        var startY = minY - spacing;
 
         // Position horizontale : insigne à gauche, texte à droite
         var insigneX = startX;
@@ -2546,6 +2548,7 @@ function generateHorizontalVersion() {
         group.selected = true;
 
         $.writeln("✓ Version horizontale générée avec succès");
+        try { app.executeMenuCommand('fitall'); } catch(e) {}
         return "OK";
 
     } catch (e) {
