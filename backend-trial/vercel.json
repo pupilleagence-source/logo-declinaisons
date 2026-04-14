@@ -58,7 +58,7 @@
     },
     {
       "src": "/api/keepalive",
-      "dest": "/api/keepalive.js"
+      "dest": "/api/keepalive/index.js"
     }
   ],
   "crons": [
