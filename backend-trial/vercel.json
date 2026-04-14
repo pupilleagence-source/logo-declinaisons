@@ -64,7 +64,7 @@
   "crons": [
     {
       "path": "/api/keepalive",
-      "schedule": "0 */12 * * *"
+      "schedule": "0 6 * * *"
     }
   ],
   "env": {
