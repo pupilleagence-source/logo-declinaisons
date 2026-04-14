@@ -55,6 +55,16 @@
     {
       "src": "/api/updates/files",
       "dest": "/api/updates/files.js"
+    },
+    {
+      "src": "/api/keepalive",
+      "dest": "/api/keepalive.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/keepalive",
+      "schedule": "0 */12 * * *"
     }
   ],
   "env": {
