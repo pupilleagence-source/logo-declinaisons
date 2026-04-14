@@ -41,10 +41,6 @@
       "dest": "/api/webhooks/lemonsqueezy.js"
     },
     {
-      "src": "/api/debug/redis",
-      "dest": "/api/debug/redis.js"
-    },
-    {
       "src": "/api/version/latest",
       "dest": "/api/version/latest.js"
     },
