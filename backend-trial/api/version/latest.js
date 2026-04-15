@@ -31,11 +31,13 @@ export default async function handler(req, res) {
         // Configuration de la dernière version
         // TODO: Vous pourrez mettre à jour ces valeurs à chaque nouvelle release
         const latestVersion = {
-            version: '1.0.1',
-            releaseDate: '2025-11-08',
-            downloadUrl: 'https://votre-domaine.com/downloads/logo-declinaisons-v1.0.1.zxp',
+            version: '1.0.2',
+            releaseDate: '2026-04-14',
+            downloadUrl: 'https://github.com/pupilleagence-source/logo-declinaisons/releases/latest',
             changelog: [
-                '🧪 Test mise à jour automatique - Fond vert'
+                '🌍 Support multilangue (FR / EN / ES / IT)',
+                '✨ Système de trial stabilisé (backend keepalive)',
+                '🎨 Nouvelle DA alignée sur la charte du site'
             ]
         };
 

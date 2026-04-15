@@ -56,6 +56,15 @@ const UpdateChecker = {
             const comparison = this.compareVersions(data.version, this.CURRENT_VERSION);
 
             if (comparison > 0) {
+                // Vérifier si cette version a déjà été ignorée
+                try {
+                    var ignoredVersion = localStorage.getItem('ignored_update_version');
+                    if (ignoredVersion === data.version) {
+                        console.log(`🔕 Version ${data.version} déjà ignorée par l'utilisateur`);
+                        return null;
+                    }
+                } catch (e) {}
+
                 // Nouvelle version disponible
                 console.log(`🆕 Nouvelle version disponible: ${data.version} (actuelle: ${this.CURRENT_VERSION})`);
                 return data;
@@ -103,8 +112,13 @@ const UpdateChecker = {
     closeUpdateModal: function() {
         document.getElementById('update-modal').style.display = 'none';
 
-        // Sauvegarder qu'on a ignoré cette version (pour ne pas redemander pendant cette session)
-        sessionStorage.setItem('ignored_update', 'true');
+        // Sauvegarder la version ignorée (persistant : ne redemande plus pour cette version)
+        try {
+            var newVer = document.getElementById('update-new-version');
+            if (newVer && newVer.textContent && newVer.textContent !== '-') {
+                localStorage.setItem('ignored_update_version', newVer.textContent.trim());
+            }
+        } catch (e) {}
     },
 
     /**

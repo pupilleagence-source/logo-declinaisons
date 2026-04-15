@@ -71,6 +71,18 @@ async function init() {
     console.log('Initializing Logo Déclinaisons...');
 
     try {
+        // Initialiser i18n (applique la langue sauvegardée)
+        if (typeof I18N !== 'undefined') {
+            I18N.init();
+            var langSel = document.getElementById('lang-select');
+            if (langSel) {
+                langSel.value = I18N.currentLang;
+                langSel.addEventListener('change', function() {
+                    I18N.setLang(this.value);
+                });
+            }
+        }
+
         csInterface = new CSInterface();
 
         // Initialiser le système de trial/licensing
@@ -742,8 +754,14 @@ function setupEventListeners() {
 
     if (updateDownloadBtn) {
         updateDownloadBtn.addEventListener('click', () => {
-            // Utiliser le système d'auto-update
-            UpdateChecker.installUpdate();
+            // Ouvrir le lien de download dans le navigateur (pas d'auto-écrasement)
+            var url = updateDownloadBtn.dataset.downloadUrl;
+            if (url) {
+                window.cep && window.cep.util
+                    ? window.cep.util.openURLInDefaultBrowser(url)
+                    : window.open(url, '_blank');
+            }
+            UpdateChecker.closeUpdateModal();
         });
     }
 
