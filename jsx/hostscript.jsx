@@ -298,6 +298,37 @@ function safeParseJSON(jsonString) {
 }
 
 /**
+ * Duplique un élément de manière robuste (gère les enfants de groupes complexes)
+ * Essaie duplicate() d'abord, puis fallback copy/paste
+ */
+function safeDuplicate(item) {
+    var doc = app.activeDocument;
+    // Methode 1 : duplicate vers le calque actif (evite les conflits parent/enfant)
+    try {
+        var copy = item.duplicate(doc.activeLayer, ElementPlacement.PLACEATEND);
+        return copy;
+    } catch (e1) {}
+    // Methode 2 : duplicate simple
+    try {
+        var copy = item.duplicate();
+        return copy;
+    } catch (e2) {}
+    // Methode 3 : copy/paste via presse-papier
+    try {
+        doc.selection = null;
+        item.selected = true;
+        app.copy();
+        app.paste();
+        if (doc.selection && doc.selection.length > 0) {
+            var pasted = doc.selection[0];
+            doc.selection = null;
+            return pasted;
+        }
+    } catch (e3) {}
+    return null;
+}
+
+/**
  * Valide qu'un élément est utilisable pour la génération
  * @param {PageItem} item - L'élément à valider
  * @return {Object} {valid: boolean, error: string}
@@ -2313,15 +2344,16 @@ function generateVerticalVersion() {
             return "ERROR: Problème avec la typographie - " + textValidation.error;
         }
 
-        var insigne = storedSelections.icon.duplicate();
-        var logotype = storedSelections.text.duplicate();
+        // Dupliquer les éléments (safeDuplicate gère les enfants de groupes)
+        var insigne = safeDuplicate(storedSelections.icon);
+        var logotype = safeDuplicate(storedSelections.text);
+        if (!insigne || !logotype) {
+            if (insigne) try { insigne.remove(); } catch(e) {}
+            if (logotype) try { logotype.remove(); } catch(e) {}
+            return "ERROR: Impossible de dupliquer les éléments. Essayez de dégrouper vos éléments ou de les placer sur le calque principal, puis re-sélectionnez.";
+        }
         insigne.hidden = false;
         logotype.hidden = false;
-
-        // 🔧 NORMALISER LES POSITIONS - Déplacer vers zone sûre (0, 0) AVANT tous calculs
-        // Cela évite l'erreur AOoC si les éléments de base sont à des positions extrêmes
-        var safeX = 0;
-        var safeY = 0;
 
         // Mesurer AVANT déplacement
         var bLogotype = logotype.geometricBounds;
@@ -2450,15 +2482,16 @@ function generateHorizontalVersion() {
             return "ERROR: Problème avec la typographie - " + textValidation.error;
         }
 
-        var insigne = storedSelections.icon.duplicate();
-        var logotype = storedSelections.text.duplicate();
+        // Dupliquer les éléments (safeDuplicate gère les enfants de groupes)
+        var insigne = safeDuplicate(storedSelections.icon);
+        var logotype = safeDuplicate(storedSelections.text);
+        if (!insigne || !logotype) {
+            if (insigne) try { insigne.remove(); } catch(e) {}
+            if (logotype) try { logotype.remove(); } catch(e) {}
+            return "ERROR: Impossible de dupliquer les éléments. Essayez de dégrouper vos éléments ou de les placer sur le calque principal, puis re-sélectionnez.";
+        }
         insigne.hidden = false;
         logotype.hidden = false;
-
-        // 🔧 NORMALISER LES POSITIONS - Déplacer vers zone sûre (0, 0) AVANT tous calculs
-        // Cela évite l'erreur AOoC si les éléments de base sont à des positions extrêmes
-        var safeX = 0;
-        var safeY = 0;
 
         // Mesurer AVANT déplacement
         var bLogotype = logotype.geometricBounds;

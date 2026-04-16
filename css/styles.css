@@ -774,8 +774,8 @@ input[type="range"]:disabled::-moz-range-thumb {
 /* Language selector */
 .lang-select {
     position: absolute;
-    top: var(--space-md);
-    left: calc(var(--space-md) + 68px);
+    top: calc(var(--space-md) + 26px);
+    left: var(--space-md);
     width: 52px;
     height: 22px;
     padding: 2px 14px 2px 6px;
