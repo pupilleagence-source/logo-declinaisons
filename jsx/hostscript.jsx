@@ -521,6 +521,21 @@ function storeSelection(type) {
         storedSelections[type] = elementToStore;
         $.writeln("✓ Sélection '" + type + "' stockée avec succès");
 
+        // Désélectionner tout dans Illustrator
+        doc.selection = null;
+
+        return "OK";
+    } catch (e) {
+        return "ERROR: " + e.toString();
+    }
+}
+
+function clearStoredSelection(type) {
+    try {
+        if (storedSelections[type]) {
+            try { storedSelections[type].remove(); } catch (e) {}
+            storedSelections[type] = null;
+        }
         return "OK";
     } catch (e) {
         return "ERROR: " + e.toString();

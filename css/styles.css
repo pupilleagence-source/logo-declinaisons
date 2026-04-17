@@ -593,6 +593,28 @@ input[type="range"]:disabled::-moz-range-thumb {
     border-color: var(--primary-color);
 }
 
+.btn-clear-selection {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 18px;
+    text-align: center;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.btn-clear-selection:hover {
+    background: var(--error-color);
+    color: #FFFFFF;
+    border-color: var(--error-color);
+}
+
 .btn-primary {
     padding: var(--space-sm) var(--space-lg);
     background-color: var(--primary-color);

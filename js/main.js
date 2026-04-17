@@ -337,6 +337,14 @@ function setupEventListeners() {
         btn.addEventListener('click', handleSelection);
     });
 
+    // Boutons croix pour supprimer une sélection
+    document.querySelectorAll('.btn-clear-selection').forEach(btn => {
+        btn.addEventListener('click', function() {
+            var type = this.getAttribute('data-type');
+            handleClearSelection(type);
+        });
+    });
+
      // Bouton de génération variation horizontale
         const horizontalLayoutBtn = document.getElementById('generate-horizontal-layout');
     if (horizontalLayoutBtn) {
@@ -635,12 +643,17 @@ function setupEventListeners() {
         exportBtnEl.addEventListener('click', handleExport);
     }
 
-    // Checkbox présentation InDesign : toggle options
+    // Checkbox présentation InDesign : toggle options + popup info
     const presentationCheckbox = document.getElementById('presentation-enable');
     if (presentationCheckbox) {
         presentationCheckbox.addEventListener('change', function() {
             var opts = document.getElementById('presentation-options');
-            if (opts) opts.style.display = this.checked ? 'block' : 'none';
+            if (this.checked) {
+                if (opts) opts.style.display = 'block';
+                showPresentationInfoPopup();
+            } else {
+                if (opts) opts.style.display = 'none';
+            }
         });
     }
 
@@ -1082,6 +1095,10 @@ async function handleSelection(event) {
             // Ajouter la classe selected au bouton
             button.classList.add('selected');
 
+            // Afficher la croix de suppression
+            var clearBtn = button.parentElement.querySelector('.btn-clear-selection');
+            if (clearBtn) clearBtn.style.display = '';
+
             showStatus(`${getTypeName(type)} sélectionné`, 'success');
             updateUI();
         } else if (result && result.startsWith('ERROR:')) {
@@ -1099,6 +1116,31 @@ async function handleSelection(event) {
         // Réactiver les boutons de sélection
         allSelectButtons.forEach(btn => btn.disabled = false);
     }
+}
+
+function handleClearSelection(type) {
+    // Supprimer la sélection stockée côté ExtendScript
+    csInterface.evalScript('clearStoredSelection("' + type + '")');
+
+    // Reset l'état local
+    appState.selections[type] = null;
+
+    // Reset l'UI
+    var statusEl = document.getElementById('status-' + type);
+    if (statusEl) {
+        statusEl.textContent = typeof t === 'function' ? t('sel_not_selected') : 'Pas sélect';
+        statusEl.classList.remove('selected');
+    }
+
+    // Reset le bouton Valider
+    var selectBtn = document.querySelector('.btn-select[data-type="' + type + '"]');
+    if (selectBtn) selectBtn.classList.remove('selected');
+
+    // Masquer la croix
+    var clearBtn = document.querySelector('.btn-clear-selection[data-type="' + type + '"]');
+    if (clearBtn) clearBtn.style.display = 'none';
+
+    updateUI();
 }
 
 function updateArtboardTypes() {
@@ -1655,6 +1697,31 @@ function showExportDonePopup() {
     var popup = document.createElement('div');
     popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 32px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:280px;';
     popup.innerHTML = '<div style="font-size:32px;margin-bottom:12px;">&#10003;</div><p style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--text-color);">Exportation terminée !</p><button style="padding:8px 24px;background:var(--primary-color);border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">OK</button>';
+    popup.querySelector('button').addEventListener('click', function() { overlay.remove(); });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
+}
+
+function showPresentationInfoPopup() {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+    var popup = document.createElement('div');
+    popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 28px;text-align:left;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:300px;';
+    popup.innerHTML = ''
+        + '<div style="text-align:center;margin-bottom:12px;">'
+        + '<span style="font-size:11px;background:var(--primary-color);color:#fff;padding:2px 8px;border-radius:999px;font-weight:600;letter-spacing:0.5px;">BETA</span>'
+        + '</div>'
+        + '<p style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-color);">Presentation InDesign</p>'
+        + '<p style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:8px;">'
+        + '<strong>Photoshop</strong> et <strong>InDesign</strong> doivent être installés sur votre machine pour utiliser cette fonctionnalité.'
+        + '</p>'
+        + '<p style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:16px;">'
+        + 'Il est conseillé d\'avoir au moins <strong>3 déclinaisons</strong> du logo (ex: horizontal, vertical, icône) pour un résultat optimal.'
+        + '</p>'
+        + '<div style="text-align:center;">'
+        + '<button style="padding:8px 24px;background:var(--primary-color);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;">Compris</button>'
+        + '</div>';
     popup.querySelector('button').addEventListener('click', function() { overlay.remove(); });
     overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
     overlay.appendChild(popup);
