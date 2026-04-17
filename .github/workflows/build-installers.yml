@@ -1,0 +1,65 @@
+name: Build Installers (Windows + Mac)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g. 1.1.0)'
+        required: true
+        default: '1.1.0'
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Import signing certificate from base64 secret
+      - name: Import certificate
+        if: env.APPLE_CERTIFICATE_BASE64 != ''
+        env:
+          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+          security create-keychain -p "" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "" build.keychain
+          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/productsign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
+          rm certificate.p12
+
+      - name: Build Mac .pkg
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          APPLE_DEVELOPER_ID_INSTALLER: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          chmod +x installers/mac/build-pkg.sh
+          bash installers/mac/build-pkg.sh
+
+      - name: Upload Mac installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: LogoDeclinaisons-${{ github.event.inputs.version }}-mac
+          path: dist/*.pkg
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build Windows .exe
+        run: iscc installer.iss
+        shell: cmd
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: LogoDeclinaisons-${{ github.event.inputs.version }}-windows
+          path: dist/*.exe
