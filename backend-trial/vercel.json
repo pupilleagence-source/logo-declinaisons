@@ -41,12 +41,26 @@
       "dest": "/api/webhooks/lemonsqueezy.js"
     },
     {
-      "src": "/api/debug/redis",
-      "dest": "/api/debug/redis.js"
-    },
-    {
       "src": "/api/version/latest",
       "dest": "/api/version/latest.js"
+    },
+    {
+      "src": "/api/updates/manifest",
+      "dest": "/api/updates/manifest.js"
+    },
+    {
+      "src": "/api/updates/files",
+      "dest": "/api/updates/files.js"
+    },
+    {
+      "src": "/api/keepalive",
+      "dest": "/api/keepalive/index.js"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/keepalive",
+      "schedule": "0 6 * * *"
     }
   ],
   "env": {

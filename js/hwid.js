@@ -1,148 +1,211 @@
 /**
  * Hardware ID Generator pour CEP Extensions
- * Génère un identifiant unique basé sur les caractéristiques de la machine
+ * Génère un identifiant unique et STABLE basé sur la machine
+ *
+ * Utilise Node.js (disponible dans CEP) pour des identifiants fiables
+ * qui ne changent PAS lors d'une mise à jour d'Illustrator.
+ *
+ * Composants stables utilisés :
+ *   - hostname (nom de la machine)
+ *   - username (vrai nom d'utilisateur OS)
+ *   - MAC address (première interface réseau non-interne)
+ *   - OS type + arch (ex: Windows_NT x64)
+ *   - CPU model (ex: Intel Core i7-10700K)
+ *
+ * Persistance : fichier disque + localStorage (survit aux MAJ CEP)
  */
 
 const HWID = {
+    // Version du schéma de fingerprint (incrémenter si on change les composants)
+    SCHEMA_VERSION: 2,
+
     /**
-     * Génère un hash SHA-256 simple (pour CEP sans crypto.subtle)
+     * Génère un hash SHA-256 via Node.js crypto (plus fiable que le navigateur)
      */
-    simpleHash: async function(text) {
-        const encoder = new TextEncoder();
-        const data = encoder.encode(text);
-
-        // Utiliser crypto.subtle si disponible
-        if (window.crypto && window.crypto.subtle) {
-            const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-            const hashArray = Array.from(new Uint8Array(hashBuffer));
-            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    hash: function(text) {
+        try {
+            const crypto = require('crypto');
+            return crypto.createHash('sha256').update(text).digest('hex');
+        } catch (e) {
+            // Fallback navigateur
+            return this.browserHash(text);
         }
+    },
 
-        // Fallback: hash simple basé sur string
+    /**
+     * Fallback hash si Node.js crypto non disponible
+     */
+    browserHash: function(text) {
         let hash = 0;
         for (let i = 0; i < text.length; i++) {
             const char = text.charCodeAt(i);
             hash = ((hash << 5) - hash) + char;
-            hash = hash & hash; // Convert to 32bit integer
+            hash = hash & hash;
         }
-        return Math.abs(hash).toString(16);
+        return Math.abs(hash).toString(16).padStart(16, '0');
     },
 
     /**
-     * Collecte les informations système
+     * Collecte les informations machine STABLES via Node.js
      */
-    collectSystemInfo: function() {
-        const info = {
-            // Informations navigateur
-            userAgent: navigator.userAgent || '',
-            platform: navigator.platform || '',
-            language: navigator.language || '',
+    collectStableInfo: function() {
+        const os = require('os');
 
-            // Informations écran
-            screenWidth: screen.width || 0,
-            screenHeight: screen.height || 0,
-            screenDepth: screen.colorDepth || 0,
-
-            // Informations timezone
-            timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
-            timezoneOffset: new Date().getTimezoneOffset() || 0,
-
-            // Informations hardware
-            hardwareConcurrency: navigator.hardwareConcurrency || 0,
-            deviceMemory: navigator.deviceMemory || 0,
-
-            // CEP spécifique - nom utilisateur (via système)
-            username: this.getUsername(),
-        };
-
-        return info;
-    },
-
-    /**
-     * Récupère le nom d'utilisateur système si possible
-     */
-    getUsername: function() {
+        // MAC address : première interface non-interne, non-loopback
+        let macAddress = '';
         try {
-            // Tenter de récupérer via ExtendScript
-            const csInterface = new CSInterface();
-            const os = csInterface.getOSInformation();
-
-            // Le nom d'utilisateur n'est pas directement accessible
-            // On utilise une approche basée sur l'OS
-            if (os.indexOf('Windows') !== -1) {
-                return 'win-user'; // Placeholder
-            } else if (os.indexOf('Mac') !== -1) {
-                return 'mac-user'; // Placeholder
+            const interfaces = os.networkInterfaces();
+            const ifNames = Object.keys(interfaces).sort(); // tri alphabétique pour déterminisme
+            for (let i = 0; i < ifNames.length && !macAddress; i++) {
+                const iface = interfaces[ifNames[i]];
+                for (let j = 0; j < iface.length; j++) {
+                    if (!iface[j].internal && iface[j].mac && iface[j].mac !== '00:00:00:00:00:00') {
+                        macAddress = iface[j].mac;
+                        break;
+                    }
+                }
             }
-        } catch (e) {
-            console.log('Impossible de récupérer username:', e);
-        }
-        return 'unknown';
+        } catch (e) {}
+
+        // CPU model (premier core)
+        let cpuModel = '';
+        try {
+            const cpus = os.cpus();
+            if (cpus && cpus.length > 0) {
+                cpuModel = cpus[0].model || '';
+            }
+        } catch (e) {}
+
+        return {
+            hostname: os.hostname() || '',
+            username: os.userInfo().username || '',
+            macAddress: macAddress,
+            osType: os.type() || '',       // Windows_NT, Darwin, Linux
+            osArch: os.arch() || '',       // x64, arm64
+            cpuModel: cpuModel,
+            cpuCores: os.cpus().length || 0
+        };
     },
 
     /**
-     * Génère le Hardware ID unique
+     * Génère le Hardware ID unique et stable
      */
-    generate: async function() {
+    generate: function() {
         try {
-            const info = this.collectSystemInfo();
+            const info = this.collectStableInfo();
 
-            // Créer une chaîne unique à partir de toutes les infos
+            // Composants du fingerprint (tous stables entre mises à jour)
             const fingerprint = [
-                info.userAgent,
-                info.platform,
-                info.language,
-                info.screenWidth + 'x' + info.screenHeight,
-                info.screenDepth,
-                info.timezone,
-                info.timezoneOffset,
-                info.hardwareConcurrency,
-                info.deviceMemory,
-                info.username
+                'v' + this.SCHEMA_VERSION,
+                info.hostname,
+                info.username,
+                info.macAddress,
+                info.osType,
+                info.osArch,
+                info.cpuModel,
+                info.cpuCores
             ].join('|');
 
-            // Hasher le fingerprint
-            const hash = await this.simpleHash(fingerprint);
+            const hashed = this.hash(fingerprint);
+            const hwid = 'HWID-' + hashed;
 
-            // Ajouter un préfixe pour identification
-            const hwid = 'HWID-' + hash;
-
-            console.log('✓ Hardware ID généré:', hwid.substring(0, 20) + '...');
+            console.log('✓ HWID v' + this.SCHEMA_VERSION + ' généré:', hwid.substring(0, 20) + '...');
             return hwid;
 
         } catch (error) {
             console.error('❌ Erreur génération HWID:', error);
-
-            // Fallback: générer un ID aléatoire et le persister
+            // Fallback : ID aléatoire persisté
             const fallbackId = 'HWID-FALLBACK-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
             return fallbackId;
         }
     },
 
     /**
-     * Récupère ou génère le HWID et le met en cache
+     * Chemin du fichier de persistance sur disque
+     * Stocké dans le dossier utilisateur (survit aux MAJ Illustrator + CEP)
+     */
+    getPersistPath: function() {
+        const os = require('os');
+        const path = require('path');
+        // ~/.logotyps-hwid (caché sur Unix, normal sur Windows dans le home)
+        return path.join(os.homedir(), '.logotyps-hwid');
+    },
+
+    /**
+     * Lit le HWID persisté sur disque
+     */
+    readFromDisk: function() {
+        try {
+            const fs = require('fs');
+            const filePath = this.getPersistPath();
+            if (fs.existsSync(filePath)) {
+                const content = fs.readFileSync(filePath, 'utf8').trim();
+                if (content && content.startsWith('HWID-')) {
+                    return content;
+                }
+            }
+        } catch (e) {
+            console.warn('⚠️ Impossible de lire HWID depuis disque:', e.message);
+        }
+        return null;
+    },
+
+    /**
+     * Ecrit le HWID sur disque
+     */
+    writeToDisk: function(hwid) {
+        try {
+            const fs = require('fs');
+            fs.writeFileSync(this.getPersistPath(), hwid, 'utf8');
+        } catch (e) {
+            console.warn('⚠️ Impossible d\'écrire HWID sur disque:', e.message);
+        }
+    },
+
+    /**
+     * Récupère ou génère le HWID
+     * Priorité : disque > localStorage > générer
+     *
+     * NOTE: Retourne maintenant de manière synchrone (pas de async/await nécessaire)
+     * mais on garde la compatibilité avec les appelants async
      */
     get: async function() {
-        // Vérifier si déjà en cache
+        // 1. Vérifier le fichier disque (survit aux MAJ Illustrator)
+        const fromDisk = this.readFromDisk();
+        if (fromDisk) {
+            // Synchroniser avec localStorage aussi
+            localStorage.setItem('_hwid', fromDisk);
+            return fromDisk;
+        }
+
+        // 2. Vérifier localStorage (même version d'Illustrator)
         const cached = localStorage.getItem('_hwid');
-        if (cached) {
+        if (cached && cached.startsWith('HWID-')) {
+            // Persister sur disque pour les prochaines MAJ
+            this.writeToDisk(cached);
             return cached;
         }
 
-        // Générer et mettre en cache
-        const hwid = await this.generate();
+        // 3. Générer un nouveau HWID
+        const hwid = this.generate();
+
+        // Persister partout
         localStorage.setItem('_hwid', hwid);
+        this.writeToDisk(hwid);
 
         return hwid;
     },
 
     /**
-     * Debug: affiche les informations système
+     * Debug: affiche les informations système stables
      */
     debug: function() {
-        const info = this.collectSystemInfo();
-        console.log('=== System Fingerprint ===');
+        const info = this.collectStableInfo();
+        console.log('=== Stable Machine Fingerprint (v' + this.SCHEMA_VERSION + ') ===');
         console.table(info);
+        console.log('Persist path:', this.getPersistPath());
+        console.log('Disk HWID:', this.readFromDisk());
+        console.log('localStorage HWID:', localStorage.getItem('_hwid'));
     }
 };
 

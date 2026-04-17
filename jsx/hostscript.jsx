@@ -49,6 +49,159 @@ function sanitizeFilename(filename) {
 }
 
 /**
+ * Convertit n'importe quel type de couleur Illustrator en RGB
+ * Utilise un document RGB temporaire pour une conversion précise
+ * @param {Color} color - Objet couleur Illustrator (RGBColor, CMYKColor, LabColor, SpotColor, etc.)
+ * @return {Object} { r, g, b } avec valeurs 0-255, ou null si échec
+ */
+function convertAnyColorToRGB(color) {
+    if (!color) return null;
+
+    var colorType = color.typename || "";
+    $.writeln("   Conversion couleur type: " + colorType);
+
+    // Si c'est déjà RGB, retourner directement
+    if (colorType === "RGBColor") {
+        return {
+            r: Math.round(Math.max(0, Math.min(255, color.red))),
+            g: Math.round(Math.max(0, Math.min(255, color.green))),
+            b: Math.round(Math.max(0, Math.min(255, color.blue)))
+        };
+    }
+
+    // Pour tous les autres types, utiliser un document RGB temporaire pour la conversion
+    var tempDoc = null;
+    var tempItem = null;
+
+    try {
+        // Créer un document RGB temporaire (invisible)
+        tempDoc = app.documents.add(DocumentColorSpace.RGB, 10, 10);
+
+        // Créer un rectangle temporaire
+        tempItem = tempDoc.pathItems.rectangle(5, 0, 5, 5);
+
+        // Appliquer la couleur au rectangle
+        // Pour SpotColor, on doit créer un nouveau SpotColor dans le document
+        if (colorType === "SpotColor") {
+            // Extraire la couleur de base du spot
+            var baseColor = color.spot.color;
+            $.writeln("   SpotColor base: " + (baseColor.typename || typeof baseColor));
+
+            // Appliquer la couleur de base directement
+            tempItem.fillColor = baseColor;
+        } else {
+            tempItem.fillColor = color;
+        }
+
+        // Lire la couleur convertie (le document est RGB, donc la couleur est convertie automatiquement)
+        var fillColor = tempItem.fillColor;
+        $.writeln("   Couleur après conversion: " + (fillColor.typename || typeof fillColor));
+
+        var result = null;
+
+        if (fillColor.typename === "RGBColor") {
+            result = {
+                r: Math.round(Math.max(0, Math.min(255, fillColor.red))),
+                g: Math.round(Math.max(0, Math.min(255, fillColor.green))),
+                b: Math.round(Math.max(0, Math.min(255, fillColor.blue)))
+            };
+        } else if (fillColor.red !== undefined) {
+            // Fallback si typename n'est pas défini mais propriétés RGB existent
+            result = {
+                r: Math.round(Math.max(0, Math.min(255, fillColor.red))),
+                g: Math.round(Math.max(0, Math.min(255, fillColor.green))),
+                b: Math.round(Math.max(0, Math.min(255, fillColor.blue)))
+            };
+        }
+
+        // Nettoyer
+        tempItem.remove();
+        tempDoc.close(SaveOptions.DONOTSAVECHANGES);
+
+        return result;
+
+    } catch (e) {
+        $.writeln("   Erreur conversion: " + e.toString());
+        // Nettoyer en cas d'erreur
+        try { if (tempItem) tempItem.remove(); } catch (e2) {}
+        try { if (tempDoc) tempDoc.close(SaveOptions.DONOTSAVECHANGES); } catch (e2) {}
+
+        // Fallback: conversion manuelle basique
+        return convertColorManually(color);
+    }
+}
+
+/**
+ * Conversion manuelle des couleurs (fallback si la méthode document temporaire échoue)
+ */
+function convertColorManually(color) {
+    if (!color) return null;
+
+    var colorType = color.typename || "";
+    var r, g, b;
+
+    if (colorType === "RGBColor") {
+        r = color.red;
+        g = color.green;
+        b = color.blue;
+    } else if (colorType === "CMYKColor") {
+        var c = color.cyan / 100;
+        var m = color.magenta / 100;
+        var y = color.yellow / 100;
+        var k = color.black / 100;
+        r = 255 * (1 - c) * (1 - k);
+        g = 255 * (1 - m) * (1 - k);
+        b = 255 * (1 - y) * (1 - k);
+    } else if (colorType === "GrayColor") {
+        var gray = 255 * (1 - color.gray / 100);
+        r = g = b = gray;
+    } else if (colorType === "LabColor") {
+        // Conversion Lab -> RGB
+        var L = color.l;
+        var A = color.a;
+        var B = color.b;
+
+        var fy = (L + 16) / 116;
+        var fx = A / 500 + fy;
+        var fz = fy - B / 200;
+
+        var delta = 6 / 29;
+        var xr = fx > delta ? fx * fx * fx : (fx - 16/116) / 7.787;
+        var yr = fy > delta ? fy * fy * fy : (fy - 16/116) / 7.787;
+        var zr = fz > delta ? fz * fz * fz : (fz - 16/116) / 7.787;
+
+        var X = xr * 0.95047;
+        var Y = yr * 1.0;
+        var Z = zr * 1.08883;
+
+        var rLin = X * 3.2406 + Y * -1.5372 + Z * -0.4986;
+        var gLin = X * -0.9689 + Y * 1.8758 + Z * 0.0415;
+        var bLin = X * 0.0557 + Y * -0.204 + Z * 1.057;
+
+        function gammaCorrect(c) {
+            return c > 0.0031308 ? 1.055 * Math.pow(c, 1/2.4) - 0.055 : 12.92 * c;
+        }
+        r = gammaCorrect(rLin) * 255;
+        g = gammaCorrect(gLin) * 255;
+        b = gammaCorrect(bLin) * 255;
+    } else if (colorType === "SpotColor") {
+        return convertColorManually(color.spot.color);
+    } else if (color.red !== undefined) {
+        r = color.red;
+        g = color.green;
+        b = color.blue;
+    } else {
+        return null;
+    }
+
+    return {
+        r: Math.round(Math.max(0, Math.min(255, r))),
+        g: Math.round(Math.max(0, Math.min(255, g))),
+        b: Math.round(Math.max(0, Math.min(255, b)))
+    };
+}
+
+/**
  * Ouvre le sélecteur de couleur NATIF d'Illustrator via app.showColorPicker()
  * Affiche le dialogue natif avec onglets RGB/CMYK/HSB/Grayscale/Web Safe RGB
  * Permet l'utilisation de la pipette pour prélever des couleurs dans Illustrator
@@ -57,8 +210,6 @@ function sanitizeFilename(filename) {
  */
 function openColorPickerDialog(initialColorHex) {
     try {
-        $.writeln("🎨 Ouverture du sélecteur de couleur natif Illustrator...");
-
         // Créer un objet RGBColor pour la couleur initiale
         var initialColor = new RGBColor();
 
@@ -69,27 +220,28 @@ function openColorPickerDialog(initialColorHex) {
             initialColor.green = parseInt(hex.substring(2, 4), 16);
             initialColor.blue = parseInt(hex.substring(4, 6), 16);
         } else {
-            // Par défaut: noir
             initialColor.red = 0;
             initialColor.green = 0;
             initialColor.blue = 0;
         }
 
-        $.writeln("   Couleur initiale: R=" + initialColor.red + " G=" + initialColor.green + " B=" + initialColor.blue);
-
-        // Ouvrir le sélecteur de couleur NATIF d'Illustrator (avec onglets RGB/CMYK/HSB/etc)
+        // Ouvrir le sélecteur de couleur NATIF d'Illustrator
         var selectedColor = app.showColorPicker(initialColor);
 
         // L'utilisateur a annulé
         if (!selectedColor || selectedColor === false) {
-            $.writeln("   ℹ️ Sélection de couleur annulée par l'utilisateur");
             return "CANCELLED";
         }
 
-        // Convertir le résultat RGBColor en hex
+        // Lire les valeurs RGB (showColorPicker retourne toujours un RGBColor)
         var r = Math.round(selectedColor.red);
         var g = Math.round(selectedColor.green);
         var b = Math.round(selectedColor.blue);
+
+        // Clamp 0-255
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
 
         // Convertir en hex string avec padding
         var rHex = ("0" + r.toString(16)).slice(-2);
@@ -97,7 +249,7 @@ function openColorPickerDialog(initialColorHex) {
         var bHex = ("0" + b.toString(16)).slice(-2);
         var hexColor = "#" + (rHex + gHex + bHex).toUpperCase();
 
-        $.writeln("   ✅ Couleur sélectionnée: " + hexColor + " (R:" + r + " G:" + g + " B:" + b + ")");
+        $.writeln("   ✅ Couleur sélectionnée: " + hexColor);
         return "COLOR:" + hexColor;
 
     } catch (e) {
@@ -143,6 +295,37 @@ function safeParseJSON(jsonString) {
         $.writeln("❌ Erreur parsing JSON: " + e.toString());
         return null;
     }
+}
+
+/**
+ * Duplique un élément de manière robuste (gère les enfants de groupes complexes)
+ * Essaie duplicate() d'abord, puis fallback copy/paste
+ */
+function safeDuplicate(item) {
+    var doc = app.activeDocument;
+    // Methode 1 : duplicate vers le calque actif (evite les conflits parent/enfant)
+    try {
+        var copy = item.duplicate(doc.activeLayer, ElementPlacement.PLACEATEND);
+        return copy;
+    } catch (e1) {}
+    // Methode 2 : duplicate simple
+    try {
+        var copy = item.duplicate();
+        return copy;
+    } catch (e2) {}
+    // Methode 3 : copy/paste via presse-papier
+    try {
+        doc.selection = null;
+        item.selected = true;
+        app.copy();
+        app.paste();
+        if (doc.selection && doc.selection.length > 0) {
+            var pasted = doc.selection[0];
+            doc.selection = null;
+            return pasted;
+        }
+    } catch (e3) {}
+    return null;
 }
 
 /**
@@ -273,6 +456,12 @@ function getSelectionInfo() {
         $.writeln("❌ Erreur getSelectionInfo: " + e.toString());
         return "ERROR: Impossible de vérifier la sélection. Réessayez.";
     }
+}
+
+// Réinitialiser toutes les sélections stockées
+function clearStoredSelections() {
+    storedSelections = { icon: null, text: null, horizontal: null, vertical: null, custom1: null, custom2: null, custom3: null };
+    return "OK";
 }
 
 // Stocker la sélection actuelle
@@ -1783,6 +1972,11 @@ function generateArtboards(paramsJSON) {
         // 🆕 Le nouveau document reste actif (décision 1.A)
         // app.activeDocument est déjà targetDoc, pas besoin de changer
 
+        // Zoom pour voir tout le document
+        try {
+            app.executeMenuCommand('fitall');
+        } catch (zoomErr) {}
+
         return "SUCCESS:" + artboardCount;
 
     } catch (e) {
@@ -2150,15 +2344,16 @@ function generateVerticalVersion() {
             return "ERROR: Problème avec la typographie - " + textValidation.error;
         }
 
-        var insigne = storedSelections.icon.duplicate();
-        var logotype = storedSelections.text.duplicate();
+        // Dupliquer les éléments (safeDuplicate gère les enfants de groupes)
+        var insigne = safeDuplicate(storedSelections.icon);
+        var logotype = safeDuplicate(storedSelections.text);
+        if (!insigne || !logotype) {
+            if (insigne) try { insigne.remove(); } catch(e) {}
+            if (logotype) try { logotype.remove(); } catch(e) {}
+            return "ERROR: Impossible de dupliquer les éléments. Essayez de dégrouper vos éléments ou de les placer sur le calque principal, puis re-sélectionnez.";
+        }
         insigne.hidden = false;
         logotype.hidden = false;
-
-        // 🔧 NORMALISER LES POSITIONS - Déplacer vers zone sûre (0, 0) AVANT tous calculs
-        // Cela évite l'erreur AOoC si les éléments de base sont à des positions extrêmes
-        var safeX = 0;
-        var safeY = 0;
 
         // Mesurer AVANT déplacement
         var bLogotype = logotype.geometricBounds;
@@ -2179,25 +2374,20 @@ function generateVerticalVersion() {
         var insigneWidth = bInsigneNew[2] - bInsigneNew[0];
         var insigneHeightNew = bInsigneNew[1] - bInsigneNew[3];
 
-        // ✨ TROUVER POSITION SÛRE pour le nouvel artboard
+        // ✨ TROUVER POSITION SÛRE pour le nouvel artboard (en dessous des existants)
         var spacing = 100;
-        var maxX = 0;
+        var minY = 0;
 
-        // Trouver la position la plus à droite des artboards existants
+        // Trouver la position la plus basse des artboards existants
         if (doc.artboards.length > 0) {
             for (var i = 0; i < doc.artboards.length; i++) {
                 var ab = doc.artboards[i].artboardRect;
-                if (ab[2] > maxX) maxX = ab[2];
+                if (ab[3] < minY) minY = ab[3]; // ab[3] = bottom (le plus négatif = le plus bas)
             }
         }
 
-        // S'assurer que maxX n'est pas trop grand
-        if (maxX > 10000) {
-            maxX = 0; // Réinitialiser si trop de décalage
-        }
-
-        var startX = maxX + spacing;
-        var startY = 0;
+        var startX = 0;
+        var startY = minY - spacing;
 
         // Centrage horizontal
         var widest = Math.max(insigneWidth, logotypeWidth);
@@ -2254,6 +2444,7 @@ function generateVerticalVersion() {
         group.selected = true;
 
         $.writeln("✓ Version verticale générée avec succès");
+        try { app.executeMenuCommand('fitall'); } catch(e) {}
         return "OK";
 
     } catch (e) {
@@ -2291,15 +2482,16 @@ function generateHorizontalVersion() {
             return "ERROR: Problème avec la typographie - " + textValidation.error;
         }
 
-        var insigne = storedSelections.icon.duplicate();
-        var logotype = storedSelections.text.duplicate();
+        // Dupliquer les éléments (safeDuplicate gère les enfants de groupes)
+        var insigne = safeDuplicate(storedSelections.icon);
+        var logotype = safeDuplicate(storedSelections.text);
+        if (!insigne || !logotype) {
+            if (insigne) try { insigne.remove(); } catch(e) {}
+            if (logotype) try { logotype.remove(); } catch(e) {}
+            return "ERROR: Impossible de dupliquer les éléments. Essayez de dégrouper vos éléments ou de les placer sur le calque principal, puis re-sélectionnez.";
+        }
         insigne.hidden = false;
         logotype.hidden = false;
-
-        // 🔧 NORMALISER LES POSITIONS - Déplacer vers zone sûre (0, 0) AVANT tous calculs
-        // Cela évite l'erreur AOoC si les éléments de base sont à des positions extrêmes
-        var safeX = 0;
-        var safeY = 0;
 
         // Mesurer AVANT déplacement
         var bLogotype = logotype.geometricBounds;
@@ -2320,25 +2512,20 @@ function generateHorizontalVersion() {
         var insigneWidth = bInsigneNew[2] - bInsigneNew[0];
         var insigneHeightNew = bInsigneNew[1] - bInsigneNew[3];
 
-        // ✨ TROUVER POSITION SÛRE pour le nouvel artboard
+        // ✨ TROUVER POSITION SÛRE pour le nouvel artboard (en dessous des existants)
         var spacing = 100;
-        var maxX = 0;
+        var minY = 0;
 
-        // Trouver la position la plus à droite des artboards existants
+        // Trouver la position la plus basse des artboards existants
         if (doc.artboards.length > 0) {
             for (var i = 0; i < doc.artboards.length; i++) {
                 var ab = doc.artboards[i].artboardRect;
-                if (ab[2] > maxX) maxX = ab[2];
+                if (ab[3] < minY) minY = ab[3];
             }
         }
 
-        // S'assurer que maxX n'est pas trop grand
-        if (maxX > 10000) {
-            maxX = 0; // Réinitialiser si trop de décalage
-        }
-
-        var startX = maxX + spacing;
-        var startY = 0;
+        var startX = 0;
+        var startY = minY - spacing;
 
         // Position horizontale : insigne à gauche, texte à droite
         var insigneX = startX;
@@ -2394,6 +2581,7 @@ function generateHorizontalVersion() {
         group.selected = true;
 
         $.writeln("✓ Version horizontale générée avec succès");
+        try { app.executeMenuCommand('fitall'); } catch(e) {}
         return "OK";
 
     } catch (e) {
@@ -2502,6 +2690,726 @@ function exportForScreensPDF(doc, artboardIndex, baseFilePath, artboardName) {
  * Active le PlayerDebugMode sur Mac pour permettre les mises à jour automatiques
  * Retourne un objet JSON stringifié avec le résultat
  */
+/**
+ * Retourne la liste des familles de polices installées (via Illustrator).
+ * Les noms retournés sont les family names tels qu'Illustrator/InDesign les connaissent.
+ * @return {string} Familles séparées par "|"
+ */
+function getInstalledFonts() {
+    try {
+        var fonts = app.textFonts;
+        var families = {};
+        for (var i = 0; i < fonts.length; i++) {
+            families[fonts[i].family] = true;
+        }
+        var result = [];
+        for (var f in families) {
+            result.push(f);
+        }
+        result.sort();
+        return result.join('|');
+    } catch (e) {
+        return '';
+    }
+}
+
+/**
+ * Ouvre un fichier IDML dans InDesign via BridgeTalk et exécute
+ * le post-traitement des frames PROHIB (resize à 50% + centrage).
+ * @param {string} idmlPath - Chemin absolu vers le fichier IDML
+ * @return {string} JSON result
+ */
+function openInInDesignAndProcess(idmlPath) {
+    try {
+        // Script qui sera exécuté dans InDesign
+        var inddScript =
+            'var f = new File("' + idmlPath.replace(/\\/g, '/') + '");' +
+            'if (f.exists) {' +
+            '    var doc = app.open(f);' +
+            '    var count = 0;' +
+            '    for (var p = 0; p < doc.pages.length; p++) {' +
+            '        var items = doc.pages[p].allPageItems;' +
+            '        for (var i = 0; i < items.length; i++) {' +
+            '            var frame = items[i];' +
+            '            var n = frame.name || "";' +
+            '            if (n.indexOf("PROHIB_SHADOW") !== 0 && n.indexOf("PROHIB_COLOR") !== 0) continue;' +
+            '            if (!frame.allGraphics || frame.allGraphics.length === 0) continue;' +
+            '            var image = frame.allGraphics[0];' +
+            '            var fb = frame.geometricBounds;' +
+            '            var frameW = fb[3] - fb[1];' +
+            '            var frameH = fb[2] - fb[0];' +
+            '            var ib = image.geometricBounds;' +
+            '            var imgW = ib[3] - ib[1];' +
+            '            var imgH = ib[2] - ib[0];' +
+            '            var ratio = imgW / imgH;' +
+            '            var newW, newH;' +
+            '            if (frameW / frameH <= ratio) {' +
+            '                newW = frameW * 0.75;' +
+            '                newH = newW / ratio;' +
+            '            } else {' +
+            '                newH = frameH * 0.75;' +
+            '                newW = newH * ratio;' +
+            '            }' +
+            '            var offsetX = fb[1] + (frameW - newW) / 2;' +
+            '            var offsetY = fb[0] + (frameH - newH) / 2;' +
+            '            image.geometricBounds = [offsetY, offsetX, offsetY + newH, offsetX + newW];' +
+            '            count++;' +
+            '        }' +
+            '    }' +
+            '}';
+
+        var bt = new BridgeTalk();
+        bt.target = 'indesign';
+        bt.body = inddScript;
+        bt.send();
+
+        return JSON.stringify({ success: true });
+    } catch (e) {
+        return JSON.stringify({ success: false, error: e.toString() });
+    }
+}
+
+/**
+ * Process PSD mockups in Photoshop, then open IDML in InDesign.
+ * Uses BridgeTalk onResult to sequence: Photoshop finishes → InDesign opens.
+ *
+ * @param {string} idmlPath - Absolute path to the generated IDML file
+ * @param {string} mockupDataJson - JSON: {mockups: [{name, filename, path}], logoPath, outputFolder}
+ * @return {string} JSON result
+ */
+function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
+    try {
+        var data;
+        try {
+            data = eval('(' + mockupDataJson + ')');
+        } catch (parseErr) {
+            return JSON.stringify({ success: false, error: 'JSON parse error: ' + parseErr.toString() });
+        }
+
+        // No mockups → skip directly to InDesign
+        if (!data.mockups || data.mockups.length === 0) {
+            return openInInDesignAndProcess(idmlPath);
+        }
+
+        // Les chemins arrivent déjà normalisés en forward slashes depuis main.js
+        var mockups = data.mockups;
+        var logoPath = data.logoPath;
+        var outputFolder = data.outputFolder;
+
+        // Créer les dossiers nécessaires
+        var mockupsOutputFolder = new Folder(outputFolder + '/mockups');
+        if (!mockupsOutputFolder.exists) {
+            mockupsOutputFolder.create();
+        }
+        var tempFolder = outputFolder + '/_temp';
+        var tempFolderObj = new Folder(tempFolder);
+        if (!tempFolderObj.exists) {
+            tempFolderObj.create();
+        }
+
+        // Pré-convertir les logos vectoriels en PNG haute résolution
+        // PS gère mal les SVG dans les smart objects
+        function convertToPng(srcPath, pngName) {
+            try {
+                if (!srcPath.match(/\.(svg|ai|pdf|eps)$/i)) return srcPath;
+                var origDoc = null;
+                try { origDoc = app.activeDocument; } catch (e) {}
+                var vecDoc = app.open(new File(srcPath));
+                var dest = new File(tempFolder + '/' + pngName);
+                var opts = new ExportOptionsPNG24();
+                opts.transparency = true;
+                opts.antiAliasing = true;
+                var maxD = Math.max(vecDoc.width, vecDoc.height);
+                opts.horizontalScale = (2000 / maxD) * 100;
+                opts.verticalScale = opts.horizontalScale;
+                vecDoc.exportFile(dest, ExportType.PNG24, opts);
+                vecDoc.close(SaveOptions.DONOTSAVECHANGES);
+                try { if (origDoc) app.activeDocument = origDoc; } catch (e) {}
+                return tempFolder + '/' + pngName;
+            } catch (e) { return srcPath; }
+        }
+
+        // Convertir le logo par défaut (horizontal)
+        logoPath = convertToPng(logoPath, 'temp-logo.png');
+
+        // Convertir chaque variation de logo
+        var logoPaths = data.logoPaths || {};
+        var variations = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
+        for (var vi = 0; vi < variations.length; vi++) {
+            var vName = variations[vi];
+            if (logoPaths[vName]) {
+                logoPaths[vName] = convertToPng(logoPaths[vName], 'temp-logo-' + vName + '.png');
+            }
+        }
+
+        // Ecrire un marqueur "démarrage" pour confirmer que la fonction a bien été appelée
+        try {
+            var startLog = new File(tempFolder + '/mockups-log.txt');
+            startLog.open('w');
+            startLog.write('AI_STARTED: logoPath=' + logoPath);
+            startLog.close();
+        } catch (e) {}
+
+        // Ecrire le script PS dans un fichier temporaire pour éviter les problèmes d'échappement
+        // Le script utilise des single quotes pour les strings → pas de conflit avec les double quotes
+        var nl = '\n';
+        // Récupérer les chemins de logos par variation et les couleurs de la marque
+        var logoPaths = data.logoPaths || {};
+        var brandColors = data.brandColors || [];
+        var primaryColor = data.primaryColor || '';
+        var darkColor = data.darkColor || primaryColor || '#000000';
+        var lightColor = data.lightColor || '#ffffff';
+        var brandName = data.brandName || 'Logo';
+
+        var psContent = "(function() {" + nl;
+        psContent += "var results = [];" + nl;
+        psContent += "var logoPath = '" + logoPath + "';" + nl;
+        psContent += "var outputFolder = '" + outputFolder + "';" + nl;
+        psContent += "var primaryColor = '" + primaryColor + "';" + nl;
+        psContent += "var darkColor = '" + darkColor + "';" + nl;
+        psContent += "var lightColor = '" + lightColor + "';" + nl;
+        psContent += "var brandName = '" + brandName.replace(/'/g, "\\'") + "';" + nl;
+
+        // Chemins de logos par variation (pour LOGO_HORIZONTAL, LOGO_VERTICAL, etc.)
+        psContent += "var logoPaths = {";
+        var lpKeys = [];
+        for (var lpk in logoPaths) {
+            if (logoPaths.hasOwnProperty(lpk)) {
+                lpKeys.push("'" + lpk + "':'" + logoPaths[lpk] + "'");
+            }
+        }
+        psContent += lpKeys.join(',');
+        psContent += "};" + nl;
+
+        // Couleurs de la marque (pour COLOR_1, COLOR_2, COLOR_3...)
+        psContent += "var brandColors = [";
+        for (var bci = 0; bci < brandColors.length; bci++) {
+            if (bci > 0) psContent += ",";
+            psContent += "'" + brandColors[bci] + "'";
+        }
+        psContent += "];" + nl;
+        psContent += "var mockups = [";
+        for (var i = 0; i < mockups.length; i++) {
+            var m = mockups[i];
+            var psdPath = m.path;
+            var outputName = m.filename.replace(/\.psd$/i, '.png').toLowerCase();
+            if (i > 0) psContent += ",";
+            psContent += "{name:'" + m.name + "',psdPath:'" + psdPath + "',outputName:'" + outputName + "'}";
+        }
+        psContent += "];" + nl;
+
+        psContent += "var mockupsDir = new Folder(outputFolder + '/mockups');" + nl;
+        psContent += "if (!mockupsDir.exists) { mockupsDir.create(); }" + nl;
+
+        // Log de démarrage (pas de JSON → pas de problème d'échappement)
+        psContent += "try { var lf=new File(outputFolder+'/_temp/mockups-log.txt'); lf.open('w'); lf.write('PS_STARTED: '+mockups.length+' mockups'); lf.close(); } catch(le) {}" + nl;
+
+        // Fonction de debug : lister TOUS les calques du PSD avec indentation
+        psContent += "function listAllLayers(container, indent) {" + nl;
+        psContent += "    var lines = [];" + nl;
+        psContent += "    try { for (var j=0;j<container.artLayers.length;j++) { var l=container.artLayers[j]; lines.push(indent + l.name + ' [' + l.kind + ']'); } } catch(e) {}" + nl;
+        psContent += "    try { for (var j=0;j<container.layerSets.length;j++) { var g=container.layerSets[j]; lines.push(indent + g.name + ' [Group]'); var sub=listAllLayers(g, indent+'  '); for (var k=0;k<sub.length;k++) lines.push(sub[k]); } } catch(e) {}" + nl;
+        psContent += "    return lines;" + nl;
+        psContent += "}" + nl;
+
+        // findLogoLayers : trouve TOUS les smart objects LOGO_* dans le PSD
+        // Retourne un tableau [{layer, variation}] où variation = 'horizontal', 'vertical', etc.
+        // Supporte : LOGO (=horizontal), LOGO_HORIZONTAL, LOGO_VERTICAL, LOGO_ICON, LOGO_TEXT, LOGO_CUSTOM1-3
+        psContent += "function findLogoLayers(container) {" + nl;
+        psContent += "    var found = [];" + nl;
+        psContent += "    try { for (var j=0;j<container.artLayers.length;j++) {" + nl;
+        psContent += "        var l=container.artLayers[j];" + nl;
+        psContent += "        if (l.kind!==LayerKind.SMARTOBJECT) continue;" + nl;
+        psContent += "        var nm=l.name.toUpperCase().replace(/\\s+/g,'');" + nl;
+        psContent += "        if (nm==='LOGO'||nm==='LOGO_HORIZONTAL') found.push({layer:l,variation:'horizontal'});" + nl;
+        psContent += "        else if (nm==='LOGO_VERTICAL') found.push({layer:l,variation:'vertical'});" + nl;
+        psContent += "        else if (nm==='LOGO_ICON') found.push({layer:l,variation:'icon'});" + nl;
+        psContent += "        else if (nm==='LOGO_TEXT') found.push({layer:l,variation:'text'});" + nl;
+        psContent += "        else if (nm==='LOGO_CUSTOM1') found.push({layer:l,variation:'custom1'});" + nl;
+        psContent += "        else if (nm==='LOGO_CUSTOM2') found.push({layer:l,variation:'custom2'});" + nl;
+        psContent += "        else if (nm==='LOGO_CUSTOM3') found.push({layer:l,variation:'custom3'});" + nl;
+        psContent += "    } } catch(e) {}" + nl;
+        psContent += "    try { for (var j=0;j<container.layerSets.length;j++) {" + nl;
+        psContent += "        var sub=findLogoLayers(container.layerSets[j]);" + nl;
+        psContent += "        for (var k=0;k<sub.length;k++) found.push(sub[k]);" + nl;
+        psContent += "    } } catch(e) {}" + nl;
+        psContent += "    return found;" + nl;
+        psContent += "}" + nl;
+
+        psContent += "function getAllSmartObjects(container) {" + nl;
+        psContent += "    var list=[];" + nl;
+        psContent += "    try { for (var j=0;j<container.artLayers.length;j++) { if (container.artLayers[j].kind===LayerKind.SMARTOBJECT) list.push(container.artLayers[j]); } } catch(e) {}" + nl;
+        psContent += "    try { for (var j=0;j<container.layerSets.length;j++) { var n=getAllSmartObjects(container.layerSets[j]); for (var k=0;k<n.length;k++) list.push(n[k]); } } catch(e) {}" + nl;
+        psContent += "    return list;" + nl;
+        psContent += "}" + nl;
+
+        // Résolution du chemin logo avec cascade de fallbacks
+        // horizontal → vertical → text → icon → logoPath
+        // vertical → horizontal → text → icon → logoPath
+        // icon → horizontal → vertical → logoPath
+        // text → horizontal → vertical → logoPath
+        // custom1-3 → horizontal → vertical → logoPath
+        psContent += "function getLogoPath(variation) {" + nl;
+        psContent += "    var chains = {" + nl;
+        psContent += "        'horizontal': ['horizontal','vertical','text','icon']," + nl;
+        psContent += "        'vertical':   ['vertical','horizontal','text','icon']," + nl;
+        psContent += "        'icon':       ['icon','horizontal','vertical']," + nl;
+        psContent += "        'text':       ['text','horizontal','vertical']," + nl;
+        psContent += "        'custom1':    ['custom1','horizontal','vertical']," + nl;
+        psContent += "        'custom2':    ['custom2','horizontal','vertical']," + nl;
+        psContent += "        'custom3':    ['custom3','horizontal','vertical']" + nl;
+        psContent += "    };" + nl;
+        psContent += "    var chain = chains[variation] || [variation,'horizontal','vertical'];" + nl;
+        psContent += "    for (var ci=0; ci<chain.length; ci++) {" + nl;
+        psContent += "        if (logoPaths[chain[ci]]) return logoPaths[chain[ci]];" + nl;
+        psContent += "    }" + nl;
+        psContent += "    return logoPath;" + nl;
+        psContent += "}" + nl;
+
+        // Utilitaires couleur
+        psContent += "function hexToRgb(hex) {" + nl;
+        psContent += "    hex = hex.replace('#','');" + nl;
+        psContent += "    return { r: parseInt(hex.substring(0,2),16), g: parseInt(hex.substring(2,4),16), b: parseInt(hex.substring(4,6),16) };" + nl;
+        psContent += "}" + nl;
+        psContent += "function applySolidFillColor(layer, rgb) {" + nl;
+        psContent += "    try {" + nl;
+        psContent += "        layer.visible = true;" + nl;
+        psContent += "        app.activeDocument.activeLayer = layer;" + nl;
+        psContent += "        var desc = new ActionDescriptor();" + nl;
+        psContent += "        var ref = new ActionReference();" + nl;
+        psContent += "        ref.putEnumerated(stringIDToTypeID('contentLayer'), charIDToTypeID('Ordn'), charIDToTypeID('Trgt'));" + nl;
+        psContent += "        desc.putReference(charIDToTypeID('null'), ref);" + nl;
+        psContent += "        var fillDesc = new ActionDescriptor();" + nl;
+        psContent += "        var colorDesc = new ActionDescriptor();" + nl;
+        psContent += "        colorDesc.putDouble(charIDToTypeID('Rd  '), rgb.r);" + nl;
+        psContent += "        colorDesc.putDouble(charIDToTypeID('Grn '), rgb.g);" + nl;
+        psContent += "        colorDesc.putDouble(charIDToTypeID('Bl  '), rgb.b);" + nl;
+        psContent += "        fillDesc.putObject(charIDToTypeID('Clr '), charIDToTypeID('RGBC'), colorDesc);" + nl;
+        psContent += "        desc.putObject(charIDToTypeID('T   '), stringIDToTypeID('solidColorLayer'), fillDesc);" + nl;
+        psContent += "        executeAction(charIDToTypeID('setd'), desc, DialogModes.NO);" + nl;
+        psContent += "    } catch(e) {}" + nl;
+        psContent += "}" + nl;
+
+        // applyBrandColors : colorise les calques COLOR_1..5, COLOR_DARK, COLOR_LIGHT
+        psContent += "function applyBrandColors(container) {" + nl;
+        psContent += "    try { for (var j=0; j<container.artLayers.length; j++) {" + nl;
+        psContent += "        var l = container.artLayers[j];" + nl;
+        psContent += "        if (l.kind !== LayerKind.SOLIDFILL) continue;" + nl;
+        psContent += "        var nm = l.name.toUpperCase().replace(/\\s+/g,'');" + nl;
+        psContent += "        var hex = '';" + nl;
+        // COLOR_1 à COLOR_5 : couleurs custom de la marque
+        psContent += "        if (nm === 'COLOR' || nm === 'COLOR_1') { if (brandColors[0]) hex = brandColors[0]; }" + nl;
+        psContent += "        else if (nm === 'COLOR_2') { if (brandColors[1]) hex = brandColors[1]; }" + nl;
+        psContent += "        else if (nm === 'COLOR_3') { if (brandColors[2]) hex = brandColors[2]; }" + nl;
+        psContent += "        else if (nm === 'COLOR_4') { if (brandColors[3]) hex = brandColors[3]; }" + nl;
+        psContent += "        else if (nm === 'COLOR_5') { if (brandColors[4]) hex = brandColors[4]; }" + nl;
+        // COLOR_DARK : monochrome sombre → fallback COLOR_1 → #000000
+        psContent += "        else if (nm === 'COLOR_DARK' || nm === 'COLORDARK') { hex = darkColor; }" + nl;
+        // COLOR_LIGHT : monochrome clair → fallback #ffffff
+        psContent += "        else if (nm === 'COLOR_LIGHT' || nm === 'COLORLIGHT') { hex = lightColor; }" + nl;
+        psContent += "        if (hex) { applySolidFillColor(l, hexToRgb(hex)); }" + nl;
+        psContent += "    } } catch(e) {}" + nl;
+        psContent += "    try { for (var j=0; j<container.layerSets.length; j++) {" + nl;
+        psContent += "        applyBrandColors(container.layerSets[j]);" + nl;
+        psContent += "    } } catch(e) {}" + nl;
+        psContent += "}" + nl;
+
+        // replaceTextVariables : remplace {{BRAND_NAME}} dans les calques texte
+        psContent += "function replaceTextVariables(container) {" + nl;
+        psContent += "    try { for (var j=0; j<container.artLayers.length; j++) {" + nl;
+        psContent += "        var l = container.artLayers[j];" + nl;
+        psContent += "        if (l.kind !== LayerKind.TEXT) continue;" + nl;
+        psContent += "        var txt = l.textItem.contents;" + nl;
+        psContent += "        if (txt.indexOf('{{BRAND_NAME}}') !== -1) {" + nl;
+        psContent += "            l.textItem.contents = txt.replace(/\\{\\{BRAND_NAME\\}\\}/g, brandName);" + nl;
+        psContent += "        }" + nl;
+        psContent += "    } } catch(e) {}" + nl;
+        psContent += "    try { for (var j=0; j<container.layerSets.length; j++) {" + nl;
+        psContent += "        replaceTextVariables(container.layerSets[j]);" + nl;
+        psContent += "    } } catch(e) {}" + nl;
+        psContent += "}" + nl;
+
+        // replaceLogoContent : remplace le contenu du SO (approche de secours fiable)
+        psContent += "function replaceLogoContent(lgPath) {" + nl;
+        psContent += "    var d=new ActionDescriptor();" + nl;
+        psContent += "    d.putPath(charIDToTypeID('null'), new File(lgPath));" + nl;
+        psContent += "    d.putInteger(charIDToTypeID('PgNm'), 1);" + nl;
+        psContent += "    executeAction(stringIDToTypeID('placedLayerReplaceContents'), d, DialogModes.NO);" + nl;
+        psContent += "}" + nl;
+
+        // processSmartObject : entre dans un SO, cherche LOGO_* à l'intérieur,
+        // remplace le contenu avec la bonne variation, redimensionne à 75%
+        // Retourne true si un LOGO_* a été trouvé et traité
+        psContent += "function processSmartObject(soLayer, targetDoc) {" + nl;
+        psContent += "    targetDoc.activeLayer = soLayer;" + nl;
+        psContent += "    try {" + nl;
+        // Entrer dans le SO
+        psContent += "        executeAction(stringIDToTypeID('placedLayerEditContents'), new ActionDescriptor(), DialogModes.NO);" + nl;
+        psContent += "        var innerDoc = app.activeDocument;" + nl;
+        psContent += "        var canvasW = innerDoc.width.as('px');" + nl;
+        psContent += "        var canvasH = innerDoc.height.as('px');" + nl;
+        // Chercher LOGO_* à l'intérieur
+        psContent += "        var innerLogos = findLogoLayers(innerDoc);" + nl;
+        psContent += "        if (innerLogos.length === 0) {" + nl;
+        // Pas de LOGO_* dedans → fermer sans sauver, ce n'est pas un SO logo
+        psContent += "            innerDoc.close(SaveOptions.DONOTSAVECHANGES);" + nl;
+        psContent += "            return {found:false};" + nl;
+        psContent += "        }" + nl;
+        // Pour chaque LOGO_* trouvé : remplacer son contenu avec la bonne variation
+        psContent += "        var replacedVariations = [];" + nl;
+        psContent += "        for (var il=0; il<innerLogos.length; il++) {" + nl;
+        psContent += "            var inner = innerLogos[il];" + nl;
+        psContent += "            var lgp = getLogoPath(inner.variation);" + nl;
+        psContent += "            innerDoc.activeLayer = inner.layer;" + nl;
+        psContent += "            replaceLogoContent(lgp);" + nl;
+        // Redimensionner le calque logo à 75% du canvas du SO parent
+        psContent += "            try {" + nl;
+        psContent += "                var b = inner.layer.bounds;" + nl;
+        psContent += "                var lw = b[2].as('px')-b[0].as('px');" + nl;
+        psContent += "                var lh = b[3].as('px')-b[1].as('px');" + nl;
+        psContent += "                var tW = canvasW*0.75; var tH = canvasH*0.75;" + nl;
+        psContent += "                var scalePct = Math.min(tW/lw, tH/lh)*100;" + nl;
+        psContent += "                if (scalePct < 100) {" + nl;
+        psContent += "                    inner.layer.resize(scalePct, scalePct, AnchorPosition.MIDDLECENTER);" + nl;
+        psContent += "                }" + nl;
+        // Centrer dans le canvas du SO
+        psContent += "                b = inner.layer.bounds;" + nl;
+        psContent += "                lw = b[2].as('px')-b[0].as('px');" + nl;
+        psContent += "                lh = b[3].as('px')-b[1].as('px');" + nl;
+        psContent += "                var dx = (canvasW-lw)/2 - b[0].as('px');" + nl;
+        psContent += "                var dy = (canvasH-lh)/2 - b[1].as('px');" + nl;
+        psContent += "                inner.layer.translate(UnitValue(dx,'px'), UnitValue(dy,'px'));" + nl;
+        psContent += "            } catch(resErr) {}" + nl;
+        psContent += "            replacedVariations.push(inner.variation);" + nl;
+        psContent += "        }" + nl;
+        // Sauver et fermer le SO (retour au doc principal)
+        psContent += "        innerDoc.save();" + nl;
+        psContent += "        innerDoc.close();" + nl;
+        psContent += "        return {found:true, variations:replacedVariations};" + nl;
+        psContent += "    } catch(e) {" + nl;
+        // Erreur → fermer le doc interne si ouvert
+        psContent += "        try { if(app.activeDocument!==targetDoc) app.activeDocument.close(SaveOptions.DONOTSAVECHANGES); } catch(ce){}" + nl;
+        psContent += "        return {found:false, error:e.toString()};" + nl;
+        psContent += "    }" + nl;
+        psContent += "}" + nl;
+
+        // replaceDirectly : fallback simple — remplace le contenu du SO directement + resize
+        psContent += "function replaceDirectly(layer, lgPath, targetDoc) {" + nl;
+        psContent += "    targetDoc.activeLayer = layer;" + nl;
+        psContent += "    replaceLogoContent(lgPath);" + nl;
+        psContent += "    try {" + nl;
+        psContent += "        var b=layer.bounds;" + nl;
+        psContent += "        var lw=b[2].as('px')-b[0].as('px');" + nl;
+        psContent += "        var lh=b[3].as('px')-b[1].as('px');" + nl;
+        psContent += "        var docW=targetDoc.width.as('px');" + nl;
+        psContent += "        var docH=targetDoc.height.as('px');" + nl;
+        psContent += "        var tW=docW*0.75; var tH=docH*0.75;" + nl;
+        psContent += "        var scalePct=Math.min(tW/lw, tH/lh)*100;" + nl;
+        psContent += "        if(scalePct<100) layer.resize(scalePct,scalePct,AnchorPosition.MIDDLECENTER);" + nl;
+        psContent += "    } catch(e) {}" + nl;
+        psContent += "}" + nl;
+
+        psContent += "for (var i=0;i<mockups.length;i++) {" + nl;
+        psContent += "    var mockup=mockups[i]; var doc=null;" + nl;
+        psContent += "    try {" + nl;
+        psContent += "        var psdFile=new File(mockup.psdPath);" + nl;
+        psContent += "        if (!psdFile.exists) { results.push({name:mockup.name,success:false,error:'PSD not found'}); continue; }" + nl;
+        psContent += "        doc=app.open(psdFile);" + nl;
+
+        // 1. Appliquer les couleurs de la marque aux calques COLOR_1, COLOR_2, etc.
+        psContent += "        try { applyBrandColors(doc); } catch(colorErr) {}" + nl;
+
+        // 1b. Remplacer les variables texte ({{BRAND_NAME}})
+        psContent += "        try { replaceTextVariables(doc); } catch(txtErr) {}" + nl;
+
+        // 2. Parcourir chaque SmartObject du PSD : entrer dedans, chercher LOGO_*
+        psContent += "        var allSOs = getAllSmartObjects(doc);" + nl;
+        psContent += "        var processed = false;" + nl;
+        psContent += "        var debugInfo = 'SOs:[' + allSOs.length + ']';" + nl;
+
+        psContent += "        for (var si=0; si<allSOs.length; si++) {" + nl;
+        psContent += "            var so = allSOs[si];" + nl;
+        psContent += "            debugInfo += ' ' + so.name;" + nl;
+        psContent += "            var result = processSmartObject(so, doc);" + nl;
+        psContent += "            if (result.found) {" + nl;
+        psContent += "                debugInfo += '>OK(' + result.variations.join(',') + ')';" + nl;
+        psContent += "                processed = true;" + nl;
+        psContent += "            } else {" + nl;
+        psContent += "                debugInfo += '>skip';" + nl;
+        psContent += "            }" + nl;
+        psContent += "        }" + nl;
+
+        // Fallback : aucun SO ne contenait de LOGO_* → remplacer le premier SO directement
+        psContent += "        if (!processed && allSOs.length > 0) {" + nl;
+        psContent += "            debugInfo += ' | FALLBACK: replaceDirectly(' + allSOs[0].name + ')';" + nl;
+        psContent += "            replaceDirectly(allSOs[0], logoPath, doc);" + nl;
+        psContent += "            processed = true;" + nl;
+        psContent += "        }" + nl;
+
+        psContent += "        if (!processed) { doc.close(SaveOptions.DONOTSAVECHANGES); results.push({name:mockup.name,success:false,error:'No smart object found'}); continue; }" + nl;
+        // Export PNG
+        psContent += "        var pngFile=new File(outputFolder+'/mockups/'+mockup.outputName);" + nl;
+        psContent += "        var pngOpts=new ExportOptionsSaveForWeb();" + nl;
+        psContent += "        pngOpts.format=SaveDocumentType.PNG; pngOpts.PNG8=false; pngOpts.transparency=true; pngOpts.quality=100;" + nl;
+        psContent += "        doc.exportDocument(pngFile,ExportType.SAVEFORWEB,pngOpts);" + nl;
+        // Sauvegarder aussi en PSD
+        psContent += "        var psdName=mockup.outputName.replace(/\\.png$/i,'.psd');" + nl;
+        psContent += "        var psdFile=new File(outputFolder+'/mockups/'+psdName);" + nl;
+        psContent += "        var psdOpts=new PhotoshopSaveOptions();" + nl;
+        psContent += "        psdOpts.layers=true; psdOpts.embedColorProfile=true;" + nl;
+        psContent += "        doc.saveAs(psdFile,psdOpts,true);" + nl;
+        psContent += "        doc.close(SaveOptions.DONOTSAVECHANGES); doc=null;" + nl;
+        psContent += "        results.push({name:mockup.name,success:true,debug:debugInfo});" + nl;
+        psContent += "    } catch(e) {" + nl;
+        psContent += "        if (doc) { try { doc.close(SaveOptions.DONOTSAVECHANGES); } catch(e2){} }" + nl;
+        psContent += "        results.push({name:mockup.name,success:false,error:e.toString()});" + nl;
+        psContent += "    }" + nl;
+        psContent += "}" + nl;
+
+        // Log final (texte simple)
+        psContent += "try {" + nl;
+        psContent += "    var logLines=['RESULTS:']; for (var ri=0;ri<results.length;ri++) { var r=results[ri]; logLines.push(r.name+': '+(r.success?'OK':'FAIL '+(r.error||''))+(r.debug?' | '+r.debug:'')); }" + nl;
+        psContent += "    var lf2=new File(outputFolder+'/_temp/mockups-log.txt'); lf2.open('w'); lf2.write(logLines.join('\\n')); lf2.close();" + nl;
+        psContent += "} catch(logErr) {}" + nl;
+
+
+        // À la fin du script PS : envoyer BridgeTalk à InDesign directement depuis PS
+        // (les callbacks btPS.onResult dans Illustrator ne fonctionnent pas car le contexte est terminé)
+        psContent += "try {" + nl;
+        psContent += "    var btID = new BridgeTalk();" + nl;
+        psContent += "    btID.target = 'indesign';" + nl;
+        psContent += "    btID.body = '$.evalFile(new File(\"" + outputFolder + "/_temp/mockups-id-script.jsx\"))';" + nl;
+        psContent += "    btID.send();" + nl;
+        psContent += "} catch(btErr) {}" + nl;
+
+        // Fermer PS si il n'était pas ouvert avant (variable injectée par Illustrator)
+        psContent += "if (typeof _shouldClosePS !== 'undefined' && _shouldClosePS) {" + nl;
+        psContent += "    $.sleep(3000);" + nl;
+        psContent += "    app.quit();" + nl;
+        psContent += "}" + nl;
+
+        psContent += "return 'OK';" + nl;
+        psContent += "})();" + nl;
+
+        // Log de debug : taille du psContent
+        try {
+            var dbgFile = new File(outputFolder + '/_temp/mockups-build-debug.txt');
+            dbgFile.open('w');
+            dbgFile.write('psContent length: ' + psContent.length + '\n');
+            dbgFile.write('first 200 chars: ' + psContent.substring(0, 200) + '\n');
+            dbgFile.write('last 200 chars: ' + psContent.substring(psContent.length - 200) + '\n');
+            dbgFile.close();
+        } catch (dbgErr) {}
+
+        // Vérifier si PS est déjà ouvert AVANT d'envoyer le BridgeTalk
+        var psWasRunning = BridgeTalk.isRunning('photoshop');
+
+        // Ecrire le script PS dans un fichier temporaire
+        var psScriptFile = new File(outputFolder + '/_temp/mockups-ps-script.jsx');
+        psScriptFile.open('w');
+        // Injecter la variable _shouldClosePS avant le script principal
+        if (!psWasRunning) {
+            psScriptFile.write('var _shouldClosePS = true;\n');
+        }
+        psScriptFile.write(psContent);
+        psScriptFile.close();
+
+        // Ecrire le script InDesign dans un fichier séparé (appelé par PS via BridgeTalk)
+        var safeIdmlPath = idmlPath.replace(/\\/g, '/');
+        var idScriptFile = new File(outputFolder + '/_temp/mockups-id-script.jsx');
+        idScriptFile.open('w');
+        idScriptFile.write('(function() {\n');
+        idScriptFile.write('var f = new File("' + safeIdmlPath + '");\n');
+        idScriptFile.write('if (!f.exists) return;\n');
+        idScriptFile.write('var doc = app.open(f);\n');
+        idScriptFile.write('var count = 0;\n');
+        idScriptFile.write('for (var p = 0; p < doc.pages.length; p++) {\n');
+        idScriptFile.write('    var items = doc.pages[p].allPageItems;\n');
+        idScriptFile.write('    for (var i = 0; i < items.length; i++) {\n');
+        idScriptFile.write('        var frame = items[i];\n');
+        idScriptFile.write('        var n = frame.name || "";\n');
+        // PROHIB_ frames: resize image to 75% centered
+        idScriptFile.write('        if (n.indexOf("PROHIB_SHADOW") === 0 || n.indexOf("PROHIB_COLOR") === 0) {\n');
+        idScriptFile.write('            if (!frame.allGraphics || frame.allGraphics.length === 0) continue;\n');
+        idScriptFile.write('            var image = frame.allGraphics[0];\n');
+        idScriptFile.write('            var fb = frame.geometricBounds;\n');
+        idScriptFile.write('            var frameW = fb[3] - fb[1]; var frameH = fb[2] - fb[0];\n');
+        idScriptFile.write('            var ib = image.geometricBounds;\n');
+        idScriptFile.write('            var imgW = ib[3] - ib[1]; var imgH = ib[2] - ib[0];\n');
+        idScriptFile.write('            var ratio = imgW / imgH;\n');
+        idScriptFile.write('            var newW, newH;\n');
+        idScriptFile.write('            if (frameW / frameH <= ratio) { newW = frameW * 0.75; newH = newW / ratio; }\n');
+        idScriptFile.write('            else { newH = frameH * 0.75; newW = newH * ratio; }\n');
+        idScriptFile.write('            var offsetX = fb[1] + (frameW - newW) / 2;\n');
+        idScriptFile.write('            var offsetY = fb[0] + (frameH - newH) / 2;\n');
+        idScriptFile.write('            image.geometricBounds = [offsetY, offsetX, offsetY + newH, offsetX + newW];\n');
+        idScriptFile.write('            count++;\n');
+        idScriptFile.write('        }\n');
+        // MOCKUP_ frames: fit image proportionally within frame
+        idScriptFile.write('        if (n.indexOf("MOCKUP_") === 0) {\n');
+        idScriptFile.write('            if (!frame.allGraphics || frame.allGraphics.length === 0) continue;\n');
+        idScriptFile.write('            try {\n');
+        idScriptFile.write('                frame.fit(FitOptions.PROPORTIONALLY);\n');
+        idScriptFile.write('                frame.fit(FitOptions.CENTER_CONTENT);\n');
+        idScriptFile.write('            } catch(fitErr) {}\n');
+        idScriptFile.write('            count++;\n');
+        idScriptFile.write('        }\n');
+        idScriptFile.write('    }\n');
+        idScriptFile.write('}\n');
+        // Nettoyer le dossier _temp/ (tous les fichiers intermediaires)
+        idScriptFile.write('try {\n');
+        idScriptFile.write('    var tmpDir = new Folder("' + outputFolder + '/_temp");\n');
+        idScriptFile.write('    if (tmpDir.exists) {\n');
+        idScriptFile.write('        var tmpFiles = tmpDir.getFiles();\n');
+        idScriptFile.write('        for (var t = 0; t < tmpFiles.length; t++) { tmpFiles[t].remove(); }\n');
+        idScriptFile.write('        tmpDir.remove();\n');
+        idScriptFile.write('    }\n');
+        idScriptFile.write('} catch(cleanErr) {}\n');
+        idScriptFile.write('})();\n');
+        idScriptFile.close();
+
+        var psScript = '$.evalFile(new File("' + outputFolder + '/_temp/mockups-ps-script.jsx"));';
+
+        // Envoyer à Photoshop (pas de onResult/onError — PS envoie directement à InDesign)
+        var btPS = new BridgeTalk();
+        btPS.target = 'photoshop';
+        btPS.body = psScript;
+        btPS.send();
+
+        return JSON.stringify({ success: true, status: 'processing' });
+
+    } catch (e) {
+        // Log l'erreur sur disque pour debug
+        try {
+            var errFile = new File(outputFolder + '/_temp/mockups-error.txt');
+            errFile.open('w');
+            errFile.write('ERROR: ' + e.toString() + '\nLine: ' + (e.line || 'unknown') + '\nFile: ' + (e.fileName || 'unknown'));
+            errFile.close();
+        } catch (logErr) {}
+        return JSON.stringify({ success: false, error: e.toString() });
+    }
+}
+
+/**
+ * Re-exécute le script PS mockups déjà sur disque + ouvre InDesign
+ * Utilise les fichiers générés lors du dernier export (mockups-ps-script.jsx, IDML)
+ */
+function rerunMockupsFromDisk(outputFolder, idmlPath) {
+    try {
+        outputFolder = outputFolder.replace(/\\/g, '/');
+        idmlPath = idmlPath.replace(/\\/g, '/');
+
+        var psScriptFile = new File(outputFolder + '/_temp/mockups-ps-script.jsx');
+        if (!psScriptFile.exists) {
+            return JSON.stringify({ success: false, error: 'mockups-ps-script.jsx introuvable dans ' + outputFolder });
+        }
+
+        // Pré-convertir le logo si nécessaire (le temp-logo.png existe peut-être déjà)
+        var tempLogo = new File(outputFolder + '/_temp/temp-logo.png');
+        if (!tempLogo.exists) {
+            // Chercher le logo original pour reconvertir
+            try {
+                var horizOrig = new Folder(outputFolder + '/horizontal/original');
+                if (horizOrig.exists) {
+                    var svgFiles = horizOrig.getFiles('*.svg');
+                    if (svgFiles.length === 0) {
+                        var subDirs = horizOrig.getFiles(function(f) { return f instanceof Folder; });
+                        for (var sd = 0; sd < subDirs.length && svgFiles.length === 0; sd++) {
+                            svgFiles = subDirs[sd].getFiles('*.svg');
+                        }
+                    }
+                    if (svgFiles.length > 0) {
+                        var svgDoc = app.open(svgFiles[0]);
+                        var pngDest = new File(outputFolder + '/_temp/temp-logo.png');
+                        var pngOpts = new ExportOptionsPNG24();
+                        pngOpts.transparency = true;
+                        pngOpts.antiAliasing = true;
+                        var maxDim = Math.max(svgDoc.width, svgDoc.height);
+                        var scaleFactor = (2000 / maxDim) * 100;
+                        pngOpts.horizontalScale = scaleFactor;
+                        pngOpts.verticalScale = scaleFactor;
+                        svgDoc.exportFile(pngDest, ExportType.PNG24, pngOpts);
+                        svgDoc.close(SaveOptions.DONOTSAVECHANGES);
+                    }
+                }
+            } catch (convErr) {}
+        }
+
+        // Réécrire le script InDesign (le chemin IDML peut avoir changé)
+        var idScriptFile = new File(outputFolder + '/_temp/mockups-id-script.jsx');
+        idScriptFile.open('w');
+        idScriptFile.write('(function() {\n');
+        idScriptFile.write('var f = new File("' + idmlPath + '");\n');
+        idScriptFile.write('if (!f.exists) return;\n');
+        idScriptFile.write('var doc = app.open(f);\n');
+        idScriptFile.write('for (var p = 0; p < doc.pages.length; p++) {\n');
+        idScriptFile.write('    var items = doc.pages[p].allPageItems;\n');
+        idScriptFile.write('    for (var i = 0; i < items.length; i++) {\n');
+        idScriptFile.write('        var frame = items[i];\n');
+        idScriptFile.write('        var n = frame.name || "";\n');
+        idScriptFile.write('        if (n.indexOf("PROHIB_SHADOW") === 0 || n.indexOf("PROHIB_COLOR") === 0) {\n');
+        idScriptFile.write('            if (!frame.allGraphics || frame.allGraphics.length === 0) continue;\n');
+        idScriptFile.write('            var image = frame.allGraphics[0];\n');
+        idScriptFile.write('            var fb = frame.geometricBounds;\n');
+        idScriptFile.write('            var frameW = fb[3] - fb[1]; var frameH = fb[2] - fb[0];\n');
+        idScriptFile.write('            var ib = image.geometricBounds;\n');
+        idScriptFile.write('            var imgW = ib[3] - ib[1]; var imgH = ib[2] - ib[0];\n');
+        idScriptFile.write('            var ratio = imgW / imgH;\n');
+        idScriptFile.write('            var newW, newH;\n');
+        idScriptFile.write('            if (frameW / frameH <= ratio) { newW = frameW * 0.75; newH = newW / ratio; }\n');
+        idScriptFile.write('            else { newH = frameH * 0.75; newW = newH * ratio; }\n');
+        idScriptFile.write('            var offsetX = fb[1] + (frameW - newW) / 2;\n');
+        idScriptFile.write('            var offsetY = fb[0] + (frameH - newH) / 2;\n');
+        idScriptFile.write('            image.geometricBounds = [offsetY, offsetX, offsetY + newH, offsetX + newW];\n');
+        idScriptFile.write('        }\n');
+        idScriptFile.write('        if (n.indexOf("MOCKUP_") === 0) {\n');
+        idScriptFile.write('            if (!frame.allGraphics || frame.allGraphics.length === 0) continue;\n');
+        idScriptFile.write('            try { frame.fit(FitOptions.PROPORTIONALLY); frame.fit(FitOptions.CENTER_CONTENT); } catch(e) {}\n');
+        idScriptFile.write('        }\n');
+        idScriptFile.write('    }\n');
+        idScriptFile.write('}\n');
+        // Nettoyer le dossier _temp/ (tous les fichiers intermediaires)
+        idScriptFile.write('try {\n');
+        idScriptFile.write('    var tmpDir = new Folder("' + outputFolder + '/_temp");\n');
+        idScriptFile.write('    if (tmpDir.exists) {\n');
+        idScriptFile.write('        var tmpFiles = tmpDir.getFiles();\n');
+        idScriptFile.write('        for (var t = 0; t < tmpFiles.length; t++) { tmpFiles[t].remove(); }\n');
+        idScriptFile.write('        tmpDir.remove();\n');
+        idScriptFile.write('    }\n');
+        idScriptFile.write('} catch(cleanErr) {}\n');
+        idScriptFile.write('})();\n');
+        idScriptFile.close();
+
+        // Le PS script contient déjà le BridgeTalk vers InDesign
+        // Réécrire _shouldClosePS selon l'état actuel de PS
+        var psWasRunning = BridgeTalk.isRunning('photoshop');
+        var psScriptContent = '';
+        if (!psWasRunning) {
+            psScriptContent = 'var _shouldClosePS = true;\n';
+        }
+        // Relire le script PS existant (sans le préfixe _shouldClosePS)
+        psScriptFile.open('r');
+        var existingContent = psScriptFile.read();
+        psScriptFile.close();
+        // Supprimer l'ancienne ligne _shouldClosePS si elle existe
+        existingContent = existingContent.replace(/^var _shouldClosePS\s*=\s*(?:true|false);\n?/m, '');
+        psScriptFile.open('w');
+        psScriptFile.write(psScriptContent + existingContent);
+        psScriptFile.close();
+
+        var psScript = '$.evalFile(new File("' + outputFolder + '/_temp/mockups-ps-script.jsx"));';
+
+        var btPS = new BridgeTalk();
+        btPS.target = 'photoshop';
+        btPS.body = psScript;
+        btPS.send();
+
+        return JSON.stringify({ success: true, status: 'rerunning' });
+    } catch (e) {
+        return JSON.stringify({ success: false, error: e.toString() });
+    }
+}
+
 function enablePlayerDebugMode() {
     try {
         // Détecter si on est sur Mac

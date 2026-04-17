@@ -31,14 +31,14 @@ export default async function handler(req, res) {
         // Configuration de la dernière version
         // TODO: Vous pourrez mettre à jour ces valeurs à chaque nouvelle release
         const latestVersion = {
-            version: '1.0.0',
-            releaseDate: '2025-11-07',
-            downloadUrl: 'https://votre-domaine.com/downloads/logo-declinaisons-v1.0.0.zxp',
+            version: '1.1.0',
+            releaseDate: '2026-04-17',
+            downloadUrl: 'https://github.com/pupilleagence-source/logo-declinaisons/releases/latest',
             changelog: [
-                'Version initiale',
-                'Système de génération de déclinaisons',
-                'Trial gratuit (7 générations)',
-                'Système de licences Lemon Squeezy'
+                '🌍 Support multilangue (FR / EN / ES / IT)',
+                '📄 Presentation InDesign avec mockups Photoshop',
+                '🔑 Licence stable (HWID hardware, persistance disque)',
+                '🎨 Nouveau design DA Logotyps'
             ]
         };
 

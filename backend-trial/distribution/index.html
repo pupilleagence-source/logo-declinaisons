@@ -1,0 +1,441 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logo Déclinaisons</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <script src="lib/CSInterface.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-content">
+                <div class="header-left">
+                    <img class="logo" src="./media/logo.svg">
+                    <button id="reset-btn" class="btn-reset" data-i18n-title="reset_tooltip" data-i18n="reset_btn" title="Réinitialiser">Reset</button>
+                    <select id="lang-select" class="lang-select" title="Language">
+                        <option value="fr">FR</option>
+                        <option value="en">EN</option>
+                        <option value="es">ES</option>
+                        <option value="it">IT</option>
+                    </select>
+                    <p class="subtitle">Logo variations in 3 clics.</p>
+                </div>
+                <div class="header-right">
+                    <button id="license-key-btn" class="license-key-btn">
+                        <span id="license-key-text">License Key</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Trial Status Badge -->
+            <div id="trial-badge" class="trial-badge" style="display: none;">
+                <span id="trial-text">🎁 7 générations gratuites</span>
+            </div>
+        </header>
+
+        <!-- Navigation par onglets -->
+        <nav class="tabs">
+            <button class="tab-button active" data-tab="selection" data-i18n="tab_selection">Sélection</button>
+            <button class="tab-button" data-tab="colors" data-i18n="tab_colors">Couleur</button>
+            <button class="tab-button" data-tab="export" data-i18n="tab_export">Export</button>
+        </nav>
+
+        <main>
+            <!-- Onglet 1: Sélection -->
+            <div class="tab-content active" id="tab-selection">
+               <section class="panel panel-bottom">
+                    <h2 data-i18n="sel_heading">Sélection des variantes du logo</h2>
+                    <p class="subtitle" data-i18n="sel_instruction">sélectionne chaque élément correspondant aux variantes</p>
+                    <div class="logo-selection">
+                         <!-- Icône seule -->
+                        <div class="selection-item">
+                        <label data-i18n="sel_icon_label">Icône seule</label>
+                        <div class="selection-controls">
+                            <span class="selection-status" id="status-icon" data-i18n="sel_not_selected">Pas sélect</span>
+                            <button class="btn-select" data-type="icon" data-i18n="sel_validate">Valider</button>
+                        </div>
+                        </div>
+
+                        <!-- Typographie seule -->
+                        <div class="selection-item">
+                        <label data-i18n="sel_text_label">Typographie seule</label>
+                        <div class="selection-controls">
+                            <span class="selection-status" id="status-text" data-i18n="sel_not_selected">Pas sélect</span>
+                            <button class="btn-select" data-type="text" data-i18n="sel_validate">Valider</button>
+                        </div>
+                        </div>
+                        <!-- Version horizontale -->
+                        <div class="selection-item">
+                        <label data-i18n="sel_horizontal_label">Version horizontale</label>
+                        <div class="selection-controls">
+                               <button id="generate-horizontal-layout" class="btn-select2" data-i18n="sel_auto_generate">Génération auto</button>
+                            <span class="selection-status" id="status-horizontal" data-i18n="sel_not_selected">Pas sélect</span>
+                            <button class="btn-select" data-type="horizontal" data-i18n="sel_validate">Valider</button>
+                        </div>
+                        </div>
+
+                        <!-- Version verticale -->
+                        <div class="selection-item">
+                        <label data-i18n="sel_vertical_label">Version verticale</label>
+                        <div class="selection-controls">
+                             <button id="generate-vertical-layout" class="btn-select2" data-i18n="sel_auto_generate">Génération auto</button>
+                            <span class="selection-status" id="status-vertical" data-i18n="sel_not_selected">Pas sélect</span>
+                            <button class="btn-select" data-type="vertical" data-i18n="sel_validate">Valider</button>
+                        </div>
+                        </div>
+
+                        <!-- Conteneur pour les variations custom -->
+                        <div id="custom-variations-container"></div>
+
+                        <!-- Bouton pour ajouter des variations -->
+                        <div style="margin-top: 1em; text-align: center;">
+                            <button id="add-variation-btn" class="btn-secondary" style="padding: 0.5em 1em;" data-i18n="sel_add_custom">
+                                + Ajouter un custom
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Onglet 2: Couleurs -->
+            <div class="tab-content" id="tab-colors">
+                   <section class="panel">
+                <h2 data-i18n="col_doc_settings">Paramètres du document</h2>
+
+                <div style="margin-bottom: 1em;">
+                    <label for="color-mode" style="display: block; margin-bottom: 0.5em;" data-i18n="col_mode_label">Mode couleur:</label>
+                    <select id="color-mode" style="width: 100%; padding: 0.5em; font-size: 14px;">
+                        <option value="RGB" selected>RGB</option>
+                        <option value="CMYK">CMJN (CMYK)</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="document-ppi" style="display: block; margin-bottom: 0.5em;" data-i18n="col_ppi_label">
+                        Résolution (PPI):
+                    </label>
+                    <input type="number" id="document-ppi" min="1" max="999" value="72" style="width: 100%; padding: 0.5em; font-size: 14px;">
+                    <div style="font-size: 12px; color: #999; margin-top: 0.25em;" data-i18n="col_ppi_help">
+                        Valeurs courantes: 72 (Web), 150, 300 (Print)
+                    </div>
+                </div>
+            </section>
+            <section class="panel panel-bottom">
+                <h2 data-i18n="col_section_heading">Couleurs</h2>
+                <div class="checkbox-group">
+                    <label class="checkbox-label color-locked">
+                        <input type="checkbox" id="color-original" checked disabled>
+                        <span data-i18n="col_original">Couleurs d'origine</span>
+                        <span class="lock-icon">🔒</span>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="color-bw">
+                        <span data-i18n="col_grayscale">Nuances de gris</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="color-black">
+                        <span data-i18n="col_monochrome">Monochromie</span>
+                        <button type="button" id="black-color-picker" class="color-picker-btn" data-i18n-title="col_picker_tooltip" title="Cliquer pour ouvrir le sélecteur de couleur (avec pipette)" style="margin-left: 0.5em; background-color: #000000;"></button>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="color-light">
+                        <span data-i18n="col_monochrome_light">Monochromie light (avec fond noir pour PDF)</span>
+                        <button type="button" id="light-color-picker" class="color-picker-btn" data-i18n-title="col_picker_tooltip" title="Cliquer pour ouvrir le sélecteur de couleur (avec pipette)" style="margin-left: 0.5em; background-color: #ffffff;"></button>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="color-custom">
+                        <span data-i18n="col_customs">Couleurs customs</span>
+                    </label>
+                </div>
+
+                <div id="custom-colors-section" style="display: none; margin-top: 1em;">
+                    <button id="analyze-colors-btn" class="btn-secondary btn-large" data-i18n="col_analyze">Analyser les couleurs</button>
+                    <div id="colors-mapping" style="margin-top: 1em;"></div>
+                </div>
+            </section>
+            </div>
+
+            <!-- Onglet 3: Export -->
+            <div class="tab-content" id="tab-export">
+                <section class="panel">
+                <h2 data-i18n="exp_artboard_types">Types de plans de travail</h2>
+
+                <div class="checkbox-group">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="artboard-fit" checked>
+                        <span data-i18n="exp_fit_content">Fit-content (adapté au contenu)</span>
+                    </label>
+
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="artboard-square" checked>
+                        <span data-i18n="exp_square">Carré</span>
+                    </label>
+                </div>
+            </section>
+
+                <section class="panel" id="margins-section">
+                <h2 data-i18n="exp_margins">Marges</h2>
+
+                <div id="margin-fit-container" class="margin-control" style="display: none; margin-bottom: 1em;">
+                    <label for="margin-fit" style="display: block; margin-bottom: 0.5em;">
+                        <span data-i18n="exp_margin_fit">Marge Fit-content</span>: <span id="margin-fit-value">0</span>%
+                    </label>
+                    <input type="range" id="margin-fit" min="0" max="40" value="0" step="1" style="width: 100%;">
+                </div>
+
+                <div id="margin-square-container" class="margin-control" style="display: none;">
+                    <label for="margin-square" style="display: block; margin-bottom: 0.5em;">
+                        <span data-i18n="exp_margin_square">Marge Carré</span>: <span id="margin-square-value">10</span>%
+                    </label>
+                    <input type="range" id="margin-square" min="0" max="40" value="10" step="1" style="width: 100%;">
+                </div>
+            </section>
+
+                <section class="panel panel-bottom" id="export-section">
+                <h2 data-i18n="exp_options">Options d'export</h2>
+                <div class="export-options">
+                    <label><input type="checkbox" id="export-png"> PNG</label>
+                    <label><input type="checkbox" id="export-jpg"> JPG</label>
+                    <label><input type="checkbox" id="export-svg"> SVG</label>
+                    <label><input type="checkbox" id="export-ai"> AI</label>
+                    <label><input type="checkbox" id="export-pdf"> PDF</label>
+                </div>
+                <div class="export-path">
+                    <label for="output-folder" data-i18n="exp_output_folder">Dossier de sortie :</label>
+                    <input type="text" id="output-folder" readonly data-i18n-placeholder="exp_folder_placeholder" placeholder="Choisir un dossier...">
+                    <button id="browse-folder" data-i18n="exp_browse">Parcourir</button>
+                </div>
+                <div class="export-sizes">
+                    <label data-i18n="exp_sizes_label">Tailles d'export (PNG & JPG) :</label>
+                    <div class="checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="size-small" value="1000" checked>
+                            <span data-i18n="exp_size_small">Petit (1000 px)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="size-medium" value="2000">
+                            <span data-i18n="exp_size_medium">Moyen (2000 px)</span>
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="size-large" value="4000">
+                            <span data-i18n="exp_size_large">Grand (4000 px)</span>
+                        </label>
+                    </div>
+                    <div class="custom-size">
+                        <label class="checkbox-label">
+                        <input type="checkbox" id="custom-size-enable">
+                        <span data-i18n="exp_size_custom">Personnalisé</span>
+                        </label>
+                        <div id="custom-size-inputs" style="display: none; margin-top: 0.5em;">
+                        <label for="custom-width" data-i18n="exp_width_label">Largeur (px) :</label>
+                        <input type="number" id="custom-width" value="1000" min="1" style="width:5em">
+                        <label for="custom-height" style="margin-left:1em" data-i18n="exp_height_label">Hauteur (px) :</label>
+                        <input type="number" id="custom-height" value="1000" min="1" style="width:5em">
+                        </div>
+                    </div>
+                    <div class="custom-size-lock" style="margin-top:0.5em">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="lock-aspect-ratio"  checked>
+                        <span data-i18n="exp_lock_ratio">Conserver le ratio</span>
+                    </label>
+                    </div>
+
+                    <!-- Section Favicon (visible uniquement si icon est sélectionné) -->
+                    <div id="favicon-section" style="display: none; margin-top: 1em; padding-top: 1em; border-top: 1px solid #444;">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="favicon-enable">
+                            <span data-i18n="exp_favicon">Favicon (32×32 px - uniquement icône)</span>
+                        </label>
+                        <div style="font-size: 11px; color: #999; margin-left: 1.5em; margin-top: 0.25em;" data-i18n="exp_favicon_desc">
+                            Exporte l'icône en 32×32 pixels dans toutes les variantes de couleurs
+                        </div>
+                    </div>
+
+                </div>
+
+                </section>
+
+                <!-- Présentation InDesign (checkbox intégrée à l'export) -->
+                <section class="panel" id="presentation-section">
+                    <label class="checkbox-label" style="font-weight: 600;">
+                        <input type="checkbox" id="presentation-enable">
+                        <span data-i18n="exp_presentation">Présentation InDesign (.idml)</span>
+                    </label>
+
+                    <div id="presentation-options" style="display: none; margin-top: 0.75em;">
+                        <div class="template-selector">
+                            <label class="template-option">
+                                <input type="radio" name="template" value="template-1" checked>
+                                <span class="template-preview">
+                                    <span class="template-name" data-i18n="exp_tpl_classic">Classique</span>
+                                </span>
+                            </label>
+                            <label class="template-option template-disabled" title="Coming soon">
+                                <input type="radio" name="template" value="custom" disabled>
+                                <span class="template-preview">
+                                    <span class="template-name">Custom <small style="opacity:0.5; font-size:9px;">soon</small></span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <div class="presentation-name">
+                            <label for="brand-name" data-i18n="exp_brand_name">Nom de la marque :</label>
+                            <input type="text" id="brand-name" data-i18n-placeholder="exp_brand_placeholder" placeholder="Ma Marque">
+                        </div>
+
+                        <div class="presentation-name font-autocomplete-wrapper">
+                            <label for="brand-font-primary" data-i18n="exp_font_primary">Police principale :</label>
+                            <div class="font-input-container">
+                                <input type="text" id="brand-font-primary" placeholder="Montserrat" value="" autocomplete="off">
+                                <div class="font-dropdown" id="font-dropdown-primary"></div>
+                            </div>
+                        </div>
+                        <div class="presentation-name font-autocomplete-wrapper">
+                            <label for="brand-font-secondary" data-i18n="exp_font_secondary">Police secondaire :</label>
+                            <div class="font-input-container">
+                                <input type="text" id="brand-font-secondary" placeholder="Open Sans" value="" autocomplete="off">
+                                <div class="font-dropdown" id="font-dropdown-secondary"></div>
+                            </div>
+                        </div>
+
+                        <div class="presentation-name">
+                            <label for="zone-margin" data-i18n="exp_protection_zone">Zone de protection :</label>
+                            <div style="display: flex; align-items: center; gap: 0.5em;">
+                                <input type="range" id="zone-margin" min="5" max="40" value="15" step="1" style="flex: 1;">
+                                <span id="zone-margin-value">15</span>%
+                            </div>
+                        </div>
+
+                        <button id="btn-rerun-mockups" class="btn-secondary btn-large" style="display:none; margin-top:6px; font-size:11px; opacity:0.8;">
+                            Re-tester mockups (PS → InDesign)
+                        </button>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Actions communes à tous les onglets -->
+            <section class="panel actions-panel">
+                <div class="actions-row">
+                    <button id="prev-tab-btn" class="btn-nav" disabled>←</button>
+                    <button id="generate-btn" class="btn-action btn-generate" disabled data-i18n="act_generate">Générer</button>
+                    <button id="export-btn" class="btn-action btn-export" disabled data-i18n="act_export">Exporter</button>
+                    <button id="next-tab-btn" class="btn-nav">→</button>
+                </div>
+                <div class="summary" id="summary" style="display: none;">
+                    <p><span data-i18n="act_artboards_count">Plans de travail :</span> <strong id="artboard-count">0</strong></p>
+                </div>
+            </section>
+
+            <!-- Zone de status -->
+            <div class="status-message" id="status" style="display: none;"></div>
+        </main>
+    </div>
+
+    <!-- License Modal (Activation & Manage) -->
+    <div id="license-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="license-modal-title" data-i18n="lic_title">🔑 License Key</h2>
+                <button class="modal-close" id="close-license-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Activation Form (shown when no license) -->
+                <div id="license-activation-form">
+                    <p class="modal-description" data-i18n="lic_description">
+                        Entrez votre clé de licence pour débloquer l'accès illimité et le mode offline.
+                    </p>
+                    <div class="form-group">
+                        <label for="license-key-input" class="form-label" data-i18n="lic_key_label">Clé de licence :</label>
+                        <input type="text" id="license-key-input" class="form-input license-key-input" placeholder="xxxx-xxxx-xxxx-xxxx">
+                    </div>
+                </div>
+
+                <!-- License Info (shown when license active) -->
+                <div id="license-info-display" style="display: none;">
+                    <div class="license-info-box">
+                        <p class="license-info-title" data-i18n="lic_active">✅ Licence active</p>
+                        <p class="license-info-item">
+                            <strong data-i18n="lic_type">Type :</strong> <span id="license-type-display">-</span>
+                        </p>
+                        <p class="license-info-item">
+                            <strong data-i18n="lic_key">Clé :</strong> <span id="license-key-display">-</span>
+                        </p>
+                    </div>
+                    <p class="license-info-note" data-i18n="lic_deactivate_notice">
+                        Désactiver la licence libérera une activation pour l'utiliser sur un autre appareil.
+                    </p>
+                </div>
+
+                <div id="license-error" class="message-box error-box" style="display: none;"></div>
+                <div id="license-success" class="message-box success-box" style="display: none;"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancel-license-btn" class="btn btn-secondary" data-i18n="lic_close">
+                    Fermer
+                </button>
+                <button id="activate-license-submit-btn" class="btn btn-primary" data-i18n="lic_activate">
+                    Activer
+                </button>
+                <button id="deactivate-license-btn" class="btn btn-danger" style="display: none;" data-i18n="lic_deactivate">
+                    Désactiver
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update Modal -->
+    <div id="update-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="upd_title">🎉 Mise à jour disponible</h2>
+                <button class="modal-close" id="close-update-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="update-info-box">
+                    <p class="update-version-info">
+                        <strong data-i18n="upd_current_version">Version actuelle :</strong> <span id="update-current-version">-</span><br>
+                        <strong data-i18n="upd_new_version">Nouvelle version :</strong> <span id="update-new-version" style="color: #4CAF50;">-</span><br>
+                        <strong data-i18n="upd_release_date">Date de sortie :</strong> <span id="update-release-date">-</span>
+                    </p>
+
+                    <div class="update-changelog">
+                        <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 14px;" data-i18n="upd_changelog">Nouveautés :</h3>
+                        <ul id="update-changelog" style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6;">
+                            <!-- Rempli dynamiquement -->
+                        </ul>
+                    </div>
+                </div>
+
+                <p class="update-note" style="margin-top: 20px; font-size: 12px; color: #666;" data-i18n="upd_notice">
+                    💡 Le téléchargement ouvrira votre navigateur. Installez le nouveau .zxp avec ZXP Installer.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button id="update-skip-btn" class="btn btn-secondary" data-i18n="upd_skip">
+                    Plus tard
+                </button>
+                <button id="update-download-btn" class="btn btn-primary" data-i18n="upd_download">
+                    Télécharger la mise à jour
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trial & Licensing System -->
+    <script src="js/i18n.js"></script>
+    <script src="js/hwid.js"></script>
+    <script src="js/debug-mode-enabler.js"></script>
+    <script src="js/trial.js"></script>
+    <script src="js/auto-updater.js"></script>
+    <script src="lib/jszip.min.js"></script>
+    <script src="js/idml-generator.js"></script>
+    <script src="js/main.js"></script>
+    <script src="js/updater.js"></script>
+</body>
+</html>

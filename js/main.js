@@ -71,6 +71,18 @@ async function init() {
     console.log('Initializing Logo Déclinaisons...');
 
     try {
+        // Initialiser i18n (applique la langue sauvegardée)
+        if (typeof I18N !== 'undefined') {
+            I18N.init();
+            var langSel = document.getElementById('lang-select');
+            if (langSel) {
+                langSel.value = I18N.currentLang;
+                langSel.addEventListener('change', function() {
+                    I18N.setLang(this.value);
+                });
+            }
+        }
+
         csInterface = new CSInterface();
 
         // Initialiser le système de trial/licensing
@@ -80,6 +92,7 @@ async function init() {
         setupEventListeners();
         updateTabNavigationButtons(); // Initialiser l'état des boutons de navigation
         updateUI();
+        loadFontList(); // Charger les polices pour l'autocomplétion (non bloquant)
         console.log('Extension initialized successfully');
     } catch (error) {
         console.error('Failed to initialize:', error);
@@ -239,14 +252,14 @@ function addCustomVariation() {
     variationDiv.id = `variation-${variationId}`;
     variationDiv.innerHTML = `
         <label>
-            <input type="text" id="label-${variationId}" placeholder="Nom de la variation"
-                   value="Variation ${appState.customVariationsCount}"
+            <input type="text" id="label-${variationId}" placeholder="Nom du custom"
+                   value="Custom ${appState.customVariationsCount}"
                    style="border: none; background: transparent; font-weight: bold; width: 150px;">
         </label>
         <div class="selection-controls">
-            <span class="selection-status" id="status-${variationId}">Non sélectionné</span>
-            <button class="btn-select" data-type="${variationId}">Sélectionner</button>
-            <button class="btn-remove" data-variation="${variationId}" style="margin-left: 0.5em; padding: 0.3em 0.7em; background: #d9534f; color: white; border: none; border-radius: 3px; cursor: pointer;">✕</button>
+            <span class="selection-status" id="status-${variationId}">Pas sélect</span>
+            <button class="btn-select" data-type="${variationId}">Valider</button>
+            <button class="btn-remove" data-variation="${variationId}" style="margin-left: 0.5em; width: 24px; height: 24px; background: #d9534f; color: white; border: none; border-radius: 50%; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0;">✕</button>
         </div>
     `;
 
@@ -289,14 +302,9 @@ function removeCustomVariation(variationId) {
 // Mettre à jour l'interface des variations custom
 function updateCustomVariationsUI() {
     const addBtn = document.getElementById('add-variation-btn');
-    const infoDiv = document.getElementById('add-variation-info');
 
     if (addBtn) {
         addBtn.disabled = appState.customVariationsCount >= 3;
-    }
-
-    if (infoDiv) {
-        infoDiv.textContent = `${appState.customVariationsCount}/3 variations ajoutées`;
     }
 }
 
@@ -396,6 +404,15 @@ function setupEventListeners() {
             const value = parseInt(e.target.value, 10);
             appState.artboardMargins.square = value;
             marginSquareValue.textContent = value;
+        });
+    }
+
+    // Slider zone de protection
+    const zoneMarginInput = document.getElementById('zone-margin');
+    const zoneMarginValue = document.getElementById('zone-margin-value');
+    if (zoneMarginInput && zoneMarginValue) {
+        zoneMarginInput.addEventListener('input', (e) => {
+            zoneMarginValue.textContent = e.target.value;
         });
     }
 
@@ -516,6 +533,8 @@ function setupEventListeners() {
                         statusEl.textContent = 'Sélectionné ✓';
                         statusEl.classList.add('selected');
                     }
+                    const btnEl = document.querySelector('.btn-select[data-type="horizontal"]');
+                    if (btnEl) btnEl.classList.add('selected');
                     updateUI();
                     showStatus('Version horizontale générée et sélectionnée !', 'success');
                 }
@@ -549,6 +568,8 @@ function setupEventListeners() {
                         statusEl.textContent = 'Sélectionné ✓';
                         statusEl.classList.add('selected');
                     }
+                    const btnEl = document.querySelector('.btn-select[data-type="vertical"]');
+                    if (btnEl) btnEl.classList.add('selected');
                     updateUI();
                     showStatus('Version verticale générée et sélectionnée !', 'success');
                 }
@@ -602,10 +623,49 @@ function setupEventListeners() {
         addVariationBtn.addEventListener('click', addCustomVariation);
     }
 
-    // Bouton générer
+    // Bouton générer (artboards seulement)
     const generateBtn = document.getElementById('generate-btn');
     if (generateBtn) {
         generateBtn.addEventListener('click', handleGenerate);
+    }
+
+    // Bouton exporter (artboards + fichiers)
+    const exportBtnEl = document.getElementById('export-btn');
+    if (exportBtnEl) {
+        exportBtnEl.addEventListener('click', handleExport);
+    }
+
+    // Checkbox présentation InDesign : toggle options
+    const presentationCheckbox = document.getElementById('presentation-enable');
+    if (presentationCheckbox) {
+        presentationCheckbox.addEventListener('change', function() {
+            var opts = document.getElementById('presentation-options');
+            if (opts) opts.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+
+    // Bouton reset
+    const resetBtn = document.getElementById('reset-btn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', function() {
+            resetSelections();
+            // Réinitialiser aussi les inputs de présentation
+            var brandNameInput = document.getElementById('brand-name');
+            if (brandNameInput) brandNameInput.value = '';
+            var fontPrimary = document.getElementById('brand-font-primary');
+            if (fontPrimary) fontPrimary.value = '';
+            var fontSecondary = document.getElementById('brand-font-secondary');
+            if (fontSecondary) fontSecondary.value = '';
+            // Réinitialiser les sélections ExtendScript
+            evalExtendScript('clearStoredSelections').catch(function() {});
+            showStatus('Paramètres réinitialisés.', 'success');
+        });
+    }
+
+    // Bouton re-tester mockups (PS → InDesign) sans tout regénérer
+    const btnRerunMockups = document.getElementById('btn-rerun-mockups');
+    if (btnRerunMockups) {
+        btnRerunMockups.addEventListener('click', handleRerunMockups);
     }
 
     // DEBUG: Bouton reset trial
@@ -694,10 +754,14 @@ function setupEventListeners() {
 
     if (updateDownloadBtn) {
         updateDownloadBtn.addEventListener('click', () => {
-            const downloadUrl = updateDownloadBtn.dataset.downloadUrl;
-            if (downloadUrl) {
-                UpdateChecker.downloadUpdate(downloadUrl);
+            // Ouvrir le lien de download dans le navigateur (pas d'auto-écrasement)
+            var url = updateDownloadBtn.dataset.downloadUrl;
+            if (url) {
+                window.cep && window.cep.util
+                    ? window.cep.util.openURLInDefaultBrowser(url)
+                    : window.open(url, '_blank');
             }
+            UpdateChecker.closeUpdateModal();
         });
     }
 
@@ -1015,6 +1079,9 @@ async function handleSelection(event) {
                 statusEl.classList.add('selected');
             }
 
+            // Ajouter la classe selected au bouton
+            button.classList.add('selected');
+
             showStatus(`${getTypeName(type)} sélectionné`, 'success');
             updateUI();
         } else if (result && result.startsWith('ERROR:')) {
@@ -1145,40 +1212,96 @@ function updateUI() {
     summaryEl.style.display = 'none';
   }
 
-  // Activer le bouton seulement si tous les critères sont remplis
-  document.getElementById('generate-btn').disabled = !(selectedCount > 0 && typeCount > 0 && sizeCount > 0 && colorCount > 0);
+  // "Générer" : sélections + types + couleurs suffisent
+  document.getElementById('generate-btn').disabled = !(selectedCount > 0 && typeCount > 0 && colorCount > 0);
+
+  // "Exporter" : il faut en plus un dossier, au moins un format et au moins une taille
+  const hasFolder = appState.outputFolder && appState.outputFolder !== '';
+  const hasFormat = appState.exportFormats.png || appState.exportFormats.jpg || appState.exportFormats.svg || appState.exportFormats.ai || appState.exportFormats.pdf;
+  const exportBtn = document.getElementById('export-btn');
+  if (exportBtn) {
+    exportBtn.disabled = !(selectedCount > 0 && typeCount > 0 && colorCount > 0 && sizeCount > 0 && hasFolder && hasFormat);
+  }
 }
 
+// Logique commune de vérification trial
+async function checkTrialAllowed() {
+    const canGenerate = await Trial.canGenerate();
+    if (!canGenerate.allowed) {
+        showStatus(canGenerate.message, 'error');
+        if (canGenerate.needsUIUpdate) {
+            const newStatus = await Trial.getStatus();
+            updateTrialBadge(newStatus);
+            updateLicenseKeyButton();
+        }
+        return false;
+    }
+    return true;
+}
+
+// Générer les plans de travail SEULEMENT (pas d'export fichiers)
 async function handleGenerate() {
     const generateBtn = document.getElementById('generate-btn');
 
     try {
-        // 🔒 VÉRIFIER LE TRIAL AVANT GÉNÉRATION
-        const canGenerate = await Trial.canGenerate();
+        if (!(await checkTrialAllowed())) return;
 
-        if (!canGenerate.allowed) {
-            // Trial épuisé → Bloquer et afficher message
-            showStatus(canGenerate.message, 'error');
-            console.log('❌ Génération bloquée:', canGenerate.reason);
+        if (generateBtn) generateBtn.disabled = true;
+        showStatus('Génération des plans de travail...', 'warning');
 
-            // Si la licence a été révoquée, mettre à jour l'interface
-            if (canGenerate.needsUIUpdate) {
+        const params = {
+            selections: appState.selections,
+            artboardTypes: appState.artboardTypes,
+            artboardMargins: appState.artboardMargins,
+            colorVariations: appState.colorVariations,
+            customColors: appState.customColors,
+            exportFormats: { png: false, jpg: false, svg: false, ai: false, pdf: false },
+            exportSizes: {},
+            customSizeEnabled: false,
+            customSize: appState.customSize,
+            faviconEnabled: appState.faviconEnabled,
+            outputFolder: '',
+            documentSettings: appState.documentSettings
+        };
+
+        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 120000);
+
+        if (result && result.startsWith('SUCCESS')) {
+            const count = result.split(':')[1];
+            showStatus(`${count} plans de travail créés !`, 'success');
+
+            try {
+                await Trial.incrementGeneration();
                 const newStatus = await Trial.getStatus();
                 updateTrialBadge(newStatus);
-                updateLicenseKeyButton();
+            } catch (e) {
+                console.error('Erreur incrémentation trial:', e);
             }
-
-            return; // Arrêter ici
+        } else if (result && result.startsWith('ERROR')) {
+            showStatus(result.substring(6).trim() || 'Erreur inconnue', 'error');
+        } else {
+            showStatus('Erreur: Réponse invalide', 'error');
         }
+    } catch (error) {
+        console.error('Generate error:', error);
+        showStatus(`Erreur: ${error.message || 'Erreur inconnue'}`, 'error');
+    } finally {
+        if (generateBtn) generateBtn.disabled = false;
+        updateUI();
+    }
+}
 
-        console.log('✓ Génération autorisée:', canGenerate.reason);
+// Exporter les fichiers (génère artboards + exporte dans le dossier)
+async function handleExport() {
+    const exportBtnEl = document.getElementById('export-btn');
 
-        // Désactiver le bouton pendant la génération
-        if (generateBtn) generateBtn.disabled = true;
+    try {
+        if (!(await checkTrialAllowed())) return;
 
-        showStatus('Génération en cours...', 'warning');
+        if (exportBtnEl) exportBtnEl.disabled = true;
+        showStatus('Exportation en cours...', 'warning');
+        document.body.classList.add('exporting');
 
-        // Préparer les paramètres
         const params = {
             selections: appState.selections,
             artboardTypes: appState.artboardTypes,
@@ -1194,57 +1317,293 @@ async function handleGenerate() {
             documentSettings: appState.documentSettings
         };
 
-        console.log('Generate params:', params);
-
-        // Appeler la fonction de génération avec timeout étendu (2 minutes pour grandes générations)
-        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 120000);
+        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 300000);
 
         if (result && result.startsWith('SUCCESS')) {
             const count = result.split(':')[1];
-            let successMsg = `${count} plans de travail créés avec succès !`;
 
-            // Ajouter info sur l'enregistrement si un dossier d'export est défini
-            if (appState.outputFolder && appState.outputFolder !== '') {
-                successMsg += ' Fichier Illustrator enregistré : logo-export-variation.ai';
-            }
-
-            showStatus(successMsg, 'success');
-
-            // 🎁 INCRÉMENTER LE COMPTEUR DE TRIAL (si en mode trial)
             try {
                 await Trial.incrementGeneration();
-
-                // Mettre à jour le badge avec le nouveau statut
                 const newStatus = await Trial.getStatus();
                 updateTrialBadge(newStatus);
-            } catch (incrementError) {
-                // Erreur lors de l'incrémentation (serveur offline pour trial)
-                console.error('❌ Erreur incrémentation trial:', incrementError);
-                showStatus('⚠️ Génération réussie mais impossible de mettre à jour le compteur (connexion requise)', 'warning');
+            } catch (e) {
+                console.error('Erreur incrémentation trial:', e);
             }
 
-            // Réinitialiser les sélections
-            resetSelections();
-        } else if (result && result.startsWith('ERROR')) {
-            const errorMsg = result.substring(6).trim();
-            if (!errorMsg) {
-                showStatus('Erreur inconnue lors de la génération', 'error');
-            } else {
-                showStatus(errorMsg, 'error');
+            // Si la présentation InDesign est cochée, la générer maintenant
+            var presentationChecked = document.getElementById('presentation-enable');
+            if (presentationChecked && presentationChecked.checked) {
+                showStatus('Génération de la présentation InDesign...', 'warning');
+                try {
+                    await handleGeneratePresentation();
+                } catch (presErr) {
+                    console.error('Erreur présentation:', presErr);
+                    showStatus(`Export OK (${count} artboards) mais erreur présentation: ${presErr.message}`, 'warning');
+                }
             }
+
+            showStatus(`Exportation terminée ! ${count} plans de travail exportés.`, 'success');
+
+            // Popup de confirmation
+            showExportDonePopup();
+        } else if (result && result.startsWith('ERROR')) {
+            showStatus(result.substring(6).trim() || 'Erreur inconnue', 'error');
         } else {
-            showStatus('Erreur: Réponse invalide du serveur ExtendScript', 'error');
+            showStatus('Erreur: Réponse invalide', 'error');
+        }
+    } catch (error) {
+        console.error('Export error:', error);
+        showStatus(`Erreur: ${error.message || 'Erreur inconnue'}`, 'error');
+    } finally {
+        if (exportBtnEl) exportBtnEl.disabled = false;
+        document.body.classList.remove('exporting');
+        updateUI();
+    }
+}
+
+async function handleGeneratePresentation() {
+    try {
+        showStatus('Génération de la présentation InDesign...', 'info');
+
+        // Auto-extraire les couleurs originales depuis les SVG exportés sur disque
+        // Ne dépend PAS de la sélection Illustrator ni de l'analyse manuelle
+        if (!appState.customColors.mapping || appState.customColors.mapping.length === 0) {
+            try {
+                var fs = require('fs');
+                var nodePath = require('path');
+                var extractedColors = {};
+                var colorBlacklist = { '#000000': 1, '#ffffff': 1, '#fff': 1, '#000': 1, 'none': 1, 'transparent': 1 };
+                var logoTypes = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
+                for (var lt = 0; lt < logoTypes.length; lt++) {
+                    var svgDir = nodePath.join(appState.outputFolder, logoTypes[lt], 'original', 'SVG');
+                    if (!fs.existsSync(svgDir)) continue;
+                    var svgFiles = fs.readdirSync(svgDir).filter(function(f) { return f.toLowerCase().endsWith('.svg'); });
+                    for (var sf = 0; sf < svgFiles.length && Object.keys(extractedColors).length < 10; sf++) {
+                        var svgContent = fs.readFileSync(nodePath.join(svgDir, svgFiles[sf]), 'utf8');
+                        // Extraire fill="..." et stroke="..."
+                        var colorMatches = svgContent.match(/(?:fill|stroke)="(#[0-9a-fA-F]{3,8})"/g) || [];
+                        for (var cm = 0; cm < colorMatches.length; cm++) {
+                            var hex = colorMatches[cm].match(/#[0-9a-fA-F]{3,8}/);
+                            if (hex) {
+                                var c = hex[0].toLowerCase();
+                                // Normaliser les hex courts (#abc → #aabbcc)
+                                if (c.length === 4) c = '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3];
+                                if (!colorBlacklist[c]) extractedColors[c] = true;
+                            }
+                        }
+                    }
+                    if (Object.keys(extractedColors).length > 0) break; // Un seul type suffit
+                }
+                var uniqueColors = Object.keys(extractedColors);
+                if (uniqueColors.length > 0) {
+                    appState.customColors.mapping = uniqueColors.map(function(c) {
+                        return { original: c, custom: c };
+                    });
+                }
+            } catch (autoColorErr) {
+                console.warn('Auto SVG color extraction failed:', autoColorErr);
+            }
         }
 
-    } catch (error) {
-        console.error('Generate error:', error);
-        const errorMsg = error.message || 'Erreur inconnue';
-        showStatus(`Erreur lors de la génération: ${errorMsg}`, 'error');
-    } finally {
-        // Réactiver le bouton
-        if (generateBtn) generateBtn.disabled = false;
-        updateUI(); // Re-vérifier l'état du bouton
+        // Get selected template
+        var selectedRadio = document.querySelector('input[name="template"]:checked');
+        var templateName = selectedRadio ? selectedRadio.value : 'template-1';
+        var extensionPath = csInterface.getSystemPath(SystemPath.EXTENSION);
+        var nodePath = require('path');
+
+        const config = {
+            templatePath: nodePath.join(extensionPath, 'templates', templateName + '.idml'),
+            outputFolder: appState.outputFolder,
+            extensionPath: extensionPath,
+            colors: appState.customColors && appState.customColors.mapping ? appState.customColors.mapping : [],
+            brandName: (document.getElementById('brand-name') && document.getElementById('brand-name').value) || 'Logo',
+            fontPrimary: (document.getElementById('brand-font-primary') && document.getElementById('brand-font-primary').value) || '',
+            fontSecondary: (document.getElementById('brand-font-secondary') && document.getElementById('brand-font-secondary').value) || '',
+            monochromeColor: appState.colorVariations.monochromeColor || '#000000',
+            monochromeLightColor: appState.colorVariations.monochromeLightColor || '#ffffff',
+            protectionZoneMargin: parseInt(document.getElementById('zone-margin').value, 10) || 15
+        };
+
+        if (!config.outputFolder) {
+            showStatus('Veuillez d\'abord générer les logos (dossier de sortie requis).', 'error');
+            return;
+        }
+
+        const result = await IDMLGenerator.generate(config);
+
+        if (result.success) {
+            var hasMockups = result.mockupData && result.mockupData.count > 0;
+            // Toujours normaliser en forward slashes (évite les problèmes d'échappement Windows)
+            var safePath = result.path.replace(/\\/g, '/');
+
+            // Stocker pour le bouton "Re-tester mockups"
+            window._lastIdmlPath = safePath;
+            window._lastOutputFolder = config.outputFolder.replace(/\\/g, '/');
+            if (hasMockups) {
+                var btnRerun = document.getElementById('btn-rerun-mockups');
+                if (btnRerun) btnRerun.style.display = 'block';
+            }
+
+            // DEBUG: écrire un fichier debug.txt dans le dossier _temp/
+            var debugLines = [];
+            var fsDbg = require('fs');
+            var tempDir = nodePath.join(config.outputFolder, '_temp');
+            try { if (!fsDbg.existsSync(tempDir)) fsDbg.mkdirSync(tempDir); } catch(e) {}
+            var dbgPath = nodePath.join(tempDir, 'debug-mockups.txt');
+            var writeDebug = function(line) {
+                debugLines.push(new Date().toISOString() + ' ' + line);
+                try { fsDbg.writeFileSync(dbgPath, debugLines.join('\n') + '\n'); } catch(e) {}
+            };
+            writeDebug('=== DEBUG MOCKUPS ===');
+            writeDebug('outputFolder: ' + config.outputFolder);
+            writeDebug('extensionPath: ' + config.extensionPath);
+            writeDebug('result.mockupData: ' + JSON.stringify(result.mockupData));
+            writeDebug('hasMockups: ' + hasMockups);
+
+            if (hasMockups) {
+                // Trouver les logos pour CHAQUE variation (horizontal, vertical, icon, text, custom1-3)
+                var fs = require('fs');
+                var logoVariations = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
+                var logoPaths = {};
+                var preferred = ['svg', 'png', 'ai', 'pdf', 'jpg'];
+
+                function findFirstLogo(varFolder) {
+                    if (!fs.existsSync(varFolder)) return '';
+                    var files = fs.readdirSync(varFolder);
+                    var dirs = [varFolder];
+                    for (var d = 0; d < files.length; d++) {
+                        var sub = nodePath.join(varFolder, files[d]);
+                        try { if (fs.statSync(sub).isDirectory()) dirs.push(sub); } catch(e) {}
+                    }
+                    for (var p = 0; p < preferred.length; p++) {
+                        for (var di = 0; di < dirs.length; di++) {
+                            var dirFiles = fs.readdirSync(dirs[di]);
+                            for (var f = 0; f < dirFiles.length; f++) {
+                                if (dirFiles[f].toLowerCase().endsWith('.' + preferred[p])) {
+                                    return nodePath.join(dirs[di], dirFiles[f]);
+                                }
+                            }
+                        }
+                    }
+                    return '';
+                }
+
+                for (var lv = 0; lv < logoVariations.length; lv++) {
+                    var varName = logoVariations[lv];
+                    var origDir = nodePath.join(config.outputFolder, varName, 'original');
+                    var found = findFirstLogo(origDir);
+                    if (found) logoPaths[varName] = found.replace(/\\/g, '/');
+                }
+                writeDebug('logoPaths: ' + JSON.stringify(logoPaths));
+
+                // logoPath par défaut = horizontal (rétrocompatibilité)
+                var logoPath = logoPaths.horizontal || logoPaths.vertical || logoPaths.icon || '';
+
+                if (logoPath) {
+                    writeDebug('→ calling processPhotoshopThenInDesign');
+                    showStatus('Traitement des mockups Photoshop (' + result.mockupData.count + ')...', 'info');
+
+                    // Couleurs de la marque pour les calques COLOR_N du PSD
+                    var brandColors = [];
+                    if (config.colors && config.colors.length > 0) {
+                        for (var ci = 0; ci < config.colors.length; ci++) {
+                            brandColors.push(config.colors[ci].original || config.colors[ci] || '');
+                        }
+                    }
+
+                    var mockupData = {
+                        mockups: result.mockupData.mockups.map(function (m) {
+                            return { name: m.name, filename: m.filename, path: m.path.replace(/\\/g, '/') };
+                        }),
+                        logoPath: logoPath.replace(/\\/g, '/'),
+                        logoPaths: logoPaths,
+                        outputFolder: config.outputFolder.replace(/\\/g, '/'),
+                        primaryColor: brandColors[0] || '',
+                        brandColors: brandColors,
+                        darkColor: config.monochromeColor || brandColors[0] || '#000000',
+                        lightColor: config.monochromeLightColor || '#ffffff',
+                        brandName: config.brandName || 'Logo'
+                    };
+
+                    // Plus de backslashes dans les données → JSON.stringify simple
+                    // Seules les apostrophes doivent être échappées pour le wrapper de l'evalScript
+                    var mockupDataStr = JSON.stringify(mockupData).replace(/'/g, "\\'");
+
+                    csInterface.evalScript("processPhotoshopThenInDesign('" + safePath + "', '" + mockupDataStr + "')", function (res) {
+                        try {
+                            var r = JSON.parse(res);
+                            if (r.success) {
+                                showStatus('Présentation avec mockups ouverte dans InDesign : ' + result.filename, 'success');
+                            } else {
+                                showStatus('Présentation générée : ' + result.filename + ' (erreur mockups : ' + r.error + ')', 'success');
+                            }
+                        } catch (e) {
+                            showStatus('Présentation générée : ' + result.filename, 'success');
+                        }
+                    });
+                } else {
+                    // No horizontal logo found → skip mockups, open InDesign directly
+                    writeDebug('→ NO logoPath, skipping Photoshop, opening InDesign directly');
+                    showStatus('Présentation InDesign générée, ouverture dans InDesign...', 'info');
+                    csInterface.evalScript('openInInDesignAndProcess("' + safePath + '")', function (res) {
+                        try {
+                            var r = JSON.parse(res);
+                            if (r.success) {
+                                showStatus('Présentation ouverte dans InDesign : ' + result.filename, 'success');
+                            } else {
+                                showStatus('Présentation générée : ' + result.filename, 'success');
+                            }
+                        } catch (e) {
+                            showStatus('Présentation générée : ' + result.filename, 'success');
+                        }
+                    });
+                }
+            } else {
+                // No mockups → direct InDesign opening (existing flow)
+                writeDebug('→ hasMockups=false, opening InDesign directly (no mockup processing)');
+                showStatus('Présentation InDesign générée, ouverture dans InDesign...', 'info');
+                csInterface.evalScript('openInInDesignAndProcess("' + safePath + '")', function (res) {
+                    try {
+                        var r = JSON.parse(res);
+                        if (r.success) {
+                            showStatus('Présentation ouverte dans InDesign : ' + result.filename, 'success');
+                        } else {
+                            showStatus('Présentation générée : ' + result.filename + ' (ouverture InDesign échouée : ' + r.error + ')', 'success');
+                        }
+                    } catch (e) {
+                        showStatus('Présentation générée : ' + result.filename, 'success');
+                    }
+                });
+            }
+        } else {
+            showStatus('Erreur présentation : ' + result.error, 'error');
+        }
+    } catch (err) {
+        console.error('Presentation generation error:', err);
+        showStatus('Erreur lors de la génération de la présentation : ' + (err.message || err), 'error');
     }
+}
+
+function handleRerunMockups() {
+    var outputFolder = window._lastOutputFolder;
+    var idmlPath = window._lastIdmlPath;
+    if (!outputFolder || !idmlPath) {
+        showStatus('Aucune génération précédente trouvée. Générez d\'abord la présentation.', 'error');
+        return;
+    }
+    showStatus('Re-lancement mockups PS → InDesign...', 'info');
+    csInterface.evalScript("rerunMockupsFromDisk('" + outputFolder + "', '" + idmlPath + "')", function (res) {
+        try {
+            var r = JSON.parse(res);
+            if (r.success) {
+                showStatus('Mockups relancés. Photoshop traite les PSD puis InDesign ouvrira.', 'success');
+            } else {
+                showStatus('Erreur re-run mockups : ' + r.error, 'error');
+            }
+        } catch (e) {
+            showStatus('Re-run mockups envoyé.', 'success');
+        }
+    });
 }
 
 function resetSelections() {
@@ -1260,9 +1619,11 @@ function resetSelections() {
   ['horizontal','vertical','icon','text','custom1','custom2','custom3'].forEach(type => {
     const statusEl = document.getElementById(`status-${type}`);
     if (statusEl) {
-      statusEl.textContent = 'Non sélectionné';
+      statusEl.textContent = 'Pas sélect';
       statusEl.classList.remove('selected');
     }
+    const btnEl = document.querySelector(`.btn-select[data-type="${type}"]`);
+    if (btnEl) btnEl.classList.remove('selected');
   });
   updateUI();
 }
@@ -1285,6 +1646,19 @@ function getTypeName(type) {
   }
 
   return names[type] || type;
+}
+
+function showExportDonePopup() {
+    // Overlay popup simple
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+    var popup = document.createElement('div');
+    popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 32px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:280px;';
+    popup.innerHTML = '<div style="font-size:32px;margin-bottom:12px;">&#10003;</div><p style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--text-color);">Exportation terminée !</p><button style="padding:8px 24px;background:var(--primary-color);border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">OK</button>';
+    popup.querySelector('button').addEventListener('click', function() { overlay.remove(); });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
 }
 
 function showStatus(message, type = '') {
@@ -1313,6 +1687,132 @@ function showStatus(message, type = '') {
     }
 }
 
+/**
+ * Liste des polices installées (remplie depuis Illustrator).
+ */
+var _fontFamilies = [];
+
+/**
+ * Charge la liste des polices installées depuis Illustrator
+ * puis initialise l'autocomplétion custom sur les champs police.
+ */
+function loadFontList() {
+    var script =
+        'var f=app.textFonts,fam={},i;' +
+        'for(i=0;i<f.length;i++)fam[f[i].family]=1;' +
+        'var r=[];for(var k in fam)r.push(k);' +
+        'r.sort();r.join("|")';
+
+    csInterface.evalScript(script, function(result) {
+        if (!result || result === 'EvalScript error.' || result === 'undefined') {
+            console.warn('Impossible de charger les polices depuis Illustrator');
+            return;
+        }
+        _fontFamilies = result.split('|').filter(function(f) { return f; });
+        console.log(_fontFamilies.length + ' polices chargées');
+        setupFontAutocomplete('brand-font-primary', 'font-dropdown-primary');
+        setupFontAutocomplete('brand-font-secondary', 'font-dropdown-secondary');
+    });
+}
+
+/**
+ * Configure l'autocomplétion custom pour un champ police.
+ */
+function setupFontAutocomplete(inputId, dropdownId) {
+    var input = document.getElementById(inputId);
+    var dropdown = document.getElementById(dropdownId);
+    if (!input || !dropdown) return;
+
+    var activeIndex = -1;
+
+    function showSuggestions() {
+        var val = input.value.toLowerCase();
+        dropdown.innerHTML = '';
+        activeIndex = -1;
+
+        var matches = _fontFamilies;
+        if (val) {
+            matches = _fontFamilies.filter(function(f) {
+                return f.toLowerCase().indexOf(val) !== -1;
+            });
+        }
+
+        if (matches.length === 0) {
+            dropdown.classList.remove('visible');
+            return;
+        }
+
+        // Limiter à 50 résultats pour la performance
+        var limit = Math.min(matches.length, 50);
+        for (var i = 0; i < limit; i++) {
+            var item = document.createElement('div');
+            item.className = 'font-dropdown-item';
+            item.setAttribute('data-value', matches[i]);
+
+            // Mettre en gras la partie qui correspond
+            if (val) {
+                var idx = matches[i].toLowerCase().indexOf(val);
+                item.innerHTML =
+                    escapeHtml(matches[i].substring(0, idx)) +
+                    '<span class="font-match">' + escapeHtml(matches[i].substring(idx, idx + val.length)) + '</span>' +
+                    escapeHtml(matches[i].substring(idx + val.length));
+            } else {
+                item.textContent = matches[i];
+            }
+
+            item.addEventListener('mousedown', function(e) {
+                e.preventDefault(); // empêcher le blur de l'input
+                input.value = this.getAttribute('data-value');
+                dropdown.classList.remove('visible');
+            });
+            dropdown.appendChild(item);
+        }
+        dropdown.classList.add('visible');
+    }
+
+    function escapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    input.addEventListener('input', showSuggestions);
+    input.addEventListener('focus', showSuggestions);
+
+    input.addEventListener('blur', function() {
+        // Petit délai pour laisser le mousedown se déclencher
+        setTimeout(function() { dropdown.classList.remove('visible'); }, 150);
+    });
+
+    input.addEventListener('keydown', function(e) {
+        var items = dropdown.querySelectorAll('.font-dropdown-item');
+        if (!items.length) return;
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            activeIndex = Math.min(activeIndex + 1, items.length - 1);
+            updateActive(items);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            activeIndex = Math.max(activeIndex - 1, 0);
+            updateActive(items);
+        } else if (e.key === 'Enter' && activeIndex >= 0) {
+            e.preventDefault();
+            input.value = items[activeIndex].getAttribute('data-value');
+            dropdown.classList.remove('visible');
+        } else if (e.key === 'Escape') {
+            dropdown.classList.remove('visible');
+        }
+    });
+
+    function updateActive(items) {
+        for (var i = 0; i < items.length; i++) {
+            items[i].classList.toggle('active', i === activeIndex);
+        }
+        if (activeIndex >= 0 && items[activeIndex]) {
+            items[activeIndex].scrollIntoView({ block: 'nearest' });
+        }
+    }
+}
+
 // Fonction utilitaire pour appeler ExtendScript avec timeout
 function evalExtendScript(functionName, params = [], timeout = 30000) {
     return new Promise((resolve, reject) => {
@@ -1325,14 +1825,16 @@ function evalExtendScript(functionName, params = [], timeout = 30000) {
         let timeoutId = null;
         let completed = false;
 
-        // Configurer le timeout
-        timeoutId = setTimeout(() => {
-            if (!completed) {
-                completed = true;
-                console.error('ExtendScript timeout après', timeout, 'ms');
-                reject(new Error(`Timeout: L'opération a pris plus de ${timeout/1000}s`));
-            }
-        }, timeout);
+        // Configurer le timeout (0 = pas de timeout)
+        if (timeout > 0) {
+            timeoutId = setTimeout(() => {
+                if (!completed) {
+                    completed = true;
+                    console.error('ExtendScript timeout après', timeout, 'ms');
+                    reject(new Error(`Timeout: L'opération a pris plus de ${timeout/1000}s`));
+                }
+            }, timeout);
+        }
 
         csInterface.evalScript(script, (result) => {
             if (!completed) {
@@ -1360,8 +1862,8 @@ function evalExtendScript(functionName, params = [], timeout = 30000) {
  */
 async function openNativeColorPicker(currentColor = '#000000') {
     try {
-        // Passer la couleur actuelle au dialogue pour l'afficher
-        const result = await evalExtendScript('openColorPickerDialog', [currentColor]);
+        // Timeout long (120s) car le dialogue bloque ExtendScript tant que l'utilisateur choisit
+        const result = await evalExtendScript('openColorPickerDialog', [currentColor], 120000);
 
         if (result === 'CANCELLED') {
             // L'utilisateur a annulé - ne rien faire
@@ -1379,6 +1881,7 @@ async function openNativeColorPicker(currentColor = '#000000') {
             return null;
         } else {
             console.error('Résultat inattendu du sélecteur:', result);
+            showStatus('Erreur: résultat inattendu du sélecteur de couleur', 'error');
             return null;
         }
     } catch (error) {
@@ -1519,7 +2022,7 @@ function displayColorMapping() {
 
 async function browseFolder() {
   try {
-    const folder = await evalExtendScript('selectExportFolder');
+    const folder = await evalExtendScript('selectExportFolder', [], 0);
     if (folder) {
       appState.outputFolder = folder;
       document.getElementById('output-folder').value = folder;
