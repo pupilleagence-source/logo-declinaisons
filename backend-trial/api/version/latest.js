@@ -33,7 +33,7 @@ export default async function handler(req, res) {
         const latestVersion = {
             version: '1.1.0',
             releaseDate: '2026-04-17',
-            downloadUrl: 'https://github.com/pupilleagence-source/logo-declinaisons/releases/latest',
+            downloadUrl: 'https://github.com/pupilleagence-source/logo-declinaisons-releases/releases/latest',
             changelog: [
                 '🌍 Support multilangue (FR / EN / ES / IT)',
                 '📄 Presentation InDesign avec mockups Photoshop',

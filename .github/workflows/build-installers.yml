@@ -7,6 +7,11 @@ on:
         description: 'Version number (e.g. 1.1.0)'
         required: true
         default: '1.1.0'
+      publish:
+        description: 'Publish to public releases repo'
+        type: boolean
+        required: true
+        default: true
 
 jobs:
   build-mac:
@@ -14,9 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Import signing certificate from base64 secret
       - name: Import certificate
-        if: env.APPLE_CERTIFICATE_BASE64 != ''
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -63,3 +66,54 @@ jobs:
         with:
           name: LogoDeclinaisons-${{ github.event.inputs.version }}-windows
           path: dist/*.exe
+
+  publish-release:
+    needs: [build-mac, build-windows]
+    if: ${{ github.event.inputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Mac artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: LogoDeclinaisons-${{ github.event.inputs.version }}-mac
+          path: artifacts/mac
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: LogoDeclinaisons-${{ github.event.inputs.version }}-windows
+          path: artifacts/windows
+
+      - name: List artifacts
+        run: ls -la artifacts/mac artifacts/windows
+
+      - name: Publish to public releases repo
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_REPO_TOKEN }}
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          RELEASES_REPO="pupilleagence-source/logo-declinaisons-releases"
+          TAG="v${VERSION}"
+
+          # Delete pre-existing release/tag with same version (idempotent re-runs)
+          gh release delete "$TAG" --repo "$RELEASES_REPO" --yes --cleanup-tag 2>/dev/null || true
+
+          # Create the release with both installers attached
+          gh release create "$TAG" \
+            --repo "$RELEASES_REPO" \
+            --title "Logo Declinaisons ${VERSION}" \
+            --notes "Logo Declinaisons v${VERSION}
+
+          ## Downloads
+
+          - **macOS**: \`LogoDeclinaisons-${VERSION}-mac.pkg\` — signed & notarized for macOS 10.15+
+          - **Windows**: \`LogoDeclinaisons-${VERSION}-windows.exe\` — Inno Setup installer
+
+          ## Installation
+
+          - **macOS**: double-click the .pkg and follow the installer
+          - **Windows**: run the .exe as Administrator
+
+          The extension will appear in Adobe Illustrator under *Window > Extensions > Logo Déclinaisons*." \
+            artifacts/mac/*.pkg \
+            artifacts/windows/*.exe
