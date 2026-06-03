@@ -12,7 +12,8 @@ INSTALL_DIR="/Library/Application Support/Adobe/CEP/extensions/logo-declinaisons
 PKG_OUTPUT="dist/LogoDeclinaisons-${VERSION}-mac.pkg"
 
 # Signing (set via env vars or GitHub Secrets)
-DEVELOPER_ID="${APPLE_DEVELOPER_ID_INSTALLER:-}"  # "Developer ID Installer: Your Name (TEAMID)"
+DEVELOPER_ID="${APPLE_DEVELOPER_ID_INSTALLER:-}"          # "Developer ID Installer: Your Name (TEAMID)"
+APPLICATION_ID="${APPLE_DEVELOPER_ID_APPLICATION:-}"      # "Developer ID Application: Your Name (TEAMID)" — for the stub binary
 APPLE_ID="${APPLE_ID:-}"
 APPLE_PASSWORD="${APPLE_APP_PASSWORD:-}"  # App-specific password
 APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
@@ -42,6 +43,38 @@ cp -R "$PROJECT_ROOT/media" "$DEST/"
 mkdir -p "$DEST/templates"
 cp "$PROJECT_ROOT/templates/"*.idml "$DEST/templates/" 2>/dev/null || true
 # Mockups PSD are NOT included (too large) — downloaded separately if needed
+
+# 1.5 Compile a tiny universal Mach-O stub so the .pkg has a signed executable
+#     for Apple's notary to staple a ticket to. Without this, notarization fails
+#     with "Package has no signed executables or bundles".
+if [ -n "$APPLICATION_ID" ]; then
+    echo "Compiling signed stub binary..."
+    STUB_SRC=$(mktemp -t stub.XXXXXX).c
+    cat > "$STUB_SRC" << 'STUBC'
+#include <stdio.h>
+int main(int argc, char **argv) {
+    (void)argc; (void)argv;
+    return 0;
+}
+STUBC
+    STUB_BIN_DIR="$DEST/bin"
+    mkdir -p "$STUB_BIN_DIR"
+    STUB_BIN="$STUB_BIN_DIR/logo-declinaisons-helper"
+
+    # Universal binary (Apple Silicon + Intel)
+    clang -arch arm64 -arch x86_64 -mmacosx-version-min=10.15 \
+          -o "$STUB_BIN" "$STUB_SRC"
+    rm -f "$STUB_SRC"
+
+    # Sign with hardened runtime + secure timestamp (required by notary)
+    codesign --force --options runtime --timestamp \
+             --sign "$APPLICATION_ID" \
+             "$STUB_BIN"
+    codesign --verify --strict --verbose=2 "$STUB_BIN"
+    echo "Stub binary signed: $STUB_BIN"
+else
+    echo "WARNING: APPLE_DEVELOPER_ID_APPLICATION not set — skipping stub binary (notarization will fail)"
+fi
 
 echo "Payload: $(du -sh "$DEST" | cut -f1)"
 
@@ -143,34 +176,20 @@ if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ] && 
     if [ "$STATUS" != "Accepted" ]; then
         echo ""
         echo "============================================"
-        echo "  Notarization status: $STATUS"
+        echo "  Notarization FAILED — status: $STATUS"
         echo "  Fetching log from Apple for submission $SUBMISSION_ID..."
         echo "============================================"
-        NOTARY_LOG=$(xcrun notarytool log "$SUBMISSION_ID" \
+        xcrun notarytool log "$SUBMISSION_ID" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" 2>&1 || true)
-        echo "$NOTARY_LOG"
-
-        # CEP extensions are pure static content (HTML/JS/CSS) — Apple's notary
-        # rejects them with "no signed executables or bundles" because there's
-        # nothing to stamp a ticket to. The .pkg is still signed with Developer
-        # ID Installer, which is sufficient for Gatekeeper to accept install.
-        if echo "$NOTARY_LOG" | grep -q "no signed executables or bundles"; then
-            echo ""
-            echo "  Pure static-content .pkg detected — Apple notary cannot"
-            echo "  notarize but the Developer ID Installer signature is"
-            echo "  sufficient for distribution. Skipping staple."
-            echo ""
-        else
-            echo "  Notarization failed for an unexpected reason — aborting."
-            exit 1
-        fi
-    else
-        echo "Stapling notarization ticket..."
-        xcrun stapler staple "$PKG_OUTPUT"
-        echo "Notarized and stapled!"
+            --team-id "$APPLE_TEAM_ID" || true
+        exit 1
     fi
+
+    echo "Stapling notarization ticket..."
+    xcrun stapler staple "$PKG_OUTPUT"
+    xcrun stapler validate "$PKG_OUTPUT"
+    echo "Notarized and stapled!"
 else
     echo "WARNING: Skipping notarization (credentials not set)"
 fi

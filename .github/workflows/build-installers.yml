@@ -19,23 +19,33 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Import certificate
+      - name: Import certificates
         env:
           APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+          APPLE_APPLICATION_CERT_BASE64: ${{ secrets.APPLE_APPLICATION_CERT_BASE64 }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
-          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > certificate.p12
+          # Both certs share the same .p12 password
+          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > installer.p12
+          echo "$APPLE_APPLICATION_CERT_BASE64" | base64 --decode > application.p12
+
           security create-keychain -p "" build.keychain
           security default-keychain -s build.keychain
           security unlock-keychain -p "" build.keychain
-          security import certificate.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/productsign
+
+          # Installer cert — used by productsign for the .pkg wrapper
+          security import installer.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/productsign
+          # Application cert — used by codesign for the stub binary inside the .pkg
+          security import application.p12 -k build.keychain -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+
           security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain
-          rm certificate.p12
+          rm installer.p12 application.p12
 
       - name: Build Mac .pkg
         env:
           VERSION: ${{ github.event.inputs.version }}
           APPLE_DEVELOPER_ID_INSTALLER: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER }}
+          APPLE_DEVELOPER_ID_APPLICATION: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
