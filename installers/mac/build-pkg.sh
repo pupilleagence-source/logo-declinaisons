@@ -130,11 +130,28 @@ fi
 # 5. Notarize (if credentials available)
 if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ] && [ -n "$DEVELOPER_ID" ]; then
     echo "Submitting for notarization..."
-    xcrun notarytool submit "$PKG_OUTPUT" \
+    NOTARY_OUTPUT=$(xcrun notarytool submit "$PKG_OUTPUT" \
         --apple-id "$APPLE_ID" \
         --password "$APPLE_PASSWORD" \
         --team-id "$APPLE_TEAM_ID" \
-        --wait
+        --wait 2>&1) || true
+    echo "$NOTARY_OUTPUT"
+
+    SUBMISSION_ID=$(echo "$NOTARY_OUTPUT" | awk '/id:/{print $2; exit}')
+    STATUS=$(echo "$NOTARY_OUTPUT" | awk '/status:/{print $2}' | tail -1)
+
+    if [ "$STATUS" != "Accepted" ]; then
+        echo ""
+        echo "============================================"
+        echo "  Notarization FAILED — status: $STATUS"
+        echo "  Fetching log from Apple for submission $SUBMISSION_ID..."
+        echo "============================================"
+        xcrun notarytool log "$SUBMISSION_ID" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" || true
+        exit 1
+    fi
 
     echo "Stapling notarization ticket..."
     xcrun stapler staple "$PKG_OUTPUT"
