@@ -2,7 +2,9 @@
 ; Cree un installeur .exe pour Adobe Illustrator CEP extension
 
 #define MyAppName "Logo Declinaisons"
-#define MyAppVersion "1.0.0"
+#ifndef MyAppVersion
+  #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "Pupille Studio"
 #define MyAppURL "https://logodeclinaisons.com"
 #define MyExtensionId "logo-declinaisons"
@@ -41,7 +43,7 @@ ShowLanguageDialog=no
 
 ; Sortie
 OutputDir=dist
-OutputBaseFilename=LogoDeclinaisons-Setup-{#MyAppVersion}
+OutputBaseFilename=LogoDeclinaisons-{#MyAppVersion}-windows
 Compression=lzma2/ultra64
 SolidCompression=yes
 

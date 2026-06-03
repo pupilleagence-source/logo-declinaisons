@@ -58,7 +58,7 @@ jobs:
         run: choco install innosetup -y
 
       - name: Build Windows .exe
-        run: iscc installer.iss
+        run: iscc /DMyAppVersion=${{ github.event.inputs.version }} installer.iss
         shell: cmd
 
       - name: Upload Windows installer
