@@ -103,6 +103,7 @@ pkgbuild \
     "${PKG_OUTPUT}.component"
 
 # Wrap in a product archive (nicer installer UI)
+COMPONENT_FILENAME="$(basename "${PKG_OUTPUT}.component")"
 cat > "/tmp/distribution.xml" << DIST
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
@@ -119,7 +120,7 @@ cat > "/tmp/distribution.xml" << DIST
     <choice id="${BUNDLE_ID}" visible="false">
         <pkg-ref id="${BUNDLE_ID}"/>
     </choice>
-    <pkg-ref id="${BUNDLE_ID}" version="${VERSION}" onConclusion="none">${APP_NAME}.pkg</pkg-ref>
+    <pkg-ref id="${BUNDLE_ID}" version="${VERSION}" onConclusion="none">${COMPONENT_FILENAME}</pkg-ref>
 </installer-gui-script>
 DIST
 
