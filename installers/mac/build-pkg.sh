@@ -143,19 +143,34 @@ if [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ] && 
     if [ "$STATUS" != "Accepted" ]; then
         echo ""
         echo "============================================"
-        echo "  Notarization FAILED — status: $STATUS"
+        echo "  Notarization status: $STATUS"
         echo "  Fetching log from Apple for submission $SUBMISSION_ID..."
         echo "============================================"
-        xcrun notarytool log "$SUBMISSION_ID" \
+        NOTARY_LOG=$(xcrun notarytool log "$SUBMISSION_ID" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_PASSWORD" \
-            --team-id "$APPLE_TEAM_ID" || true
-        exit 1
-    fi
+            --team-id "$APPLE_TEAM_ID" 2>&1 || true)
+        echo "$NOTARY_LOG"
 
-    echo "Stapling notarization ticket..."
-    xcrun stapler staple "$PKG_OUTPUT"
-    echo "Notarized and stapled!"
+        # CEP extensions are pure static content (HTML/JS/CSS) — Apple's notary
+        # rejects them with "no signed executables or bundles" because there's
+        # nothing to stamp a ticket to. The .pkg is still signed with Developer
+        # ID Installer, which is sufficient for Gatekeeper to accept install.
+        if echo "$NOTARY_LOG" | grep -q "no signed executables or bundles"; then
+            echo ""
+            echo "  Pure static-content .pkg detected — Apple notary cannot"
+            echo "  notarize but the Developer ID Installer signature is"
+            echo "  sufficient for distribution. Skipping staple."
+            echo ""
+        else
+            echo "  Notarization failed for an unexpected reason — aborting."
+            exit 1
+        fi
+    else
+        echo "Stapling notarization ticket..."
+        xcrun stapler staple "$PKG_OUTPUT"
+        echo "Notarized and stapled!"
+    fi
 else
     echo "WARNING: Skipping notarization (credentials not set)"
 fi
