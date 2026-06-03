@@ -42,7 +42,8 @@ cp -R "$PROJECT_ROOT/lib" "$DEST/"
 cp -R "$PROJECT_ROOT/media" "$DEST/"
 mkdir -p "$DEST/templates"
 cp "$PROJECT_ROOT/templates/"*.idml "$DEST/templates/" 2>/dev/null || true
-# Mockups PSD are NOT included (too large) — downloaded separately if needed
+mkdir -p "$DEST/templates/mockups"
+cp "$PROJECT_ROOT/templates/mockups/"*.psd "$DEST/templates/mockups/" 2>/dev/null || true
 
 # 1.5 Compile a tiny universal Mach-O stub so the .pkg has a signed executable
 #     for Apple's notary to staple a ticket to. Without this, notarization fails
@@ -79,12 +80,23 @@ fi
 echo "Payload: $(du -sh "$DEST" | cut -f1)"
 
 # 2. Create postinstall script (set PlayerDebugMode for unsigned extensions)
+# IMPORTANT: postinstall runs as root, but `defaults write` writes to the
+# CURRENT user's preferences. We must `sudo -u` into the actual console user
+# so the value lands in the user's plist (where CEP actually reads it).
 SCRIPTS_DIR=$(mktemp -d)
 cat > "$SCRIPTS_DIR/postinstall" << 'POSTINSTALL'
 #!/bin/bash
-# Enable CEP debug mode for unsigned extensions
-for version in 9 10 11 12; do
-    defaults write com.adobe.CSXS.${version} PlayerDebugMode 1 2>/dev/null || true
+# Enable CEP debug mode (required for unsigned/non-ZXP extensions to load)
+CONSOLE_USER=$(stat -f%Su /dev/console 2>/dev/null)
+if [ -z "$CONSOLE_USER" ] || [ "$CONSOLE_USER" = "root" ]; then
+    CONSOLE_USER=$(ls -l /dev/console | awk '{print $3}')
+fi
+
+# CEP version → Adobe app range:
+#   9  : CC 2019         11 : CC 2021/2022     13 : CC 2024/2025
+#   10 : CC 2020         12 : CC 2023          14 : CC 2026+
+for version in 9 10 11 12 13 14; do
+    sudo -u "$CONSOLE_USER" defaults write com.adobe.CSXS.${version} PlayerDebugMode -string 1 2>/dev/null || true
 done
 exit 0
 POSTINSTALL

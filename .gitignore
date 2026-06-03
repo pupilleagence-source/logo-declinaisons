@@ -30,9 +30,6 @@ nul
 # Adobe specific
 *.aip
 
-# Mockup PSD files (too large for GitHub)
-templates/mockups/*.psd
-
 # Apple signing certificates - NEVER commit these
 apple-cert/
 *.p12
