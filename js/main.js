@@ -79,6 +79,9 @@ async function init() {
                 langSel.value = I18N.currentLang;
                 langSel.addEventListener('change', function() {
                     I18N.setLang(this.value);
+                    // Le libellé du bouton d'action est dynamique (Générer/Exporter) et
+                    // n'a donc pas de data-i18n : applyToDOM() ne le traduit pas.
+                    updateUI();
                 });
             }
         }
@@ -645,16 +648,10 @@ function setupEventListeners() {
         addVariationBtn.addEventListener('click', addCustomVariation);
     }
 
-    // Bouton générer (artboards seulement)
-    const generateBtn = document.getElementById('generate-btn');
-    if (generateBtn) {
-        generateBtn.addEventListener('click', handleGenerate);
-    }
-
-    // Bouton exporter (artboards + fichiers)
-    const exportBtnEl = document.getElementById('export-btn');
-    if (exportBtnEl) {
-        exportBtnEl.addEventListener('click', handleExport);
+    // Bouton d'action unique : génère seul, ou génère puis exporte (cf. handleAction).
+    const actionBtn = document.getElementById('export-btn');
+    if (actionBtn) {
+        actionBtn.addEventListener('click', handleAction);
     }
 
     // Checkbox présentation InDesign : toggle options + popup info
@@ -1207,6 +1204,20 @@ function updateColorVariations() {
     updateUI();
 }
 
+// Le bouton d'action a deux modes. On ne bascule en mode "export" que si la sortie
+// est ENTIÈREMENT renseignée : un dossier + au moins un format + au moins une taille.
+// Sinon on reste en mode "génération" (plans de travail uniquement, aucun fichier écrit).
+function getExportReadiness() {
+  const hasFolder = !!(appState.outputFolder && appState.outputFolder !== '');
+  const hasFormat = !!(appState.exportFormats.png || appState.exportFormats.jpg ||
+                       appState.exportFormats.svg || appState.exportFormats.ai ||
+                       appState.exportFormats.pdf);
+  const hasSize   = Object.values(appState.exportSizes).filter(v => v).length > 0 ||
+                    !!appState.customSizeEnabled ||
+                    !!(appState.faviconEnabled && appState.selections.icon);
+  return { hasFolder, hasFormat, hasSize, ready: hasFolder && hasFormat && hasSize };
+}
+
 function updateUI() {
   // Afficher/masquer la section favicon selon si icon est sélectionné
   const faviconSection = document.getElementById('favicon-section');
@@ -1220,11 +1231,8 @@ function updateUI() {
     }
   }
 
-  // Calcul des tailles d'export
-  const fixedCount = Object.values(appState.exportSizes).filter(v => v).length;
-  const customCount = appState.customSizeEnabled ? 1 : 0;
-  const faviconCount = (appState.faviconEnabled && appState.selections.icon) ? 1 : 0;
-  const sizeCount  = fixedCount + customCount + faviconCount;
+  // Mode du bouton d'action : génération seule ou génération + export (cf. getExportReadiness).
+  const readiness = getExportReadiness();
 
   // Calcul des sélections, types et couleurs
   const selectedCount = Object.values(appState.selections).filter(v => v).length;
@@ -1279,15 +1287,29 @@ function updateUI() {
     summaryEl.style.display = 'none';
   }
 
-  // "Générer" : sélections + types + couleurs suffisent
-  document.getElementById('generate-btn').disabled = !(selectedCount > 0 && typeCount > 0 && colorCount > 0);
+  // Bouton d'action unique : actif dès qu'il y a de quoi générer (sélections + types
+  // + couleurs). La sortie n'est PAS une condition d'activation, seulement un choix
+  // de mode — c'est tout l'intérêt d'avoir fusionné les deux anciens boutons.
+  const actionBtn = document.getElementById('export-btn');
+  if (actionBtn) {
+    const label = (key, fr) => (typeof t === 'function' ? t(key) : fr);
 
-  // "Exporter" : il faut en plus un dossier, au moins un format et au moins une taille
-  const hasFolder = appState.outputFolder && appState.outputFolder !== '';
-  const hasFormat = appState.exportFormats.png || appState.exportFormats.jpg || appState.exportFormats.svg || appState.exportFormats.ai || appState.exportFormats.pdf;
-  const exportBtn = document.getElementById('export-btn');
-  if (exportBtn) {
-    exportBtn.disabled = !(selectedCount > 0 && typeCount > 0 && colorCount > 0 && sizeCount > 0 && hasFolder && hasFormat);
+    actionBtn.disabled = !(selectedCount > 0 && typeCount > 0 && colorCount > 0);
+    actionBtn.textContent = readiness.ready ? label('act_export', 'Exporter')
+                                            : label('act_generate', 'Générer');
+
+    if (readiness.ready) {
+      actionBtn.title = 'Génère les plans de travail, puis exporte les fichiers dans le dossier de sortie.';
+    } else {
+      // Expliquer pourquoi le bouton n'est pas en mode export : sans ça, l'utilisateur
+      // ne peut pas deviner ce qu'il manque.
+      const manque = [];
+      if (!readiness.hasFolder) manque.push('un dossier de sortie');
+      if (!readiness.hasFormat) manque.push('un format d\'export');
+      if (!readiness.hasSize)   manque.push('une taille');
+      actionBtn.title = 'Crée uniquement les plans de travail dans un nouveau document.\n' +
+                        'Renseignez ' + manque.join(', ') + ' dans l\'onglet Export pour exporter les fichiers.';
+    }
   }
 }
 
@@ -1306,76 +1328,37 @@ async function checkTrialAllowed() {
     return true;
 }
 
-// Générer les plans de travail SEULEMENT (pas d'export fichiers)
-async function handleGenerate() {
-    const generateBtn = document.getElementById('generate-btn');
+// Bouton d'action UNIQUE (#export-btn). Deux modes, choisis par getExportReadiness() :
+//   - sortie incomplete -> genere uniquement les plans de travail (ex-bouton "Generer") ;
+//   - sortie complete    -> genere PUIS exporte les fichiers, et la presentation InDesign
+//                           si elle est cochee (ex-bouton "Exporter").
+//
+// Les deux boutons distincts ont ete fusionnes parce que leur enchainement etait casse
+// par construction : generateArtboards() prend app.activeDocument comme document source
+// (jsx/hostscript.jsx:1413) et laisse volontairement le document genere actif a la fin
+// ("decision 1.A", ~ligne 1990). Cliquer "Generer" puis "Exporter" relancait donc la
+// generation en prenant le document GENERE comme source, alors que storedSelections
+// reference des PageItems du document d'origine.
+async function handleAction() {
+    const actionBtn = document.getElementById('export-btn');
+    const readiness = getExportReadiness();
+    const isExport  = readiness.ready;
 
     try {
-        // Désactiver AVANT le await : checkTrialAllowed() fait un aller-retour réseau
-        // (~5 s) pendant lequel un second clic franchissait la même garde, offrant une
-        // génération gratuite et lançant deux generateArtboards concurrents dans le
-        // moteur ExtendScript mono-thread. Le finally réactive le bouton dans tous les cas.
-        if (generateBtn) generateBtn.disabled = true;
+        // Desactiver AVANT le await : checkTrialAllowed() fait un aller-retour reseau
+        // (~5 s) pendant lequel un second clic franchissait la meme garde, offrant une
+        // generation gratuite et lancant deux generateArtboards concurrents dans le
+        // moteur ExtendScript mono-thread. Le finally reactive dans tous les cas.
+        if (actionBtn) actionBtn.disabled = true;
 
         if (!(await checkTrialAllowed())) return;
 
-        showStatus('Génération des plans de travail...', 'warning');
-
-        const params = {
-            selections: appState.selections,
-            artboardTypes: appState.artboardTypes,
-            artboardMargins: appState.artboardMargins,
-            colorVariations: appState.colorVariations,
-            customColors: appState.customColors,
-            exportFormats: { png: false, jpg: false, svg: false, ai: false, pdf: false },
-            exportSizes: {},
-            customSizeEnabled: false,
-            customSize: appState.customSize,
-            faviconEnabled: appState.faviconEnabled,
-            outputFolder: '',
-            documentSettings: appState.documentSettings
-        };
-
-        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 120000);
-
-        if (result && result.startsWith('SUCCESS')) {
-            const count = result.split(':')[1];
-            showStatus(`${count} plans de travail créés !`, 'success');
-
-            try {
-                await Trial.incrementGeneration();
-                const newStatus = await Trial.getStatus();
-                updateTrialBadge(newStatus);
-            } catch (e) {
-                console.error('Erreur incrémentation trial:', e);
-            }
-        } else if (result && result.startsWith('ERROR')) {
-            showStatus(result.substring(6).trim() || 'Erreur inconnue', 'error');
+        if (isExport) {
+            showStatus('Exportation en cours...', 'warning');
+            document.body.classList.add('exporting');
         } else {
-            showStatus('Erreur: Réponse invalide', 'error');
+            showStatus('Génération des plans de travail...', 'warning');
         }
-    } catch (error) {
-        console.error('Generate error:', error);
-        showStatus(`Erreur: ${error.message || 'Erreur inconnue'}`, 'error');
-    } finally {
-        if (generateBtn) generateBtn.disabled = false;
-        updateUI();
-    }
-}
-
-// Exporter les fichiers (génère artboards + exporte dans le dossier)
-async function handleExport() {
-    const exportBtnEl = document.getElementById('export-btn');
-
-    try {
-        // Idem handleGenerate : désactiver avant le await pour fermer la fenêtre
-        // de double-clic pendant la validation trial. Le finally réactive.
-        if (exportBtnEl) exportBtnEl.disabled = true;
-
-        if (!(await checkTrialAllowed())) return;
-
-        showStatus('Exportation en cours...', 'warning');
-        document.body.classList.add('exporting');
 
         const params = {
             selections: appState.selections,
@@ -1383,16 +1366,24 @@ async function handleExport() {
             artboardMargins: appState.artboardMargins,
             colorVariations: appState.colorVariations,
             customColors: appState.customColors,
-            exportFormats: appState.exportFormats,
-            exportSizes: appState.exportSizes,
-            customSizeEnabled: appState.customSizeEnabled,
+            // En mode generation seule, on neutralise explicitement toute sortie fichier
+            // cote ExtendScript : outputFolder vide => generateArtboards n'ecrit rien et
+            // ne fait pas le saveAs de logo-export-variation.ai.
+            exportFormats: isExport ? appState.exportFormats
+                                    : { png: false, jpg: false, svg: false, ai: false, pdf: false },
+            exportSizes: isExport ? appState.exportSizes : {},
+            customSizeEnabled: isExport ? appState.customSizeEnabled : false,
             customSize: appState.customSize,
             faviconEnabled: appState.faviconEnabled,
-            outputFolder: appState.outputFolder,
+            outputFolder: isExport ? appState.outputFolder : '',
             documentSettings: appState.documentSettings
         };
 
-        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 300000);
+        const result = await evalExtendScript(
+            'generateArtboards',
+            [JSON.stringify(params)],
+            isExport ? 300000 : 120000
+        );
 
         if (result && result.startsWith('SUCCESS')) {
             const count = result.split(':')[1];
@@ -1405,32 +1396,40 @@ async function handleExport() {
                 console.error('Erreur incrémentation trial:', e);
             }
 
-            // Si la présentation InDesign est cochée, la générer maintenant
-            var presentationChecked = document.getElementById('presentation-enable');
-            if (presentationChecked && presentationChecked.checked) {
-                showStatus('Génération de la présentation InDesign...', 'warning');
-                try {
-                    await handleGeneratePresentation();
-                } catch (presErr) {
-                    console.error('Erreur présentation:', presErr);
-                    showStatus(`Export OK (${count} artboards) mais erreur présentation: ${presErr.message}`, 'warning');
+            const presentationChecked = document.getElementById('presentation-enable');
+            const wantsPresentation = !!(presentationChecked && presentationChecked.checked);
+
+            if (isExport) {
+                if (wantsPresentation) {
+                    showStatus('Génération de la présentation InDesign...', 'warning');
+                    try {
+                        await handleGeneratePresentation();
+                    } catch (presErr) {
+                        console.error('Erreur présentation:', presErr);
+                        showStatus(`Export OK (${count} artboards) mais erreur présentation: ${presErr.message}`, 'warning');
+                    }
                 }
+                showStatus(`Exportation terminée ! ${count} plans de travail exportés.`, 'success');
+                showExportDonePopup();
+            } else if (wantsPresentation) {
+                // La presentation lit les fichiers deja exportes sur disque : sans dossier
+                // de sortie ni format elle ne peut rien produire. Le dire explicitement
+                // plutot que d'echouer en silence.
+                showStatus(`${count} plans de travail créés. La présentation InDesign n'a pas été générée : ` +
+                           `elle nécessite un dossier de sortie et un format d'export.`, 'warning');
+            } else {
+                showStatus(`${count} plans de travail créés !`, 'success');
             }
-
-            showStatus(`Exportation terminée ! ${count} plans de travail exportés.`, 'success');
-
-            // Popup de confirmation
-            showExportDonePopup();
         } else if (result && result.startsWith('ERROR')) {
             showStatus(result.substring(6).trim() || 'Erreur inconnue', 'error');
         } else {
             showStatus('Erreur: Réponse invalide', 'error');
         }
     } catch (error) {
-        console.error('Export error:', error);
+        console.error('Action error:', error);
         showStatus(`Erreur: ${error.message || 'Erreur inconnue'}`, 'error');
     } finally {
-        if (exportBtnEl) exportBtnEl.disabled = false;
+        if (actionBtn) actionBtn.disabled = false;
         document.body.classList.remove('exporting');
         updateUI();
     }

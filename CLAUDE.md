@@ -180,11 +180,26 @@ Tout passe par **`evalExtendScript(fnName, params, timeout)`** — `js/main.js:1
 
 `storeSelection` **duplique** la sélection, la **masque**, et garde la **référence PageItem vivante** dans le global `storedSelections` (`hostscript.jsx:6`, 7 slots). Cet état persiste entre les `evalScript` — c'est ce qui fait marcher le panneau, et c'est la source de la fragilité : si l'utilisateur ferme/change de document ou fait undo, les références deviennent obsolètes et `generateArtboards` échoue en `:1485`.
 
-### 5.2 Générer
-`#generate-btn` → `handleGenerate` (`main.js:1285`) → `checkTrialAllowed()` → `generateArtboards(json)` avec exports **explicitement mis à zéro** (`:1300-1305`), timeout 120 s → `"SUCCESS:<n>"` → `Trial.incrementGeneration()`.
+### 5.2 Le bouton d'action unique
 
-### 5.3 Exporter
-`#export-btn` → `handleExport` (`main.js:1337`) → même appel avec les vrais paramètres d'export, timeout 300 s → puis éventuellement `handleGeneratePresentation()` → `showExportDonePopup()`.
+Il n'y a **qu'un seul bouton d'action** depuis le 2026-09-04 : `#export-btn`, câblé sur `handleAction()`. Son libellé bascule tout seul.
+
+| Sortie renseignée ? | Libellé | Comportement |
+|---|---|---|
+| dossier **+** ≥1 format **+** ≥1 taille | **Exporter** | génère les plans de travail **puis** exporte les fichiers, et la présentation InDesign si elle est cochée |
+| tout le reste | **Générer** | crée uniquement les plans de travail dans un nouveau document, aucun fichier écrit |
+
+Le bouton est actif dès qu'il y a de quoi générer (≥1 sélection, ≥1 type, ≥1 couleur) : **la sortie n'est pas une condition d'activation, seulement un choix de mode.** `getExportReadiness()` (`main.js:1210`) est l'arbitre ; en mode génération le `title` du bouton liste ce qui manque pour passer en mode export. Une taille peut venir d'un préréglage, de la taille custom, ou du favicon si l'icône est sélectionnée.
+
+**Pourquoi la fusion.** Il y avait avant deux boutons, et l'enchaînement « Générer » puis « Exporter » était cassé **par construction** : `generateArtboards()` prend `app.activeDocument` comme document source (`jsx/hostscript.jsx:1413`) et laisse volontairement le document généré actif à la fin (« décision 1.A », `~:1990`). Le second clic relançait donc la génération en prenant le **document généré** comme source, alors que `storedSelections` référence des PageItems du document d'origine. Ne pas réintroduire deux boutons sans traiter ce point d'abord.
+
+Si la présentation InDesign est cochée mais qu'on est en mode génération, `handleAction` le dit explicitement dans le statut au lieu d'échouer en silence — la présentation lit les fichiers déjà exportés sur disque, elle ne peut rien produire sans eux.
+
+### 5.2 bis Détail du mode génération
+`checkTrialAllowed()` → `generateArtboards(json)` avec exports **explicitement mis à zéro** et `outputFolder: ''`, timeout 120 s → `"SUCCESS:<n>"` → `Trial.incrementGeneration()`.
+
+### 5.3 Détail du mode export
+Même appel `generateArtboards` avec les vrais paramètres d'export, timeout 300 s → puis éventuellement `handleGeneratePresentation()` → `showExportDonePopup()`. `document.body.classList.add('exporting')` peint l'overlay plein écran (`css/styles.css`) — le mode génération n'en a pas.
 
 **Arborescence écrite sur disque** :
 ```
@@ -419,7 +434,8 @@ Toutes les autres sont toujours présentes dans le code.
 ### Fait le 2026-09-04 (non testé dans Illustrator)
 
 - Branche `backup-v1.0.2-full` poussée sur `origin` — les 11 commits d'historique unique sont sauvés
-- `colorCount` corrigé (§10.3) · course au double-clic trial fermée sur Générer **et** Exporter (§6)
+- `colorCount` corrigé (§10.3) · course au double-clic trial fermée sur le bouton d'action (§6)
+- **Boutons Générer / Exporter fusionnés en un seul** (§5.2) — l'enchaînement des deux était cassé par construction
 - Licence fantôme corrigée **des deux côtés** (`getStatus` + `canGenerate`) (§10.7) · désactivation normale purge enfin le disque (§10.8)
 - `filesFailedé` → `filesFailed` (§10.10) · `@import` Inter remonté en ligne 1 (§10.11) · remplissage des sliders (§10.12)
 - `installer.iss` + `install.bat` : PlayerDebugMode étendu à **CSXS 13/14** → Illustrator 2024+ se charge enfin sous Windows

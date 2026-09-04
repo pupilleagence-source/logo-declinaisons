@@ -327,8 +327,12 @@
             <section class="panel actions-panel">
                 <div class="actions-row">
                     <button id="prev-tab-btn" class="btn-nav" disabled>←</button>
-                    <button id="generate-btn" class="btn-action btn-generate" disabled data-i18n="act_generate">Générer</button>
-                    <button id="export-btn" class="btn-action btn-export" disabled data-i18n="act_export">Exporter</button>
+                    <!-- Bouton d'action UNIQUE. Son libelle bascule entre "Generer" et
+                         "Exporter" dans updateUI(), selon que la sortie est renseignee.
+                         Pas de data-i18n ici : applyToDOM() ecraserait le libelle dynamique
+                         au changement de langue (le handler de #lang-select rappelle
+                         updateUI() pour retraduire). -->
+                    <button id="export-btn" class="btn-action btn-generate" disabled>Générer</button>
                     <button id="next-tab-btn" class="btn-nav">→</button>
                 </div>
                 <div class="summary" id="summary" style="display: none;">
