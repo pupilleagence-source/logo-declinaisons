@@ -3,6 +3,81 @@
  * Code côté Illustrator
  */
 
+// ============================================================================
+//  Polyfill JSON — le moteur ExtendScript d'Illustrator n'a PAS d'objet JSON
+// ============================================================================
+// Constaté en production le 2026-09-04 : "Error 2: JSON n'est pas défini" sur un
+// `return JSON.stringify(...)`. Toutes les fonctions qui renvoyaient du JSON au
+// panneau (openInInDesignAndProcess, processPhotoshopThenInDesign, ...) levaient
+// donc une exception à leur `return` depuis toujours — masquée côté JS par un
+// try/catch qui affichait un faux succès. safeParseJSON() était déjà protégé par
+// un repli sur eval ; ce polyfill règle le sens stringify (et fournit parse).
+//
+// ES3 strict : pas de Array.isArray, pas de map/forEach, pas de toJSON sur Date.
+// Couvert par tests/json-polyfill.test.js, comparé au JSON natif de Node.
+if (typeof JSON === 'undefined') {
+    JSON = {};
+}
+if (typeof JSON.stringify !== 'function') {
+    JSON.stringify = function (value) {
+        var ESC = { '"': '\\"', '\\': '\\\\', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+        function quote(str) {
+            var out = '';
+            for (var i = 0; i < str.length; i++) {
+                var c = str.charAt(i);
+                var code = str.charCodeAt(i);
+                if (ESC[c]) {
+                    out += ESC[c];
+                } else if (code < 32) {
+                    out += '\\u' + ('0000' + code.toString(16)).slice(-4);
+                } else {
+                    out += c;
+                }
+            }
+            return '"' + out + '"';
+        }
+        function isArray(v) {
+            return Object.prototype.toString.call(v) === '[object Array]';
+        }
+        function ser(v) {
+            if (v === null) return 'null';
+            var t = typeof v;
+            if (t === 'string') return quote(v);
+            if (t === 'number') return isFinite(v) ? String(v) : 'null';
+            if (t === 'boolean') return v ? 'true' : 'false';
+            if (t === 'undefined' || t === 'function') return undefined;
+            if (isArray(v)) {
+                var items = [];
+                for (var i = 0; i < v.length; i++) {
+                    var e = ser(v[i]);
+                    items.push(e === undefined ? 'null' : e);
+                }
+                return '[' + items.join(',') + ']';
+            }
+            if (t === 'object') {
+                var props = [];
+                for (var k in v) {
+                    if (!Object.prototype.hasOwnProperty.call(v, k)) continue;
+                    var sv = ser(v[k]);
+                    if (sv !== undefined) props.push(quote(k) + ':' + sv);
+                }
+                return '{' + props.join(',') + '}';
+            }
+            return undefined;
+        }
+        return ser(value);
+    };
+}
+if (typeof JSON.parse !== 'function') {
+    JSON.parse = function (text) {
+        // Entrées de confiance uniquement (nos propres données). Même garde
+        // minimale que safeParseJSON() contre du code arbitraire.
+        var t = String(text).replace(/^\s+|\s+$/g, '');
+        if (!/^[\[{]/.test(t)) throw new Error('JSON invalide');
+        return eval('(' + t + ')');
+    };
+}
+
 var storedSelections = {
     horizontal: null,
     vertical: null,
@@ -346,7 +421,8 @@ function openColorPickerDialog(initialColorHex) {
  */
 function safeParseJSON(jsonString) {
     try {
-        // ExtendScript CC 2014+ supporte JSON nativement
+        // JSON vient du polyfill en tête de fichier : ExtendScript n'en a PAS nativement
+        // (constaté en prod : "JSON n'est pas défini"). Le repli eval ci-dessous reste utile.
         if (typeof JSON !== 'undefined' && JSON.parse) {
             return JSON.parse(jsonString);
         }

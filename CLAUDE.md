@@ -162,7 +162,7 @@ Tout passe par **`evalExtendScript(fnName, params, timeout)`** — `js/main.js:1
 ### Le retour JSX → JS mélange **trois** conventions
 
 1. **Sentinelles préfixées** (parsées par `startsWith`/`split`) : `"OK"`, `"NO_DOCUMENT"`, `"NO_SELECTION"`, `"SELECTION_OK"`, `"CANCELLED"`, `"SUCCESS:<n>"`, `"ERROR: <message fr>"`, `"COLOR:#RRGGBB"`, `"COLORS:<json>"`
-2. **JSON.stringify** — uniquement pour la famille BridgeTalk/debug
+2. **JSON.stringify** — uniquement pour la famille BridgeTalk/debug. ⚠️ **`JSON` n'existe pas nativement dans l'ExtendScript d'Illustrator** (constaté en prod le 2026-09-04 : « Error 2: JSON n'est pas défini »). Ces fonctions levaient donc une exception à leur `return` **depuis toujours**, masquée par le `try/catch` côté JS qui affichait un faux succès. ✅ Un **polyfill ES3** en tête de `hostscript.jsx` fournit `stringify` et `parse` (couvert par `tests/json-polyfill.test.js`, comparé au JSON natif). Le commentaire « ExtendScript CC 2014+ supporte JSON nativement » était faux.
 3. **Valeurs brutes** : `hasOpenDocument` renvoie la **string** `"true"`/`"false"` ; `selectExportFolder` un `fsName` nu ou `""` ; `getInstalledFonts` des familles jointes par `|`
 
 ⚠️ Le préfixe `"ERROR: "` fait 7 caractères mais est strippé avec `substring(6)` en `main.js:1315` et `substring(7)` en `:1104`/`:2008` → certains messages arrivent avec une espace parasite.
@@ -435,7 +435,7 @@ Illustrator 2024 = CSXS 13, 2026+ = CSXS 14. **Sur Windows, Illustrator 2024+ n'
 ## 9. Conventions de code
 
 - **Français** pour tout ce qui est visible et pour les commentaires ; **anglais** pour les identifiants. Nouveaux messages → en français, avec un remède concret (`'Déverrouillez-le dans le panneau Calques'`).
-- **`jsx/` est en ES3 strict** : `var` uniquement, pas de `let`/`const`, pas d'arrow functions, pas de `Array.map/forEach/filter`, boucles `for` avec index manuel. Regex et `try/catch` sont OK.
+- **`jsx/` est en ES3 strict** : `var` uniquement, pas de `let`/`const`, pas d'arrow functions, pas de `Array.map/forEach/filter`, boucles `for` avec index manuel. Regex et `try/catch` sont OK. **Pas de `JSON` natif non plus** : il vient du polyfill en tête de fichier — ne pas le supprimer, et ne pas compter sur `Array.isArray` ni `Date.toJSON`.
 - **`js/` est un dialecte mixte** : le code original est ES6 (`const`/`let`, arrow, `async/await`, template literals), les blocs ajoutés plus tard sont ES5. Les deux sont acceptés.
 - **Jamais d'`alert()` depuis le host** — `hostscript.jsx:1008` documente le remplacement d'un `alert()` par `$.writeln` parce que les alertes **bloquent le panneau CEP**. (Les scripts standalone `fit-image-in-frame.jsx` et `optimize-mockups.jsx` peuvent alerter : ils sont lancés depuis le menu Scripts.)
 - **Logs à préfixe emoji**, utilisés partout de façon cohérente : 🚀 démarrage · 📄/📦 phase · ✓/✅ succès · ⚠️ warning · ❌ erreur · 🧹 nettoyage · 🎨 couleur · 🌐 favicon · 💾 sauvegarde · 🔍 debug. **Grepper un emoji est souvent le moyen le plus rapide de trouver un chemin de code.**
@@ -529,7 +529,8 @@ Toutes les autres sont toujours présentes dans le code.
 - **Résolution des styles de police** dans la charte (§5.3 ter) — plus de « MaPolice Medium » manquante
 - **Fin réelle de Photoshop / InDesign attendue** avant d'annoncer « Exportation terminée » (§5.4) — fichier de statut `.logopack-status.json`, progression affichée, timeout
 - **Bouton de debug « Re-tester mockups » supprimé** (§10.17)
-- **Premiers tests du projet** : `npm test` — 5 fichiers, ~100 assertions : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
+- **Polyfill `JSON` dans `hostscript.jsx`** (§4) — tous les retours JSON vers le panneau étaient cassés depuis toujours, masqués par un faux succès
+- **Premiers tests du projet** : `npm test` — 6 fichiers, ~130 assertions : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
 
 ### À faire, par ordre de priorité
 
