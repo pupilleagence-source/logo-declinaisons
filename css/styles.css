@@ -1050,6 +1050,25 @@ input[type="range"]:disabled::-moz-range-thumb {
     cursor: pointer;
 }
 
+/* Dossier parent optionnel, sous le selecteur de chemin de sortie */
+.export-parent-folder {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    margin-top: calc(var(--space-lg) * -1 + var(--space-sm));
+    margin-bottom: var(--space-lg);
+}
+
+.export-parent-folder input[type="text"] {
+    margin-left: 26px; /* aligne sous le libelle de la checkbox custom */
+    width: calc(100% - 26px);
+}
+
+.export-parent-folder input[type="text"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
 .export-path {
     display: flex;
     flex-direction: column;

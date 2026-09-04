@@ -1556,12 +1556,42 @@ const IDMLGenerator = (function () {
 
         var imgCounter = 0;
 
+        // Fallback chains for LOGO_ frames. A brand guidelines deck normally shows both a
+        // horizontal and a vertical lockup, but the user has not always produced both. Fall
+        // back to the other orientation, then to the wordmark, rather than delivering an
+        // empty grey frame. The COLOUR is always preserved — we never substitute a
+        // monochrome frame with the original-colour logo, only one orientation for another.
+        var LOGO_TYPE_FALLBACKS = {
+            horizontal: ['vertical', 'text'],
+            vertical: ['horizontal', 'text']
+        };
+
+        function resolveLogoWithFallback(sel, col) {
+            if (scan.logos[sel] && scan.logos[sel][col]) {
+                return { path: scan.logos[sel][col], usedType: sel };
+            }
+            var chain = LOGO_TYPE_FALLBACKS[sel];
+            if (!chain) return null;
+            for (var i = 0; i < chain.length; i++) {
+                var alt = chain[i];
+                if (scan.logos[alt] && scan.logos[alt][col]) {
+                    return { path: scan.logos[alt][col], usedType: alt };
+                }
+            }
+            return null;
+        }
+
         xml = xml.replace(regex, function (match, selection, color) {
             var sel = selection.toLowerCase();
             var col = colorMap[color.toLowerCase()] || color.toLowerCase();
 
-            if (scan.logos[sel] && scan.logos[sel][col]) {
-                var relPath = scan.logos[sel][col];
+            var resolved = resolveLogoWithFallback(sel, col);
+            if (resolved) {
+                if (resolved.usedType !== sel) {
+                    console.log('[IDML] LOGO_' + sel.toUpperCase() + '_' + col +
+                                ' indisponible, remplace par ' + resolved.usedType.toUpperCase());
+                }
+                var relPath = resolved.path;
                 var absPath = nodePath.join(outputFolder, relPath).replace(/\\/g, '/');
                 var uriPath = 'file:///' + absPath.replace(/^\//, '');
 
@@ -1631,7 +1661,9 @@ const IDMLGenerator = (function () {
                     return match.replace(/<\/Rectangle>/, fittingXml + imageXml + '</Rectangle>');
                 }
             } else {
-                // Logo not available — keep the frame as-is (empty placeholder)
+                // Nothing available even after the fallback chain (e.g. an ICON frame with
+                // no icon exported, or a colour variation the user never generated).
+                // Keep the frame as-is — an empty placeholder the designer can fill by hand.
                 return match;
             }
         });

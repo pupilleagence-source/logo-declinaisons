@@ -19,7 +19,7 @@
 - **Repo** : `github.com/pupilleagence-source/logo-declinaisons` — ⚠️ **PUBLIC** (vérifié le 2026-09-04 : `isPrivate: false`). Tout l'historique est lisible par n'importe qui. 34 commits sur `master`, oct. 2025 → sept. 2026
 - **Releases** : publiées dans un **repo séparé public** `pupilleagence-source/logo-declinaisons-releases`
 - **Backend** : Vercel, projet `logotyps` → `https://logotyps.vercel.app` (12 endpoints, Redis Cloud)
-- **Stack** : zéro framework, zéro build step, zéro test, zéro lint. HTML/CSS/JS vanilla + ExtendScript ES3.
+- **Stack** : zéro framework, zéro build step, zéro lint. HTML/CSS/JS vanilla + ExtendScript ES3. Quelques tests depuis le 2026-09-04 : `npm test` (helpers de dossier + repli IDML uniquement).
 - **Langue** : tout ce qui est visible et tous les commentaires sont en **français**, les identifiants sont en anglais.
 - **~13 450 lignes** de code applicatif réparties sur 4 sous-systèmes.
 
@@ -210,7 +210,9 @@ Le bouton est actif dès qu'il y a de quoi générer (≥1 sélection, ≥1 type
 Si la présentation InDesign est cochée mais qu'on est en mode génération, `handleAction` le dit explicitement dans le statut au lieu d'échouer en silence — la présentation lit les fichiers déjà exportés sur disque, elle ne peut rien produire sans eux.
 
 ### 5.2 bis Détail du mode génération
-`checkTrialAllowed()` → `generateArtboards(json)` avec exports **explicitement mis à zéro** et `outputFolder: ''`, timeout 120 s → `"SUCCESS:<n>"` → `Trial.incrementGeneration()`.
+Une popup bloquante (`confirmNoExportConfigured()`) prévient d'abord que **rien ne sera écrit sur le disque**, avec une case « Ne plus afficher » mémorisée dans `localStorage['skip_no_export_warning']`. Elle s'affiche **avant** le contrôle trial, pour ne pas consommer une génération si l'utilisateur annule.
+
+Puis `checkTrialAllowed()` → `generateArtboards(json)` avec exports **explicitement mis à zéro** et `outputFolder: ''`, timeout 120 s → `"SUCCESS:<n>"` → `Trial.incrementGeneration()`.
 
 ### 5.3 Détail du mode export
 Même appel `generateArtboards` avec les vrais paramètres d'export, timeout 300 s → puis éventuellement `handleGeneratePresentation()` → `showExportDonePopup()`. `document.body.classList.add('exporting')` peint l'overlay plein écran (`css/styles.css`) — le mode génération n'en a pas.
@@ -220,6 +222,29 @@ Même appel `generateArtboards` avec les vrais paramètres d'export, timeout 300
 <outputFolder>/<type>/<colorVariation>/<FORMAT>/<prefix><artboardName>.<ext>
 ```
 `type` ∈ {horizontal, vertical, icon, text, custom1..3, favicon} · `colorVariation` ∈ {original, blackwhite, monochrome, monochromeLight, custom} · `prefix` ∈ {petit_, moyen_, grand_, custom_WxH_}
+
+### 5.3 bis Dossier de sortie : dossier parent et conflits
+
+Sous le sélecteur de chemin, une case **« Créer un dossier parent »** (cochée par défaut, nom `Logopack`) crée un sous-dossier dans le chemin choisi. `appState.parentFolder = { enabled, name }`.
+
+Le chemin réellement écrit est calculé **au clic**, par `resolveOutputTarget()` (`js/main.js`), et stocké dans `appState.resolvedOutputFolder`. `appState.outputFolder` reste ce que l'UI affiche — les deux ne doivent pas être confondus. **Tout code qui a besoin du dossier d'export doit appeler `getEffectiveOutputFolder()`**, jamais `appState.outputFolder` directement ; c'est ce qui fait que la présentation InDesign écrit au bon endroit.
+
+Détection de conflit :
+
+| Dossier parent | Conflit si… |
+|---|---|
+| coché | le dossier `<chemin>/<nom>` existe déjà |
+| décoché | `<chemin>` contient déjà un export (voir `EXPORT_MARKERS`) |
+
+En cas de conflit, une popup à trois choix :
+
+- **Créer un nouveau dossier** (défaut) → `Logopack-2`, `Logopack-3`… via `nextAvailableFolder()`
+- **Vider et remplacer** (rouge) → `emptyFolderRecursive()` supprime **tout** le contenu du dossier, y compris ce qui ne vient pas du plugin. ⚠️ **Irréversible, sans corbeille.** C'est un choix explicite de l'auteur du projet ; la popup le dit noir sur blanc et le bouton est en rouge. Ne pas rendre ce chemin plus facile à déclencher.
+- **Annuler** → rien n'est écrit
+
+`emptyFolderRecursive()` est écrit à la main (`readdirSync`/`lstatSync`/`unlinkSync`/`rmdirSync`) et **pas** avec `fs.rmSync` : le Node embarqué dans CEP peut être antérieur à 14.14. `sanitizeFolderName()` neutralise `/ \ : * ? " < > |` et les points de tête — sans ça, un `../..` dans le champ ferait écrire l'export hors du dossier choisi.
+
+Ces quatre helpers sont couverts par `tests/output-folder.test.js` (`npm test`), y compris le fait que `emptyFolderRecursive` ne touche pas aux dossiers voisins.
 
 ### 5.4 Présentation InDesign (BÊTA)
 `handleGeneratePresentation` (`main.js:1406`) — **uniquement atteignable depuis `handleExport:1380`**, et dépend de fichiers déjà écrits sur disque.
@@ -292,7 +317,8 @@ Le backend est un **proxy fin devant Lemon Squeezy** + cache Redis. Clés : `tri
 **Deux dialectes coexistent** pour `LOGO_` et `ZONE_` : avec accolades (`LOGO_{HORIZONTAL}_{ORIGINAL}`, ce qu'utilisent réellement les templates) et sans (ce que montre le guide). Leurs regex acceptent `\{?…\}?`. Les regex `PROHIB_` et `MOCKUP_` **n'acceptent pas les accolades** → no-op silencieux.
 
 ### 7.3 Écarts documentés vs réel dans `GUIDE-TEMPLATES-INDESIGN.md`
-- Le guide dit « si le logo n'existe pas, le frame entier sera supprimé ». **Faux** : `idml-generator.js:1633-1635` garde le cadre vide. Seuls `BLOCK_LOGO_*`, `PROHIB_` et `MOCKUP_` sont réellement supprimés.
+- Le guide dit « si le logo n'existe pas, le frame entier sera supprimé ». **Faux** : le cadre est gardé vide. Seuls `BLOCK_LOGO_*`, `PROHIB_` et `MOCKUP_` sont réellement supprimés.
+- **Chaîne de repli des cadres `LOGO_` (ajoutée le 2026-09-04)** : un cadre `LOGO_HORIZONTAL_*` sans logo horizontal prend le **vertical**, puis à défaut la **typographie** — et symétriquement pour `LOGO_VERTICAL_*`. `resolveLogoWithFallback()` dans `processSpreadXml`. **La couleur est toujours préservée** : on ne remplace jamais un monochrome par un original, seulement une orientation par une autre. Les autres types (`icon`, `custom1..3`) n'ont pas de chaîne de repli et gardent le comportement « cadre vide ». Couvert par `tests/idml-fallback.test.js`.
 - `BLOCK_CUSTOM_INLINE_N` existe dans le code et dans template-1 mais **zéro fois** dans le guide.
 - Le guide ne mentionne pas l'exigence d'**imbrication** des calques `LOGO_*` dans les Smart Objects.
 
@@ -458,6 +484,13 @@ Toutes les autres sont toujours présentes dans le code.
 - Clé Lemon Squeezy sortie du code source · `installer-windows.iss` supprimé · 6 guides périmés annotés
 - Versions alignées à 1.1.0 (`CSXS/manifest.xml`, `package.json`) · scripts npm cassés retirés
 - Hygiène : `.claude/settings.local.json`, `unins000.*`, `.rnd` détrackés ; fichiers `nul` supprimés ; `install.bat` et `optimize-mockups.jsx` committés
+
+### Fonctionnalités ajoutées le 2026-09-04 (2e passe, non testées dans Illustrator)
+
+- **Dossier parent optionnel** avec gestion des conflits (§5.3 bis)
+- **Repli horizontal ↔ vertical → typo** pour les cadres `LOGO_` de la charte (§7.3)
+- **Popup d'avertissement** quand aucun export n'est configuré (§5.2 bis)
+- **Premiers tests du projet** : `npm test` — 34 assertions sur les helpers de dossier et la chaîne de repli. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
 
 ### À faire, par ordre de priorité
 

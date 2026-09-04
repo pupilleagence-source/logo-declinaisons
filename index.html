@@ -215,6 +215,14 @@
                     <input type="text" id="output-folder" readonly data-i18n-placeholder="exp_folder_placeholder" placeholder="Choisir un dossier...">
                     <button id="browse-folder" data-i18n="exp_browse">Parcourir</button>
                 </div>
+                <div class="export-parent-folder">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="parent-folder-enable" checked>
+                        <span data-i18n="exp_parent_folder">Créer un dossier parent</span>
+                    </label>
+                    <input type="text" id="parent-folder-name" value="Logopack" maxlength="60"
+                           data-i18n-placeholder="exp_parent_folder_placeholder" placeholder="Nom du dossier">
+                </div>
                 <div class="export-sizes">
                     <label data-i18n="exp_sizes_label">Tailles d'export (PNG & JPG) :</label>
                     <div class="checkbox-group">

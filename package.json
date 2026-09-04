@@ -5,7 +5,8 @@
   "author": "Pupille Studio",
   "license": "Commercial",
   "scripts": {
-    "build:zxp": "node build-zxp.js"
+    "build:zxp": "node build-zxp.js",
+    "test": "node tests/output-folder.test.js && node tests/idml-fallback.test.js"
   },
   "cep": {
     "name": "Logo Déclinaisons",

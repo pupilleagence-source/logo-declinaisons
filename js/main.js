@@ -57,6 +57,11 @@ lockAspectRatio: true,
 initialAspectRatio: 1.0, // Stocker le ratio initial pour éviter la dérive
 faviconEnabled: false, // Export favicon 32x32 (uniquement pour icon)
 outputFolder: '',
+// Dossier parent optionnel cree DANS outputFolder. resolvedOutputFolder est le
+// chemin reellement utilise par l'export en cours, calcule au clic sur le bouton
+// d'action (cf. resolveOutputTarget) : outputFolder reste ce que l'UI affiche.
+parentFolder: { enabled: true, name: 'Logopack' },
+resolvedOutputFolder: '',
 documentSettings: {
   colorMode: 'RGB',  // RGB ou CMYK
   ppi: 72            // Résolution en PPI
@@ -646,6 +651,21 @@ function setupEventListeners() {
     const addVariationBtn = document.getElementById('add-variation-btn');
     if (addVariationBtn) {
         addVariationBtn.addEventListener('click', addCustomVariation);
+    }
+
+    // Dossier parent : la case active/desactive le champ de nom.
+    const parentEnable = document.getElementById('parent-folder-enable');
+    const parentName = document.getElementById('parent-folder-name');
+    if (parentEnable && parentName) {
+        const syncParentFolder = () => {
+            appState.parentFolder.enabled = parentEnable.checked;
+            appState.parentFolder.name = parentName.value;
+            parentName.disabled = !parentEnable.checked;
+            updateUI();
+        };
+        parentEnable.addEventListener('change', syncParentFolder);
+        parentName.addEventListener('input', syncParentFolder);
+        syncParentFolder();
     }
 
     // Bouton d'action unique : génère seul, ou génère puis exporte (cf. handleAction).
@@ -1328,6 +1348,229 @@ async function checkTrialAllowed() {
     return true;
 }
 
+// ============================================================================
+//  Dossier de sortie : dossier parent, detection de conflit, popups de choix
+// ============================================================================
+
+// Presence de l'un de ces noms = un export du plugin a deja eu lieu dans le dossier.
+const EXPORT_MARKERS = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2',
+                        'custom3', 'favicon', 'mockups', '_temp',
+                        'logo-export-variation.ai', 'presentation-logo.idml'];
+
+// Nettoie un nom de dossier saisi par l'utilisateur. Sans ca, un "/" ou un ".."
+// dans le champ ferait ecrire l'export ailleurs que sous le dossier choisi.
+function sanitizeFolderName(name) {
+    const cleaned = String(name || '')
+        .replace(/[\\/:*?"<>|]/g, '-')
+        .replace(/^\.+/, '')
+        .replace(/\s+$/, '')
+        .trim();
+    return cleaned || 'Logopack';
+}
+
+// Le dossier contient-il deja un export du plugin ?
+function folderHasPreviousExport(dir) {
+    try {
+        const fs = require('fs');
+        const nodePath = require('path');
+        if (!fs.existsSync(dir)) return false;
+        for (let i = 0; i < EXPORT_MARKERS.length; i++) {
+            if (fs.existsSync(nodePath.join(dir, EXPORT_MARKERS[i]))) return true;
+        }
+        return false;
+    } catch (e) {
+        console.error('folderHasPreviousExport:', e);
+        return false;
+    }
+}
+
+// Suppression recursive du CONTENU d'un dossier (le dossier lui-meme est conserve).
+// Ecrit a la main plutot qu'avec fs.rmSync : le Node embarque dans CEP peut etre
+// anterieur a 14.14 et ne pas le fournir.
+function emptyFolderRecursive(dir) {
+    const fs = require('fs');
+    const nodePath = require('path');
+    const entries = fs.readdirSync(dir);
+    for (let i = 0; i < entries.length; i++) {
+        const full = nodePath.join(dir, entries[i]);
+        let st;
+        try {
+            st = fs.lstatSync(full);
+        } catch (e) {
+            continue;
+        }
+        if (st.isDirectory()) {
+            emptyFolderRecursive(full);
+            fs.rmdirSync(full);
+        } else {
+            fs.unlinkSync(full);
+        }
+    }
+}
+
+// Premier nom libre de la forme <base>-2, <base>-3, ...
+function nextAvailableFolder(parentDir, baseName) {
+    const fs = require('fs');
+    const nodePath = require('path');
+    for (let i = 2; i < 1000; i++) {
+        const candidate = nodePath.join(parentDir, baseName + '-' + i);
+        if (!fs.existsSync(candidate)) return candidate;
+    }
+    return nodePath.join(parentDir, baseName + '-' + Date.now());
+}
+
+// Echappement minimal pour le texte injecte dans le HTML des popups.
+function escapeHtml(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Popup generique a choix multiples. Resout avec la `value` du bouton clique, ou
+// null si l'utilisateur ferme la popup (clic sur le fond, ou Echap).
+function showChoicePopup(opts) {
+    return new Promise((resolve) => {
+        let settled = false;
+        const overlay = document.createElement('div');
+        const onKey = (e) => { if (e.key === 'Escape') finish(null); };
+        function finish(value) {
+            if (settled) return;
+            settled = true;
+            document.removeEventListener('keydown', onKey);
+            overlay.remove();
+            resolve(value);
+        }
+
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10001;';
+
+        const popup = document.createElement('div');
+        popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 28px;text-align:left;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:320px;';
+
+        let html = '<p style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-color);">' + opts.title + '</p>';
+        html += '<div style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:16px;">' + opts.body + '</div>';
+        if (opts.rememberLabel) {
+            html += '<label class="checkbox-label" style="padding-left:0;margin-bottom:12px;">'
+                  + '<input type="checkbox" id="popup-remember"><span>' + opts.rememberLabel + '</span></label>';
+        }
+        html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+        for (let i = 0; i < opts.buttons.length; i++) {
+            const b = opts.buttons[i];
+            const style = b.danger
+                ? 'background:var(--error-color);color:#fff;border:none;'
+                : (b.primary ? 'background:var(--primary-color);color:#fff;border:none;'
+                             : 'background:transparent;color:var(--text-color);border:1px solid var(--border-color);');
+            html += '<button data-value="' + b.value + '" style="padding:9px 16px;border-radius:6px;cursor:pointer;'
+                 + 'font-weight:600;font-size:12px;font-family:inherit;' + style + '">' + b.label + '</button>';
+        }
+        html += '</div>';
+        popup.innerHTML = html;
+
+        const remember = popup.querySelector('#popup-remember');
+        const btns = popup.querySelectorAll('button[data-value]');
+        for (let i = 0; i < btns.length; i++) {
+            btns[i].addEventListener('click', function () {
+                if (remember && remember.checked && opts.rememberKey) {
+                    try { localStorage.setItem(opts.rememberKey, '1'); } catch (e) {}
+                }
+                finish(this.getAttribute('data-value'));
+            });
+        }
+
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
+        document.addEventListener('keydown', onKey);
+        overlay.appendChild(popup);
+        document.body.appendChild(overlay);
+    });
+}
+
+// Avertit que rien ne sera ecrit sur le disque. Retourne true si on continue.
+async function confirmNoExportConfigured() {
+    try {
+        if (localStorage.getItem('skip_no_export_warning') === '1') return true;
+    } catch (e) {}
+
+    const choice = await showChoicePopup({
+        title: 'Aucun export configuré',
+        body: 'Les déclinaisons seront créées dans un nouveau document Illustrator, mais '
+            + '<strong>aucun fichier ne sera écrit sur le disque</strong>.<br><br>'
+            + 'Pour exporter, renseignez un dossier de sortie et au moins un format dans '
+            + 'l&#39;onglet Export.',
+        rememberLabel: 'Ne plus afficher',
+        rememberKey: 'skip_no_export_warning',
+        buttons: [
+            { value: 'go', label: 'Continuer', primary: true },
+            { value: 'cancel', label: 'Annuler' }
+        ]
+    });
+    return choice === 'go';
+}
+
+// Calcule le dossier d'export definitif en gerant le dossier parent et les conflits.
+// Retourne le chemin a utiliser, ou null si l'utilisateur annule.
+async function resolveOutputTarget() {
+    const fs = require('fs');
+    const nodePath = require('path');
+    const base = appState.outputFolder;
+    if (!base) return null;
+
+    const useParent = !!appState.parentFolder.enabled;
+    const folderName = sanitizeFolderName(appState.parentFolder.name);
+    let target = useParent ? nodePath.join(base, folderName) : base;
+
+    // Conflit : avec dossier parent, c'est son existence. Sans dossier parent, c'est
+    // la presence d'un export precedent directement dans le chemin choisi.
+    const conflict = useParent ? fs.existsSync(target) : folderHasPreviousExport(base);
+
+    if (conflict) {
+        const where = useParent ? ('Le dossier « ' + escapeHtml(folderName) + ' »')
+                                : 'Le dossier de sortie';
+        const choice = await showChoicePopup({
+            title: 'Un export existe déjà',
+            body: where + ' contient déjà un export.<br><br>'
+                + '<strong style="color:var(--error-color);">Vider et remplacer supprimera '
+                + 'définitivement tout le contenu de ce dossier</strong>, y compris les fichiers '
+                + 'qui ne viennent pas du plugin. La suppression est irréversible : elle ne passe '
+                + 'pas par la corbeille.<br><br>'
+                + '<span style="font-size:11px;word-break:break-all;">' + escapeHtml(target) + '</span>',
+            buttons: [
+                { value: 'new', label: 'Créer un nouveau dossier', primary: true },
+                { value: 'replace', label: 'Vider et remplacer', danger: true },
+                { value: 'cancel', label: 'Annuler' }
+            ]
+        });
+
+        if (choice === null || choice === 'cancel') return null;
+
+        if (choice === 'replace') {
+            try {
+                if (fs.existsSync(target)) emptyFolderRecursive(target);
+            } catch (e) {
+                console.error('emptyFolderRecursive:', e);
+                showStatus('Impossible de vider le dossier : ' + (e.message || e), 'error');
+                return null;
+            }
+        } else {
+            // Dossier numerote a cote. Meme sans dossier parent on en cree un, pour ne
+            // pas melanger le nouvel export avec l'ancien dans le meme repertoire.
+            target = nextAvailableFolder(base, folderName);
+        }
+    }
+
+    try {
+        if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+    } catch (e) {
+        console.error('mkdir:', e);
+        showStatus('Impossible de créer le dossier : ' + (e.message || e), 'error');
+        return null;
+    }
+
+    return target.replace(/\\/g, '/');
+}
+
+// Dossier reellement utilise par l'export en cours (resolu au clic), avec repli sur
+// ce que l'utilisateur a choisi dans l'UI.
+function getEffectiveOutputFolder() {
+    return appState.resolvedOutputFolder || appState.outputFolder;
+}
+
 // Bouton d'action UNIQUE (#export-btn). Deux modes, choisis par getExportReadiness() :
 //   - sortie incomplete -> genere uniquement les plans de travail (ex-bouton "Generer") ;
 //   - sortie complete    -> genere PUIS exporte les fichiers, et la presentation InDesign
@@ -1350,6 +1593,25 @@ async function handleAction() {
         // generation gratuite et lancant deux generateArtboards concurrents dans le
         // moteur ExtendScript mono-thread. Le finally reactive dans tous les cas.
         if (actionBtn) actionBtn.disabled = true;
+
+        // Mode generation seule : prevenir que rien ne sera ecrit sur le disque.
+        // Avant le controle trial, pour ne rien consommer si l'utilisateur annule.
+        if (!isExport && !(await confirmNoExportConfigured())) {
+            showStatus('Génération annulée.', 'warning');
+            return;
+        }
+
+        // Mode export : resoudre le dossier definitif (dossier parent, conflits).
+        // Egalement avant le controle trial, pour la meme raison.
+        let targetFolder = '';
+        if (isExport) {
+            targetFolder = await resolveOutputTarget();
+            if (!targetFolder) {
+                showStatus('Export annulé.', 'warning');
+                return;
+            }
+        }
+        appState.resolvedOutputFolder = targetFolder;
 
         if (!(await checkTrialAllowed())) return;
 
@@ -1375,7 +1637,7 @@ async function handleAction() {
             customSizeEnabled: isExport ? appState.customSizeEnabled : false,
             customSize: appState.customSize,
             faviconEnabled: appState.faviconEnabled,
-            outputFolder: isExport ? appState.outputFolder : '',
+            outputFolder: isExport ? targetFolder : '',
             documentSettings: appState.documentSettings
         };
 
@@ -1409,7 +1671,9 @@ async function handleAction() {
                         showStatus(`Export OK (${count} artboards) mais erreur présentation: ${presErr.message}`, 'warning');
                     }
                 }
-                showStatus(`Exportation terminée ! ${count} plans de travail exportés.`, 'success');
+                // Nommer le dossier reellement utilise : avec le repli "-2" ou apres un
+                // remplacement, l'utilisateur doit savoir ou son export a atterri.
+                showStatus(`Exportation terminée ! ${count} plans de travail exportés dans ${targetFolder}`, 'success');
                 showExportDonePopup();
             } else if (wantsPresentation) {
                 // La presentation lit les fichiers deja exportes sur disque : sans dossier
@@ -1449,7 +1713,7 @@ async function handleGeneratePresentation() {
                 var colorBlacklist = { '#000000': 1, '#ffffff': 1, '#fff': 1, '#000': 1, 'none': 1, 'transparent': 1 };
                 var logoTypes = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
                 for (var lt = 0; lt < logoTypes.length; lt++) {
-                    var svgDir = nodePath.join(appState.outputFolder, logoTypes[lt], 'original', 'SVG');
+                    var svgDir = nodePath.join(getEffectiveOutputFolder(), logoTypes[lt], 'original', 'SVG');
                     if (!fs.existsSync(svgDir)) continue;
                     var svgFiles = fs.readdirSync(svgDir).filter(function(f) { return f.toLowerCase().endsWith('.svg'); });
                     for (var sf = 0; sf < svgFiles.length && Object.keys(extractedColors).length < 10; sf++) {
@@ -1487,7 +1751,7 @@ async function handleGeneratePresentation() {
 
         const config = {
             templatePath: nodePath.join(extensionPath, 'templates', templateName + '.idml'),
-            outputFolder: appState.outputFolder,
+            outputFolder: getEffectiveOutputFolder(),
             extensionPath: extensionPath,
             colors: appState.customColors && appState.customColors.mapping ? appState.customColors.mapping : [],
             brandName: (document.getElementById('brand-name') && document.getElementById('brand-name').value) || 'Logo',
@@ -2124,6 +2388,9 @@ async function browseFolder() {
     const folder = await evalExtendScript('selectExportFolder', [], 0);
     if (folder) {
       appState.outputFolder = folder;
+      // Nouveau chemin choisi : la resolution precedente (dossier parent, "-2"...)
+      // ne vaut plus rien.
+      appState.resolvedOutputFolder = '';
       document.getElementById('output-folder').value = folder;
       showStatus(`Dossier de sortie : ${folder}`, 'success');
       updateUI();
