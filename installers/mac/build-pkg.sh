@@ -41,7 +41,9 @@ cp -R "$PROJECT_ROOT/jsx" "$DEST/"
 cp -R "$PROJECT_ROOT/lib" "$DEST/"
 cp -R "$PROJECT_ROOT/media" "$DEST/"
 mkdir -p "$DEST/templates"
-cp "$PROJECT_ROOT/templates/"*.idml "$DEST/templates/" 2>/dev/null || true
+# Only template-1.idml ships: template-2.idml is unreachable from the UI (index.html
+# only exposes template-1) and embeds absolute paths to a private client project.
+cp "$PROJECT_ROOT/templates/template-1.idml" "$DEST/templates/" 2>/dev/null || true
 mkdir -p "$DEST/templates/mockups"
 cp "$PROJECT_ROOT/templates/mockups/"*.psd "$DEST/templates/mockups/" 2>/dev/null || true
 

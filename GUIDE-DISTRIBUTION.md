@@ -1,3 +1,7 @@
+> **AVERTISSEMENT (2026-09-04)** : ce guide est en grande partie perime. Il decrit le canal
+> ZXP et un build manuel anterieurs a la CI GitHub Actions. La procedure de release reelle
+> est documentee dans `CLAUDE.md` section 8. Ne suivez ce fichier que pour le contexte historique.
+
 # 📦 GUIDE DE DISTRIBUTION - Logo Déclinaisons
 
 ## Vue d'ensemble
@@ -17,7 +21,7 @@ Vous avez maintenant **2 versions** de votre plugin :
 ### Comment le mettre à jour
 
 1. Modifiez vos fichiers sources si nécessaire
-2. Clic-droit sur `installer-windows.iss`
+2. Clic-droit sur `installer.iss`
 3. Cliquez "Compile"
 4. Le nouveau `.exe` est généré dans `dist/`
 
@@ -153,7 +157,7 @@ Vous aurez **2 fichiers** à télécharger sur votre site :
 ### Comment créer une mise à jour
 
 **Windows** :
-1. Modifiez `#define MyAppVersion "1.0.0"` dans `installer-windows.iss` → `"1.0.1"`
+1. Ne modifiez PAS `installer.iss` a la main : la CI passe la version via `iscc /DMyAppVersion=<v>`. Pour un build local : `iscc /DMyAppVersion=1.1.0 installer.iss` (sans ce flag, l'installeur est estampille 1.0.0).
 2. Recompilez
 3. Nouveau fichier : `LogoDeclinaisons-Setup-1.0.1.exe`
 

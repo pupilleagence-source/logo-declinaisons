@@ -145,6 +145,11 @@ const Trial = {
                     console.warn('⚠️ Licence offline depuis trop longtemps (>7 jours), bascule en mode trial');
                     localStorage.removeItem('_license');
                     localStorage.removeItem('_trial_cache');
+                    // Indispensable : getStoredLicense() retombe sur ~/.logotyps-license et
+                    // réhydrate localStorage depuis le disque. Sans cette ligne la licence
+                    // "fantôme" ressuscitait au prochain appel (cf. branche de révocation
+                    // ci-dessus qui, elle, fait bien les trois suppressions).
+                    this._removeLicenseFromDisk();
 
                     // Tenter le mode trial
                     try {
@@ -319,12 +324,15 @@ const Trial = {
                         offline: true
                     };
                 } else {
-                    console.error('❌ Licence offline depuis trop longtemps (>7 jours)');
-                    return {
-                        allowed: false,
-                        reason: 'license_offline',
-                        message: 'Connexion Internet requise pour valider votre licence.\n\n(Offline depuis plus de 7 jours)'
-                    };
+                    // Symétrie avec getStatus() : purger la licence fantôme puis retomber
+                    // sur le trial, au lieu de bloquer en dur. Avant ce correctif le badge
+                    // repassait en trial (via getStatus) pendant que la génération restait
+                    // bloquée ici — exactement le symptôme que 7625954 prétendait corriger.
+                    console.warn('⚠️ Licence offline depuis trop longtemps (>7 jours), bascule en mode trial');
+                    localStorage.removeItem('_license');
+                    localStorage.removeItem('_trial_cache');
+                    this._removeLicenseFromDisk();
+                    // Pas de return : on poursuit vers la vérification trial ci-dessous.
                 }
             }
         }

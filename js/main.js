@@ -424,6 +424,20 @@ function setupEventListeners() {
         });
     }
 
+    // Remplissage visuel des sliders. La piste CSS (css/styles.css) lit var(--value)
+    // mais rien ne la définissait : les trois sliders rendaient donc toujours une
+    // piste vide, quelle que soit la position du curseur.
+    const syncRangeFill = (input) => {
+        const min = parseFloat(input.min) || 0;
+        const max = parseFloat(input.max);
+        const pct = (max > min) ? ((parseFloat(input.value) - min) / (max - min)) * 100 : 0;
+        input.style.setProperty('--value', pct + '%');
+    };
+    document.querySelectorAll('input[type="range"]').forEach((input) => {
+        syncRangeFill(input);
+        input.addEventListener('input', () => syncRangeFill(input));
+    });
+
     // Initialiser l'affichage des marges au démarrage
     updateMarginsVisibility();
 
@@ -1019,6 +1033,12 @@ async function handleLicenseDeactivation() {
         } else if (response.ok && data.success) {
             // Désactivation normale réussie
             localStorage.removeItem('_license');
+            localStorage.removeItem('_trial_cache');
+            // Supprimer aussi ~/.logotyps-license : sans ça getStoredLicense() le relit
+            // et réhydrate localStorage, donc le panneau réaffichait "✓ Licensed".
+            if (window.Trial && typeof Trial._removeLicenseFromDisk === 'function') {
+                Trial._removeLicenseFromDisk();
+            }
 
             // Afficher le succès
             successDiv.textContent = '✓ Licence désactivée avec succès.';
@@ -1209,7 +1229,12 @@ function updateUI() {
   // Calcul des sélections, types et couleurs
   const selectedCount = Object.values(appState.selections).filter(v => v).length;
   const typeCount     = Object.values(appState.artboardTypes).filter(v => v).length;
-  const colorCount    = Object.values(appState.colorVariations).filter(v => v).length;
+  // Ne compter QUE les variantes activées. appState.colorVariations contient aussi
+  // monochromeColor / monochromeLightColor, qui sont des chaînes hex donc toujours
+  // truthy : les inclure gonflait le total affiché (colorCount = 3 avec seulement
+  // "original" coché) et rendait la garde "au moins une couleur" ci-dessous inopérante.
+  const colorFlags    = ['original', 'blackwhite', 'monochrome', 'monochromeLight', 'custom'];
+  const colorCount    = colorFlags.filter(k => appState.colorVariations[k]).length;
 
   // Calcul du total d'artboards (sélections × types × couleurs)
   // Si monochromeLight est activée, on double le nombre d'artboards
@@ -1286,9 +1311,14 @@ async function handleGenerate() {
     const generateBtn = document.getElementById('generate-btn');
 
     try {
+        // Désactiver AVANT le await : checkTrialAllowed() fait un aller-retour réseau
+        // (~5 s) pendant lequel un second clic franchissait la même garde, offrant une
+        // génération gratuite et lançant deux generateArtboards concurrents dans le
+        // moteur ExtendScript mono-thread. Le finally réactive le bouton dans tous les cas.
+        if (generateBtn) generateBtn.disabled = true;
+
         if (!(await checkTrialAllowed())) return;
 
-        if (generateBtn) generateBtn.disabled = true;
         showStatus('Génération des plans de travail...', 'warning');
 
         const params = {
@@ -1338,9 +1368,12 @@ async function handleExport() {
     const exportBtnEl = document.getElementById('export-btn');
 
     try {
+        // Idem handleGenerate : désactiver avant le await pour fermer la fenêtre
+        // de double-clic pendant la validation trial. Le finally réactive.
+        if (exportBtnEl) exportBtnEl.disabled = true;
+
         if (!(await checkTrialAllowed())) return;
 
-        if (exportBtnEl) exportBtnEl.disabled = true;
         showStatus('Exportation en cours...', 'warning');
         document.body.classList.add('exporting');
 

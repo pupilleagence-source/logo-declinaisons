@@ -2,7 +2,16 @@
  * Script de test pour vérifier l'API Lemon Squeezy
  */
 
-const API_KEY = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJhdWQiOiI5NGQ1OWNlZi1kYmI4LTRlYTUtYjE3OC1kMjU0MGZjZDY5MTkiLCJqdGkiOiJlZjNkNjE3OGFjYzFiYWI2MmNjMTI2YWE5NDhlZTE2MTc2OWE2NjM2ZGMwNDVjZDBjNGM4NWZiNDZmYjU0ODI0ZDVhYjk4NDVjOGRjYTUzOSIsImlhdCI6MTc2MjQ3MzczNS4zNDA3MTcsIm5iZiI6MTc2MjQ3MzczNS4zNDA3MiwiZXhwIjoyMDc4MDA2NTM1LjMyNzI1OCwic3ViIjoiNTkwOTQ1NyIsInNjb3BlcyI6W119.vIUmsH0L6miAdAkuU6h5YmHd8IM0PCQkdcFflNNVxnayeuCTiNItH63UPB22jwUYFp42dZcXUJpg-KvOWN2NpmGhmc5AhhIAqCNefnsuXgf_2SpJ4xZuvulYajJ3LmV0RXhDlvWx3Wk5CUxlut8W5tc9xFmgxrY1M7ixJRbgP5rCvYEgKGfp_uC1XdsucBr7-34BhSz3NikJ9Ome7WEbrLD_qPkwYWqQqlt5hgs1saLENeNoFviapozJL0K9_Yf-PXLBgOIxKc4AThu_-mpRmqVAU_V-NaYYJyDRa6XdVPmO_5e3lg9CsCVaAcd_l-mi2tWiuYGGhyTj_T5YvvXICHfO3Su1YPYZ1Rpy7PJdv_oLezVxrYSRuJiYWhL3u4UZnWzVuvpBKUawf462fU-wuFUc7NZ1axKes2681G8VN_uQVTgWeIxY8Lq2X252rksLrDAMNkLIZas6_lAvf-w1-QCdvRr6R4Cu9unKOvRtpRggHvgg0KfH8HASxmUWUysoWRKTc1eA962m-8RUV_84nzlf7HcMny7XVGObp5Vj-Iy423yX0WVGQqlNm7W7w2TdtxRtlOgRbdUhk3-Z-QYJRSUPXhGJbfN6bDTglN2xXs7PAnAM5yAMTjWnqq39HsKFCn_4MgtF2Fcuvq7TPY0V822vZ9sWSvFu02Jz-JB6Fyg';
+// La cle API est lue depuis l'environnement. Elle etait codee en dur ici, dans un
+// fichier suivi par git : elle a donc fuite dans l'historique et DOIT etre revoquee
+// puis regeneree dans le dashboard Lemon Squeezy.
+// Usage : LEMONSQUEEZY_API_KEY=xxx node test-lemon.js
+const API_KEY = process.env.LEMONSQUEEZY_API_KEY;
+
+if (!API_KEY) {
+    console.error('LEMONSQUEEZY_API_KEY manquante. Usage : LEMONSQUEEZY_API_KEY=xxx node test-lemon.js');
+    process.exit(1);
+}
 
 async function testDeactivation() {
     console.log('🔍 Test de l\'endpoint de désactivation Lemon Squeezy...\n');

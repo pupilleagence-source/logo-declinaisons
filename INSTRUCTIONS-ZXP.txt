@@ -1,3 +1,10 @@
+*** AVERTISSEMENT (2026-09-04) ***
+Le canal ZXP n'est plus utilise. La CI ne construit ni ne publie de .zxp :
+la distribution passe par les installeurs .exe (installer.iss) et .pkg
+(installers/mac/build-pkg.sh). Voir CLAUDE.md section 8.
+Attention : build-zxp.js et create-zxp.bat signent le repertoire ENTIER,
+ce qui embarquerait node_modules, dist/, certificate.p12 et apple-cert/.
+
 ================================================
   CRÉATION DU PACKAGE ZXP
   Logo Déclinaisons

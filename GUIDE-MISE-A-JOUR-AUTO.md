@@ -1,3 +1,11 @@
+> **AVERTISSEMENT (2026-09-04)** : deux erreurs graves dans ce guide.
+> 1. Les chemins de copie sont PLATS (`backend-trial/distribution/main.js`) alors que
+>    l'arborescence reelle est IMBRIQUEE (`backend-trial/distribution/js/main.js`).
+>    Suivre ce guide cree des orphelins et laisse le payload servi inchange.
+> 2. Il decrit l'updater in-place comme actif. Il ne l'est PAS : `installUpdate()` n'a
+>    aucun appelant, le bouton ouvre simplement le navigateur. Voir `CLAUDE.md` section 2.3
+>    avant de toucher a `backend-trial/distribution/`.
+
 # 🚀 Guide du Système de Mise à Jour Automatique
 
 ## 🎯 Vue d'ensemble

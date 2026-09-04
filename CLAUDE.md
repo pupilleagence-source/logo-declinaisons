@@ -3,6 +3,11 @@
 > Contexte permanent du projet. Lu automatiquement par Claude Code à chaque session dans ce dossier.
 > Versionné dans git → survit à toute purge d'historique de conversation.
 > Dernière analyse complète : 2026-09-04 (13 agents, ~1,5 M tokens, lecture intégrale du code).
+>
+> **Une passe de corrections a été appliquée le 2026-09-04** (commit « Fix verified bugs… »).
+> Les bugs corrigés sont marqués ✅ au §10 ; **tout ce qui n'est pas marqué est toujours présent**.
+> Aucun de ces correctifs n'a été testé dans Illustrator — ils sont validés syntaxiquement
+> et logiquement seulement. **À vérifier au prochain lancement du panneau.**
 
 ---
 
@@ -57,8 +62,8 @@ Donc `AutoUpdater.performUpdate` ne tourne jamais. Les warnings sur la staleness
 
 | Fichier | Ligne | Valeur | Qui la lit |
 |---|---|---|---|
-| `CSXS/manifest.xml` | 2 et 4 | **1.0.0** | **Illustrator** (la seule qui compte pour le chargement) |
-| `package.json` | 3, 19, 25 | **1.0.0** | rien |
+| `CSXS/manifest.xml` | 2 et 4 | 1.1.0 ✅ *aligné 2026-09-04* | **Illustrator** (la seule qui compte pour le chargement) |
+| `package.json` | 3, 16, 22 | 1.1.0 ✅ *aligné 2026-09-04* | rien |
 | `installer.iss` | 6 (fallback) | **1.0.0** | `iscc` sans `/DMyAppVersion` |
 | `js/updater.js` | 7 (`CURRENT_VERSION`) | 1.1.0 | la comparaison de version côté client |
 | `backend-trial/api/version/latest.js` | 34 | 1.1.0 | le client |
@@ -70,7 +75,9 @@ Rien ne dérive de rien. `iscc installer.iss` en local produit silencieusement u
 
 ### 2.5 Secrets committés dans git
 
-1. **`backend-trial/test-lemon.js:5`** — une clé API **Lemon Squeezy** (JWT de 1034 caractères), fichier **tracké**. → rotation dans le dashboard LS obligatoire, puis suppression + réécriture d'historique (`git rm` ne suffit pas).
+1. **`backend-trial/test-lemon.js:5`** — une clé API **Lemon Squeezy** (JWT de 1034 caractères, `exp` en 2035), fichier **tracké**.
+   ✅ *2026-09-04 : le fichier lit maintenant `process.env.LEMONSQUEEZY_API_KEY`.*
+   ⚠️ **La clé reste dans l'historique git et est toujours valide.** Le correctif ne fait qu'arrêter l'hémorragie. **Action utilisateur obligatoire : révoquer et régénérer la clé dans le dashboard Lemon Squeezy.** Une réécriture d'historique (`git filter-repo` + force-push) est un second chantier, à décider séparément.
 2. **`certificate.p12`** — certificat de signature ZXP **tracké**, malgré `.gitignore:35` (`*.p12` ajouté *après* le commit ; gitignore ne détrack jamais). Mot de passe en clair `logodeclinaisons2024` dans 4 fichiers trackés : `build-zxp.js:13`, `create-zxp.bat:10`, `create-zxp-clean.bat:10`, `create-zxp-simple.bat:11`.
 
 **Jamais entrés dans git** (vérifié `git log --all --`) : `backend-trial/.env.local`, `backend-trial/.vercel/`, `apple-cert/`. Ces trois n'existent **que sur cette machine** — `apple-cert/` contient les seules copies des certificats Apple (perte = régénération complète).
@@ -81,14 +88,17 @@ Rien ne dérive de rien. `iscc installer.iss` en local produit silencieusement u
 
 Le 2026-04-17, un `git reset --hard 40c402c` a jeté ces 11 commits, puis `f6b915c` les a re-landés en **un seul commit de 19 381 insertions**. Conséquence : `git blame` sur `js/idml-generator.js`, `js/i18n.js`, `js/hwid.js` etc. pointe sur `f6b915c` et n'explique rien. Le vrai historique (générateur IDML, pages d'interdits, mockups Photoshop, i18n, contournements du tier Hobby de Vercel) est **uniquement** sur cette branche non poussée.
 
-→ **`git push origin backup-v1.0.2-full` avant toute opération git.**
+✅ *2026-09-04 : la branche a été poussée sur `origin`.* L'historique granulaire est donc sauvegardé — mais `git blame` sur `master` reste inutile pour ces fichiers : passer par `git log backup-v1.0.2-full -- <fichier>` pour comprendre le pourquoi d'un choix.
 
 ### 2.7 La doc de release envoie sur les mauvais fichiers
 
-- `GUIDE-DISTRIBUTION.md:20` et `:156` disent de compiler **`installer-windows.iss`**. La CI compile **`installer.iss`** (`.github/workflows/build-installers.yml:71`). `installer-windows.iss` a un **AppId différent** (donc n'upgrade pas l'autre) et **zéro mention de `templates`** → installeur sans templates IDML ni mockups.
-- `GUIDE-MISE-A-JOUR-AUTO.md:24-25` et `:161` disent `cp js/main.js backend-trial/distribution/main.js` (chemin **plat**). La vraie arborescence est **imbriquée** : `distribution/js/main.js`. Suivre le guide crée des orphelins et laisse le payload périmé. Le guide référence aussi `distribution/README.md` (`:314`) qui n'existe pas.
+✅ *2026-09-04 : `installer-windows.iss` (le doublon mort, AppId différent, sans templates) a été **supprimé**, les deux références de `GUIDE-DISTRIBUTION.md` corrigées, et un bandeau d'avertissement daté ajouté en tête de `GUIDE-DISTRIBUTION.md`, `GUIDE-MISE-A-JOUR.md`, `GUIDE-MISE-A-JOUR-AUTO.md`, `INSTRUCTIONS-ZXP.txt`, `backend-trial/README.md` et `backend-trial/GUIDE-DEPLOIEMENT.md`.*
 
-**Traiter `GUIDE-DISTRIBUTION.md`, `GUIDE-MISE-A-JOUR.md`, `GUIDE-MISE-A-JOUR-AUTO.md`, `backend-trial/README.md` et `backend-trial/GUIDE-DEPLOIEMENT.md` comme des documents historiques.** Les seuls guides fiables : ce fichier et `GUIDE-TEMPLATES-INDESIGN.md` (à quelques écarts près, voir §7.3).
+Ces six fichiers restent **périmés sur le fond** — le bandeau prévient, il ne corrige pas. Erreurs de fond connues :
+- `GUIDE-MISE-A-JOUR-AUTO.md:24-25` et `:161` disent `cp js/main.js backend-trial/distribution/main.js` (chemin **plat**). La vraie arborescence est **imbriquée** : `distribution/js/main.js`. Le guide référence aussi `distribution/README.md` (`:314`) qui n'existe pas.
+- `backend-trial/README.md` et `GUIDE-DEPLOIEMENT.md` décrivent un backend à 2 endpoints sur Vercel KV nommé `logo-declinaisons-trial` : en réalité 12 endpoints, projet `logotyps`, datastore **Redis Cloud**.
+
+**Les seuls guides fiables : ce fichier et `GUIDE-TEMPLATES-INDESIGN.md`** (à quelques écarts près, voir §7.3).
 
 ### 2.8 URL de production en dur dans 11 endroits
 
@@ -350,22 +360,24 @@ Illustrator 2024 = CSXS 13, 2026+ = CSXS 14. **Sur Windows, Illustrator 2024+ n'
 
 ## 10. Bugs connus, vérifiés, non corrigés
 
-Classés par impact utilisateur.
+Classés par impact utilisateur. Les lignes marquées ✅ ont été corrigées le 2026-09-04
+(validées syntaxiquement et logiquement, **pas encore testées dans Illustrator**).
+Toutes les autres sont toujours présentes dans le code.
 
 | # | Bug | Localisation |
 |---|---|---|
 | 1 | **Tous les exports font 60 % de la taille annoncée.** L'UI propose « Petit (1000 px) / Moyen (2000) / Grand (4000) » mais le plan de travail fait **600 points** en dur et l'échelle d'export est `(exportSize/1000)*100`. → 1000 donne 600 px, 2000 → 1200, 4000 → 2400. Seuls les favicons sont corrects (32 pt, `exportSize` forcé à 1000). | `hostscript.jsx:1565`, `:2318, :2326, :2635, :2643` ; libellés `index.html:223/227/231` |
 | 2 | **La taille custom W×H est silencieusement ignorée.** Elle est réduite à `Math.max(width,height)` et passée dans la même formule. Le préfixe de nom de fichier `custom_1920x1080_` ment. | `hostscript.jsx:1862-1872` vs `:2620` |
-| 3 | **Le compteur de plans de travail est gonflé ~×3 et la garde « au moins une couleur » est morte.** `Object.values(appState.colorVariations).filter(v => v).length` compte les deux propriétés **string** `monochromeColor:'#000000'` et `monochromeLightColor:'#ffffff'` (truthy). Avec seulement « original » coché, `colorCount` vaut 3. Comme il ne peut jamais descendre sous 2, le test `colorCount > 0` qui active les boutons est un no-op. | `main.js:1212` (état déclaré `:32, :34`) ; gardes `:1258, :1265` |
+| 3 | ✅ **CORRIGÉ 2026-09-04.** **Le compteur de plans de travail est gonflé ~×3 et la garde « au moins une couleur » est morte.** `Object.values(appState.colorVariations).filter(v => v).length` compte les deux propriétés **string** `monochromeColor:'#000000'` et `monochromeLightColor:'#ffffff'` (truthy). Avec seulement « original » coché, `colorCount` vaut 3. Comme il ne peut jamais descendre sous 2, le test `colorCount > 0` qui active les boutons est un no-op. | `main.js:1212` (état déclaré `:32, :34`) ; gardes `:1258, :1265` |
 | 4 | **Le webhook Lemon Squeezy est totalement non authentifié.** La vérification HMAC est écrite mais désactivée (commentaire sur le body parser de Vercel) ; `verifyWebhookSignature` n'est jamais appelée. Quiconque connaît l'URL peut POSTer un faux `order_refunded` et supprimer l'activation d'un client payant. Fix : `export const config = { api: { bodyParser: false } }` + parsing manuel du raw body. | `webhooks/lemonsqueezy.js:34, :49-57` |
 | 5 | **`LEMONSQUEEZY_API_KEY` est utilisée dans 4 endroits mais absente de `.env.local`.** Si elle n'est pas non plus dans le dashboard Vercel, toutes les libérations de slot partent en `Bearer undefined` et échouent en silence (le code ne fait qu'un `console.warn` puis supprime quand même de Redis) → slots Lemon Squeezy orphelins à vie, jusqu'à ce que le client atteigne la limite d'activation. **Vérifier le dashboard Vercel avant de toucher au code de licence.** | `force-deactivate.js:75` ; `webhooks/lemonsqueezy.js:105, :164, :215` |
 | 6 | **Fuite de slot suspectée à l'activation.** `activate.js:67-70` POSTe `{license_key, instance_name}` vers l'endpoint **validate** de LS — or LS validate attend `instance_id` et sa réponse ne contient pas de champ `activated`. La branche `if (!lemonData.activated)` est donc toujours vraie → **chaque appel crée une nouvelle instance LS et consomme un slot.** À tester en premier si des clients signalent « limite d'activation atteinte ». | `activate.js:88` ; même paramètre erroné en `validate.js:77` |
-| 7 | **Le fix de la « licence fantôme » n'est fait qu'à moitié.** Le commit `7625954` a corrigé `getStatus()` pour purger une licence périmée, mais il ne supprime que les clés **localStorage** — jamais `_removeLicenseFromDisk()`. Comme `getStoredLicense()` retombe sur `~/.logotyps-license` et **réhydrate localStorage depuis le disque**, la licence ressuscite à l'appel suivant. Pire : `canGenerate()` a sa propre copie du test de grâce qui bloque en dur (`reason:'license_offline'`) sans rien purger → le badge repasse en trial mais la génération reste bloquée. **C'est exactement le symptôme que le commit prétendait corriger.** | `trial.js:143-162` (comparer avec la branche de révocation correcte `:118-120`) ; `trial.js:321-328` |
-| 8 | **La désactivation normale laisse le fichier disque.** `main.js:1021` ne fait que `localStorage.removeItem('_license')` → le panneau continue d'afficher « ✓ Licensed ». Le chemin `forceLicenseDeactivate()` est correct (`trial.js:641-642`). | `main.js:1021` |
+| 7 | ✅ **CORRIGÉ 2026-09-04** (les deux moitiés : `getStatus()` purge maintenant le disque, et `canGenerate()` purge puis retombe sur le trial au lieu de bloquer en dur). **Le fix de la « licence fantôme » n'est fait qu'à moitié.** Le commit `7625954` a corrigé `getStatus()` pour purger une licence périmée, mais il ne supprime que les clés **localStorage** — jamais `_removeLicenseFromDisk()`. Comme `getStoredLicense()` retombe sur `~/.logotyps-license` et **réhydrate localStorage depuis le disque**, la licence ressuscite à l'appel suivant. Pire : `canGenerate()` a sa propre copie du test de grâce qui bloque en dur (`reason:'license_offline'`) sans rien purger → le badge repasse en trial mais la génération reste bloquée. **C'est exactement le symptôme que le commit prétendait corriger.** | `trial.js:143-162` (comparer avec la branche de révocation correcte `:118-120`) ; `trial.js:321-328` |
+| 8 | ✅ **CORRIGÉ 2026-09-04.** **La désactivation normale laisse le fichier disque.** `main.js:1021` ne fait que `localStorage.removeItem('_license')` → le panneau continue d'afficher « ✓ Licensed ». Le chemin `forceLicenseDeactivate()` est correct (`trial.js:641-642`). | `main.js:1021` |
 | 9 | **`cacheStatus()` jette silencieusement l'`expiry` reçu.** Les deux appelants passent `Date.now() + 24h` avec un commentaire `// 24h` ; la fonction reconstruit l'objet avec **7 jours**. Après une validation réussie, `getStatus()` renvoie « licensed » depuis le cache sans réseau pendant une semaine. | `trial.js:476-488` (appels `:84`, `:105`) |
-| 10 | **Le rollback de l'auto-updater ne peut jamais s'exécuter.** Le champ est déclaré `filesFailedé: []` (accent parasite) mais on pousse dans `results.filesFailed` → `TypeError` sur le premier échec, donc `rollbackAll()` est sauté. Dossier à moitié mis à jour, jonché de `.backup` orphelins. **À corriger impérativement avant de réactiver `installUpdate`.** | `auto-updater.js:264` vs `:322`, rollback `:325-327` |
-| 11 | **L'`@import` Google Fonts est mort.** Il est placé **après** le bloc de reset `*{}` (lignes 2-6) ; par spec, `@import` doit précéder toute autre règle → le parseur le jette. Tout le panneau rend en polices système. Le déplacer en ligne 1 changera visiblement toute la typo (mieux : auto-héberger, un panneau CEP peut être hors-ligne). | `css/styles.css:8` |
-| 12 | **Les 3 sliders affichent toujours un remplissage à 0 %.** Le dégradé utilise `var(--value, 0%)` et **rien ne définit jamais `--value`** (zéro `setProperty` dans `js/`). | `css/styles.css:468` |
+| 10 | ✅ **CORRIGÉ 2026-09-04.** **Le rollback de l'auto-updater ne peut jamais s'exécuter.** Le champ est déclaré `filesFailedé: []` (accent parasite) mais on pousse dans `results.filesFailed` → `TypeError` sur le premier échec, donc `rollbackAll()` est sauté. Dossier à moitié mis à jour, jonché de `.backup` orphelins. **À corriger impérativement avant de réactiver `installUpdate`.** | `auto-updater.js:264` vs `:322`, rollback `:325-327` |
+| 11 | ✅ **CORRIGÉ 2026-09-04** — l'`@import` est maintenant en ligne 1, donc **la typo du panneau change visuellement** (Inter au lieu des polices système). Revert = redéplacer la ligne. **L'`@import` Google Fonts est mort.** Il est placé **après** le bloc de reset `*{}` (lignes 2-6) ; par spec, `@import` doit précéder toute autre règle → le parseur le jette. Tout le panneau rend en polices système. Le déplacer en ligne 1 changera visiblement toute la typo (mieux : auto-héberger, un panneau CEP peut être hors-ligne). | `css/styles.css:8` |
+| 12 | ✅ **CORRIGÉ 2026-09-04** (helper `syncRangeFill` générique sur tous les `input[type=range]`). **Les 3 sliders affichent toujours un remplissage à 0 %.** Le dégradé utilise `var(--value, 0%)` et **rien ne définit jamais `--value`** (zéro `setProperty` dans `js/`). | `css/styles.css:468` |
 | 13 | **Le texte de statut de sélection ment après un changement de langue.** Les spans portent `data-i18n="sel_not_selected"` ; `handleSelection` y écrit « Sélectionné ✓ » en dur sans retirer l'attribut → le `applyToDOM()` suivant les réécrit en « Not selected » alors que `appState.selections` est toujours vrai et que le texte reste vert. | `main.js:1091` + `i18n.js:741` |
 | 14 | **IDs dupliqués sur les variations custom.** `addCustomVariation` incrémente un compteur, mais `removeCustomVariation` le recalcule depuis `container.children.length`. Ajouter custom1/2/3 puis supprimer custom1 → le prochain ajout crée un **second** `variation-custom3`, et `getElementById` ne verra que le premier. | `main.js:238-300` (recalcul `:296`) |
 | 15 | **Le `mimetype` de l'IDML est recompressé.** Les templates le stockent en `Stored` (convention OCF) mais `generate()` passe un `compression:'DEFLATE'` global. InDesign le tolère aujourd'hui, mais ça viole la spec OCF. Fix : `zip.file('mimetype', data, {compression:'STORE'})`. | `idml-generator.js:1949-1953` |
@@ -392,30 +404,42 @@ Classés par impact utilisateur.
 - **`.git` fait 1,2 GB** pour 87 fichiers trackés — les 9 PSD (397 MiB) sont committés en blobs bruts, **sans LFS, sans `.gitattributes`**. Le commit `74965c9` (branche backup) les avait retirés en disant qu'ils dépassaient la limite GitHub ; `2c4d0d0` a supprimé les règles `.gitignore` et les a tous re-committés.
 - **`core.autocrlf=true` sans `.gitattributes`** : les 12 checksums de `manifest.js` ont été calculés sur les octets CRLF du working copy Windows et diffèrent **tous les 12** de leurs blobs git normalisés LF. Cohérent aujourd'hui parce que les déploiements partent du CLI Vercel sur cette machine. Passer à l'intégration Git de Vercel, ou déployer depuis macOS/Linux/CI, casserait l'OTA en bloc.
 - **`dist/` contient 401 MB d'artefacts périmés 1.0.0**, *à l'intérieur du dossier d'extension live* : `LogoDeclinaisons-1.0.0.zxp` (286 MB, 2026-03-23, antérieur à i18n donc incapable de satisfaire `index.html:435`) et `LogoDeclinaisons-Setup-1.0.0.exe` (134 MB, issu de l'installeur mort). Ni l'un ni l'autre n'est reproductible depuis HEAD.
-- **`.claude/settings.local.json` est tracké dans git** et pré-autorise `Bash(curl:*)`, `Bash(npm install:*)`, `Bash(vercel --prod:*)`, `Bash(vercel env:*)`, `Bash(node test-lemon.js:*)` — avec `deny` et `ask` vides. Toute session d'agent qui clone ce repo hérite du droit de déployer en production sans confirmation. Il contient aussi une URL de preview Vercel. **Devrait être dans `.gitignore`** (Claude Code écrit `settings.local.json` en attendant qu'il soit local).
-- **Fichiers `nul` parasites** : `./nul` (180 B, stderr capturé), `./templates/nul` (812 KB de XML de Spread IDML), `./backend-trial/nul` (0 B). Ce sont des accidents de redirection `> nul` sous Git Bash (où NUL n'est pas un device). Gitignorés — mais **pas invisibles pour les packagers** : `templates/nul` et le dossier vide `templates/temp_extract/` se retrouvent dans le ZXP livré. Pour les supprimer : `rm ./nul` **depuis bash**, jamais depuis cmd.exe.
-- **Autre junk tracké** : `ZXPSignCmd.exe` (3,8 MB), `unins000.exe` + `unins000.dat` (3,8 MB, désinstalleur Inno résiduel committé par accident dans `596de5b`), `.rnd` (graine OpenSSL), `.debug` (**0 octet depuis le tout premier commit** → le debug distant CEP n'est en réalité pas configuré, il n'y a aucun port DevTools).
-- **Non trackés actuellement** : `install.bat` (installeur xcopy de dev, seul script qui copie `templates/` dans une install Windows manuelle) et `optimize-mockups.jsx` (script Photoshop de downsampling, **actuellement un no-op** : les 9 PSD sont déjà tous ≤ 3000 px, le poids restant vient du nombre de calques et du payload des Smart Objects, pas de la résolution).
-- **`.gitignore` manque `.claude/settings.local.json`, `certificate.p12` est déjà tracké** (voir §2.5).
+- ✅ *2026-09-04 : `.claude/settings.local.json` a été détracké (`git rm --cached`) et ajouté à `.gitignore`.* Il pré-autorisait `Bash(curl:*)`, `Bash(npm install:*)`, `Bash(vercel --prod:*)`, `Bash(vercel env:*)` avec `deny` et `ask` vides — toute session d'agent clonant le repo héritait du droit de déployer en production sans confirmation. Le fichier local est conservé.
+- ✅ *2026-09-04 : les trois fichiers `nul` parasites (`./nul`, `./templates/nul` 812 KB, `./backend-trial/nul`) et le dossier vide `templates/temp_extract/` ont été supprimés.* C'étaient des accidents de redirection `> nul` sous Git Bash (où NUL n'est pas un device) ; ils étaient gitignorés mais **pas invisibles pour les packagers** et finissaient dans le ZXP livré. Si ça se reproduit : `rm ./nul` **depuis bash**, jamais depuis cmd.exe.
+- **Autre junk tracké** : `ZXPSignCmd.exe` (3,8 MB, toujours tracké — nécessaire au canal ZXP tant qu'il n'est pas supprimé) et `.debug` (**0 octet depuis le tout premier commit** → le debug distant CEP n'est en réalité pas configuré, il n'y a aucun port DevTools). ✅ *2026-09-04 : `unins000.exe` + `unins000.dat` (3,8 MB, désinstalleur Inno résiduel de `596de5b`) et `.rnd` (graine OpenSSL) ont été détrackés et gitignorés.*
+- ✅ *2026-09-04 : `install.bat` et `optimize-mockups.jsx`, jusque-là non trackés, ont été committés.* `install.bat` est l'installeur xcopy de dev (seul script qui copie `templates/` dans une install Windows manuelle ; sa couverture PlayerDebugMode a été étendue à CSXS 9–14) et `optimize-mockups.jsx` un script Photoshop de downsampling **actuellement no-op** : les 9 PSD sont déjà tous ≤ 3000 px, le poids restant vient du nombre de calques et du payload des Smart Objects, pas de la résolution).
+- **`certificate.p12` reste tracké** (voir §2.5) : le détracker changerait le comportement de signature sur un clone neuf sans bénéfice réel, la fuite étant déjà permanente dans l'historique. À traiter avec la décision « le canal ZXP est-il mort ? ».
 
 ---
 
-## 12. Ordre de priorité suggéré si on reprend le projet
+## 12. Où on en est / ce qui reste
 
-1. `git push origin backup-v1.0.2-full` — 11 commits d'historique unique sur un seul disque (§2.6)
-2. Rotation de la clé API Lemon Squeezy + purge d'historique (§2.5)
-3. Vérifier `LEMONSQUEEZY_API_KEY` dans le dashboard Vercel (§10.5) — probable cause des slots orphelins
-4. Authentifier le webhook Lemon Squeezy (§10.4)
-5. Corriger la taille d'export (§10.1) — c'est le bug le plus visible pour l'utilisateur
-6. Corriger `colorCount` (§10.3)
-7. Décider : l'OTA revient-il ? Si oui → corriger `filesFailedé` d'abord (§10.10), puis synchroniser `distribution/` + regénérer les 12 checksums. Si non → supprimer `js/auto-updater.js`, `installUpdate`, `distribution/`, `api/updates/*`
-8. Décider : le canal ZXP est-il mort ? Si oui → supprimer 4 scripts, `ZXPSignCmd.exe`, `certificate.p12`, `INSTRUCTIONS-ZXP.txt`, `GUIDE-DISTRIBUTION.md`
-9. Bumper `CSXS/manifest.xml` à 1.1.0 et ajouter CSXS 13/14 dans `installer.iss`
-10. Réécrire ou supprimer les 5 guides périmés (§2.7)
-11. Supprimer `template-2.idml` (fuite de chemins client, §7.4)
-12. Ajouter `.gitattributes` + LFS pour les PSD, `.gitignore` pour `.claude/settings.local.json`
+### Fait le 2026-09-04 (non testé dans Illustrator)
 
----
+- Branche `backup-v1.0.2-full` poussée sur `origin` — les 11 commits d'historique unique sont sauvés
+- `colorCount` corrigé (§10.3) · course au double-clic trial fermée sur Générer **et** Exporter (§6)
+- Licence fantôme corrigée **des deux côtés** (`getStatus` + `canGenerate`) (§10.7) · désactivation normale purge enfin le disque (§10.8)
+- `filesFailedé` → `filesFailed` (§10.10) · `@import` Inter remonté en ligne 1 (§10.11) · remplissage des sliders (§10.12)
+- `installer.iss` + `install.bat` : PlayerDebugMode étendu à **CSXS 13/14** → Illustrator 2024+ se charge enfin sous Windows
+- `template-2.idml` retiré des deux installeurs (fuite de chemins client, −7,3 Mo)
+- Clé Lemon Squeezy sortie du code source · `installer-windows.iss` supprimé · 6 guides périmés annotés
+- Versions alignées à 1.1.0 (`CSXS/manifest.xml`, `package.json`) · scripts npm cassés retirés
+- Hygiène : `.claude/settings.local.json`, `unins000.*`, `.rnd` détrackés ; fichiers `nul` supprimés ; `install.bat` et `optimize-mockups.jsx` committés
+
+### À faire, par ordre de priorité
+
+1. **Ouvrir le panneau dans Illustrator et vérifier les correctifs ci-dessus.** Aucun n'a tourné pour de vrai. Regarder en priorité : le compteur de plans de travail, la typo du panneau (elle doit changer visuellement), le remplissage des sliders.
+2. **Révoquer et régénérer la clé API Lemon Squeezy** (§2.5). Elle est toujours valide dans l'historique git. Action manuelle, dashboard LS.
+3. **Vérifier `LEMONSQUEEZY_API_KEY` dans le dashboard Vercel** (§10.5). Si elle est absente, toutes les libérations de slot échouent en silence depuis toujours — probable cause des « limite d'activation atteinte ».
+4. **Authentifier le webhook Lemon Squeezy** (§10.4). Non fait ici volontairement : le correctif exige `bodyParser: false` + parsing manuel du raw body, impossible à tester sans casser potentiellement toutes les révocations.
+5. **Décider de la taille d'export** (§10.1). Non corrigé volontairement — c'est une décision produit, pas un bug à trancher seul :
+   - (a) rendre les libellés honnêtes (« Petit (600 px) ») — zéro risque, mais le produit paraît moins bon ;
+   - (b) corriger la formule pour que 1000 donne vraiment 1000 px — correct, mais change la sortie de tous les utilisateurs existants et pousse l'échelle à 666 % pour le préréglage 4000.
+6. **Décider : l'OTA revient-il ?** (§2.3) Si oui → synchroniser `distribution/` + regénérer les 12 checksums (`filesFailed` est déjà corrigé). Si non → supprimer `js/auto-updater.js`, `installUpdate`, `distribution/`, `api/updates/*`.
+7. **Décider : le canal ZXP est-il mort ?** Si oui → supprimer les 4 scripts, `ZXPSignCmd.exe`, `certificate.p12`, `INSTRUCTIONS-ZXP.txt`, `GUIDE-DISTRIBUTION.md`.
+8. Corriger la taille custom W×H (§10.2), les IDs dupliqués des variations custom (§10.14), le désynchro du texte de sélection au changement de langue (§10.13).
+9. Réécrire ou supprimer les 6 guides périmés (§2.7) — ils sont annotés, pas corrigés.
+10. Passer les PSD en Git LFS. ⚠️ **Ne jamais elargir `.gitattributes` a `* text=auto`** : ça renormaliserait tout le repo en LF et casserait les 12 checksums de `manifest.js`, calculés sur les octets CRLF du working copy Windows (§11). Le `.gitattributes` ajouté le 2026-09-04 est volontairement limité aux `*.sh` / `*.command` et porte cet avertissement en commentaire.
 
 ## 13. Questions ouvertes (personne ne sait, décision utilisateur requise)
 

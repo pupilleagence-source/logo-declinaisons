@@ -1,3 +1,8 @@
+> **AVERTISSEMENT (2026-09-04)** : perime. Ce document decrit un backend a 2 endpoints
+> nomme `logo-declinaisons-trial` sur Vercel KV. La realite : 12 endpoints, projet Vercel
+> `logotyps` (https://logotyps.vercel.app), datastore **Redis Cloud** (eu-west-3), pas KV
+> ni Upstash malgre les commentaires du code. Voir `CLAUDE.md` sections 3 et 6.
+
 # Logo Déclinaisons - Backend Trial API
 
 Backend serverless sur Vercel pour gérer le système de trial (7 générations gratuites).

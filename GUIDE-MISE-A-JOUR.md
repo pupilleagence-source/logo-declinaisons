@@ -1,3 +1,7 @@
+> **AVERTISSEMENT (2026-09-04)** : perime. Decrit le canal ZXP, abandonne au profit des
+> installeurs .exe / .pkg construits par GitHub Actions. Ses references de lignes vers
+> js/updater.js sont fausses. Procedure de release reelle : `CLAUDE.md` section 8.
+
 # 📦 Guide du Système de Mise à Jour Automatique
 
 ## Comment ça fonctionne ?

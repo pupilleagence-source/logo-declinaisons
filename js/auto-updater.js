@@ -261,7 +261,7 @@ const AutoUpdater = {
         const results = {
             success: false,
             filesUpdated: [],
-            filesFailedé: [],
+            filesFailed: [],
             needsRestart: false,
             backups: []
         };

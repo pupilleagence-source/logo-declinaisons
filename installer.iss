@@ -60,15 +60,22 @@ Source: "jsx\*"; DestDir: "{app}\jsx"; Flags: ignoreversion recursesubdirs creat
 Source: "lib\*"; DestDir: "{app}\lib"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "media\*"; DestDir: "{app}\media"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "templates\template-1.idml"; DestDir: "{app}\templates"; Flags: ignoreversion skipifsourcedoesntexist
-Source: "templates\template-2.idml"; DestDir: "{app}\templates"; Flags: ignoreversion skipifsourcedoesntexist
+; template-2.idml n'est PAS livre : il est inaccessible depuis l'interface (index.html
+; n'expose que template-1) et contient des chemins absolus vers un projet client prive.
 Source: "templates\mockups\*.psd"; DestDir: "{app}\templates\mockups"; Flags: ignoreversion skipifsourcedoesntexist
 
 [Registry]
-; Activer PlayerDebugMode pour toutes les versions CEP (9 a 12)
+; Activer PlayerDebugMode pour toutes les versions CEP (9 a 14).
+; CSXS.13 = Illustrator 2024, CSXS.14 = Illustrator 2026+. Sans ces deux lignes le
+; panneau ne se chargeait pas du tout sur Illustrator 2024+ sous Windows, alors que
+; CSXS\manifest.xml declare supporter ILST [26.0,99.9]. Le postinstall macOS
+; (installers/mac/build-pkg.sh) couvrait deja 9 a 14.
 Root: HKCU; Subkey: "Software\Adobe\CSXS.9"; ValueType: string; ValueName: "PlayerDebugMode"; ValueData: "1"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Adobe\CSXS.10"; ValueType: string; ValueName: "PlayerDebugMode"; ValueData: "1"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Adobe\CSXS.11"; ValueType: string; ValueName: "PlayerDebugMode"; ValueData: "1"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Adobe\CSXS.12"; ValueType: string; ValueName: "PlayerDebugMode"; ValueData: "1"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Adobe\CSXS.13"; ValueType: string; ValueName: "PlayerDebugMode"; ValueData: "1"; Flags: uninsdeletevalue
+Root: HKCU; Subkey: "Software\Adobe\CSXS.14"; ValueType: string; ValueName: "PlayerDebugMode"; ValueData: "1"; Flags: uninsdeletevalue
 
 [Messages]
 french.SetupAppTitle=Installation de {#MyAppName}

@@ -36,3 +36,13 @@ apple-cert/
 *.key
 *.cer
 *.csr
+
+# Réglages locaux de l'agent : pré-autorise vercel --prod, curl, npm install.
+# Ne doit jamais être partagé — Claude Code le régénère par machine.
+.claude/settings.local.json
+
+# Résidus d'installations locales (désinstalleur Inno, graine OpenSSL)
+unins000.exe
+unins000.dat
+.rnd
+templates/temp_extract/

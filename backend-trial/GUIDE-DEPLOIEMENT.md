@@ -1,3 +1,7 @@
+> **AVERTISSEMENT (2026-09-04)** : perime, meme raison que `README.md` de ce dossier.
+> Le deploiement reel est `cd backend-trial && vercel --prod` depuis cette machine
+> (le CLI televerse le working copy). Voir `CLAUDE.md` section 8.
+
 # Guide de déploiement - Étape par étape
 
 ## ✅ Checklist rapide

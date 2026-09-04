@@ -1,0 +1,15 @@
+# Portee volontairement MINIMALE : ce fichier ne doit matcher que des scripts shell.
+#
+# N'ajoutez PAS de regle large type "* text=auto". Cela renormaliserait tout le
+# depot en LF et invaliderait les 12 checksums SHA-256 de
+# backend-trial/api/updates/manifest.js : ils ont ete calcules sur les octets du
+# working copy Windows (CRLF, core.autocrlf=true), pas sur les blobs git (LF).
+# Exemple verifie : le blob de backend-trial/distribution/js/main.js fait 81 752
+# octets, la version servie en production 83 790 — l'ecart correspond aux \r.
+#
+# Les trois scripts shell ci-dessous sont deja stockes en LF dans git ; cette
+# regle ne fait que le garantir, pour qu'un commit depuis Windows ne puisse pas
+# les passer en CRLF et casser le build macOS (build-pkg.sh utilise 5 heredocs,
+# dont les delimiteurs ne matcheraient plus).
+*.sh       text eol=lf
+*.command  text eol=lf
