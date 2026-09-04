@@ -19,7 +19,7 @@
 - **Repo** : `github.com/pupilleagence-source/logo-declinaisons` — ⚠️ **PUBLIC** (vérifié le 2026-09-04 : `isPrivate: false`). Tout l'historique est lisible par n'importe qui. 34 commits sur `master`, oct. 2025 → sept. 2026
 - **Releases** : publiées dans un **repo séparé public** `pupilleagence-source/logo-declinaisons-releases`
 - **Backend** : Vercel, projet `logotyps` → `https://logotyps.vercel.app` (12 endpoints, Redis Cloud)
-- **Stack** : zéro framework, zéro build step, zéro lint. HTML/CSS/JS vanilla + ExtendScript ES3. Quelques tests depuis le 2026-09-04 : `npm test` (helpers de dossier + repli IDML uniquement).
+- **Stack** : zéro framework, zéro build step, zéro lint. HTML/CSS/JS vanilla + ExtendScript ES3. Quelques tests depuis le 2026-09-04 : `npm test` (helpers de dossier, repli d'orientation IDML, styles de police).
 - **Langue** : tout ce qui est visible et tous les commentaires sont en **français**, les identifiants sont en anglais.
 - **~13 450 lignes** de code applicatif réparties sur 4 sous-systèmes.
 
@@ -245,6 +245,29 @@ En cas de conflit, une popup à trois choix :
 `emptyFolderRecursive()` est écrit à la main (`readdirSync`/`lstatSync`/`unlinkSync`/`rmdirSync`) et **pas** avec `fs.rmSync` : le Node embarqué dans CEP peut être antérieur à 14.14. `sanitizeFolderName()` neutralise `/ \ : * ? " < > |` et les points de tête — sans ça, un `../..` dans le champ ferait écrire l'export hors du dossier choisi.
 
 Ces quatre helpers sont couverts par `tests/output-folder.test.js` (`npm test`), y compris le fait que `emptyFolderRecursive` ne touche pas aux dossiers voisins.
+
+### 5.3 ter Polices de la charte : résolution des styles
+
+Un IDML porte **deux** infos indépendantes par texte : la famille (`AppliedFont`) et le style (`FontStyle="Medium"`). Jusqu'au 2026-09-04 le générateur ne remplaçait que la famille ; InDesign cherchait alors « MaPolice Medium » et déclarait la police manquante dès que la police de marque n'avait pas ce style. Le template utilise 31 `FontStyle` — dont **19 Medium**, le style le plus souvent absent des polices.
+
+✅ **Corrigé.** Au moment de l'export, `fetchFontStylesFromIllustrator()` (`js/main.js`) demande à Illustrator la liste **brute** des styles de chaque famille (`app.textFonts[i].style`), et `resolveFontStyle()` (`js/idml-generator.js`) remplace chaque `FontStyle` des paragraphes `BRAND_*` par le style le plus proche **réellement disponible** :
+
+| Demandé | Ordre de repli |
+|---|---|
+| Regular | Regular → Book → Roman → Normal → Plain → Medium |
+| Medium | Medium → SemiBold → **Regular** → Bold |
+| Bold | Bold → SemiBold → Black → ExtraBold → Medium → Regular |
+| Light | Light → ExtraLight → Thin → Book → Regular |
+| Italic | Italic → Oblique → Regular *(l'italique est perdu)* |
+| Bold Italic | Bold Italic → Bold Oblique → Bold → Italic → Regular |
+
+Chaque candidat est testé en exact (insensible casse/espaces : `SemiBold` = `Semibold`) puis en « contient » (attrape les styles numérotés `65 Medium` / `55 Roman`). **Dernier recours : le premier style que la police possède, quel que soit son nom — y compris une chaîne vide.** Une police à style unique sans nom (`[""]`) reçoit donc `FontStyle=""` partout ; c'est un cas normal, pas une erreur. Le pari : Illustrator et InDesign partagent le même moteur de polices, la chaîne que l'un rapporte est celle que l'autre attend. **C'est le premier cas à vérifier dans InDesign** — non testable d'ici.
+
+Périmètre : uniquement les ranges des paragraphes `BRAND_PRIMARY` / `BRAND_SECONDARY` (23 sur 31). Police introuvable dans Illustrator (saisie à la main, non installée) → `FontStyle` laissé tel quel, comme avant. Les substitutions sont remontées dans le statut final (`formatFontSubstitutions`) pour que l'utilisateur sache pourquoi sa charte a l'air un peu différente.
+
+⚠️ **Seconde source de « polices manquantes », hors périmètre du code** : 7 ranges en `NormalParagraphStyle` utilisent des polices **fixes du template** — `Manrope` (×7), `SF Pro Display` (×3, police système Apple, **inexistante sous Windows**), `Myriad Pro`, `Minion Pro`. Le générateur ne les touche pas. À corriger **dans le template** (remplacer par une police livrée avec les apps Adobe, ou par `BRAND_*`).
+
+Tests : `tests/font-style.test.js` (35 assertions sur le résolveur) et `tests/font-style-template.test.js` (intégration sur le **vrai** `template-1.idml` via JSZip : vérifie ce qui change *et* que les polices fixes restent intactes).
 
 ### 5.4 Présentation InDesign (BÊTA)
 `handleGeneratePresentation` (`main.js:1406`) — **uniquement atteignable depuis `handleExport:1380`**, et dépend de fichiers déjà écrits sur disque.
@@ -490,7 +513,8 @@ Toutes les autres sont toujours présentes dans le code.
 - **Dossier parent optionnel** avec gestion des conflits (§5.3 bis)
 - **Repli horizontal ↔ vertical → typo** pour les cadres `LOGO_` de la charte (§7.3)
 - **Popup d'avertissement** quand aucun export n'est configuré (§5.2 bis)
-- **Premiers tests du projet** : `npm test` — 34 assertions sur les helpers de dossier et la chaîne de repli. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
+- **Résolution des styles de police** dans la charte (§5.3 ter) — plus de « MaPolice Medium » manquante
+- **Premiers tests du projet** : `npm test` — 4 fichiers, ~80 assertions : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
 
 ### À faire, par ordre de priorité
 

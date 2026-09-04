@@ -596,14 +596,134 @@ const IDMLGenerator = (function () {
      *   2. As a Properties child: <Properties><AppliedFont type="string">FontName</AppliedFont></Properties>
      * Both must be handled. We use setFontOnStyle() for each named style.
      */
-    function processStylesXml(xml, fontPrimary, fontSecondary) {
-        if (fontPrimary) {
-            xml = setFontOnStyle(xml, 'BRAND_PRIMARY', fontPrimary);
+    // ─── Résolution des styles de police ───────────────────────────────
+    //
+    // Un IDML porte deux infos indépendantes par texte : la famille (AppliedFont) et
+    // le style (FontStyle="Medium"). Remplacer la famille sans adapter le style fait
+    // chercher à InDesign "MaPolice Medium" — police manquante si elle n'a que Regular.
+    //
+    // `available` est la liste BRUTE des styles de la famille telle qu'Illustrator la
+    // rapporte (app.textFonts[i].style). Illustrator et InDesign partagent le même moteur
+    // de polices : la chaîne que l'un affiche est celle que l'autre attend. Cette liste
+    // peut contenir une chaîne vide — police à style unique sans nom de style — et c'est
+    // un cas normal, pas une erreur : on écrit alors FontStyle="".
+
+    function normalizeStyle(s) {
+        return String(s == null ? '' : s).toLowerCase().replace(/[\s\-_]/g, '');
+    }
+
+    // Styles considérés comme "le style de base" d'une police, chaîne vide comprise.
+    var REGULAR_GROUP = ['regular', 'book', 'roman', 'normal', 'plain', 'text', ''];
+
+    // Ordre de repli par style demandé (formes normalisées). Chaque candidat est testé en
+    // correspondance exacte, puis en "contient" (attrape "65 Medium", "55 Roman", etc.).
+    var STYLE_FALLBACKS = {
+        regular:        ['regular', 'book', 'roman', 'normal', 'plain', 'text', 'medium', 'light'],
+        medium:         ['medium', 'semibold', 'demibold', 'demi', 'regular', 'book', 'roman', 'normal', 'plain', 'bold'],
+        semibold:       ['semibold', 'demibold', 'demi', 'medium', 'bold', 'regular', 'book', 'roman', 'normal', 'plain'],
+        bold:           ['bold', 'semibold', 'demibold', 'black', 'heavy', 'extrabold', 'ultrabold', 'medium', 'regular', 'book', 'roman', 'normal', 'plain'],
+        black:          ['black', 'heavy', 'extrabold', 'ultrabold', 'bold', 'semibold', 'medium', 'regular', 'book', 'normal', 'plain'],
+        light:          ['light', 'extralight', 'ultralight', 'thin', 'hairline', 'book', 'regular', 'roman', 'normal', 'plain'],
+        thin:           ['thin', 'hairline', 'extralight', 'ultralight', 'light', 'regular', 'book', 'normal', 'plain'],
+        italic:         ['italic', 'oblique', 'regularitalic', 'bookitalic', 'romanitalic', 'mediumitalic', 'regular', 'book', 'roman', 'normal', 'plain'],
+        bolditalic:     ['bolditalic', 'boldoblique', 'semibolditalic', 'blackitalic', 'bold', 'italic', 'oblique', 'regular', 'book', 'normal', 'plain'],
+        mediumitalic:   ['mediumitalic', 'semibolditalic', 'italic', 'oblique', 'medium', 'regular', 'book', 'normal', 'plain'],
+        lightitalic:    ['lightitalic', 'thinitalic', 'italic', 'oblique', 'light', 'regular', 'book', 'normal', 'plain'],
+        semibolditalic: ['semibolditalic', 'demibolditalic', 'bolditalic', 'mediumitalic', 'italic', 'semibold', 'bold', 'regular', 'book', 'normal', 'plain']
+    };
+
+    /**
+     * Choisit, parmi les styles réellement disponibles, celui à écrire à la place de
+     * `requested`. Retourne { style, substituted, known } :
+     *   - style       : la chaîne BRUTE à écrire dans FontStyle="…"
+     *   - substituted : true si ce n'est pas (à la casse/espaces près) le style demandé
+     *   - known       : false si on n'a aucune info sur la police (style renvoyé tel quel)
+     */
+    function resolveFontStyle(requested, available) {
+        if (!available || !available.length) {
+            return { style: requested, substituted: false, known: false };
         }
-        // Use fontSecondary if specified, otherwise fallback to fontPrimary
-        var secondaryFont = fontSecondary || fontPrimary;
+        var want = normalizeStyle(requested);
+        var norm = [];
+        var i, j, k;
+        for (i = 0; i < available.length; i++) norm.push(normalizeStyle(available[i]));
+
+        function pick(idx) {
+            return { style: available[idx], substituted: norm[idx] !== want, known: true };
+        }
+
+        // 1. Exact (insensible casse/espaces/tirets) : "SemiBold" → "Semibold".
+        for (i = 0; i < norm.length; i++) {
+            if (norm[i] === want) return pick(i);
+        }
+
+        // 2. Chaîne de repli du style demandé.
+        var chain = STYLE_FALLBACKS[want] || [want];
+        for (j = 0; j < chain.length; j++) {
+            for (i = 0; i < norm.length; i++) {
+                if (norm[i] === chain[j]) return pick(i);
+            }
+            if (chain[j] !== '') {
+                for (i = 0; i < norm.length; i++) {
+                    if (norm[i].indexOf(chain[j]) >= 0) return pick(i);
+                }
+            }
+        }
+
+        // 3. Style absent de la table : décomposer. Une demande italique prend n'importe
+        //    quel italique disponible ; sinon un style du groupe "regular" (vide compris).
+        if (want.indexOf('italic') >= 0 || want.indexOf('oblique') >= 0) {
+            for (i = 0; i < norm.length; i++) {
+                if (norm[i].indexOf('italic') >= 0 || norm[i].indexOf('oblique') >= 0) return pick(i);
+            }
+        }
+        for (k = 0; k < REGULAR_GROUP.length; k++) {
+            for (i = 0; i < norm.length; i++) {
+                if (norm[i] === REGULAR_GROUP[k]) return pick(i);
+            }
+        }
+
+        // 4. Dernier recours : le premier style que la police possède réellement, quel que
+        //    soit son nom — y compris une chaîne vide. Mieux qu'une police manquante.
+        return pick(0);
+    }
+
+    /**
+     * Réécrit tous les FontStyle (attribut et forme enfant) d'un fragment XML en les
+     * résolvant contre `styles`. Les substitutions effectives sont poussées dans `subs`.
+     */
+    function rewriteFontStyles(fragment, fontFamily, styles, subs) {
+        if (!styles) return fragment; // police inconnue : ne rien toucher
+        function record(requested, r) {
+            if (r.known && r.substituted && subs) {
+                subs.push({ family: fontFamily, requested: requested, used: r.style });
+            }
+        }
+        fragment = fragment.replace(/(\bFontStyle=")([^"]*)(")/g, function (m, pre, val, post) {
+            var r = resolveFontStyle(val, styles);
+            record(val, r);
+            return pre + escXml(r.style) + post;
+        });
+        fragment = fragment.replace(/(<FontStyle type="string">)([^<]*)(<\/FontStyle>)/g, function (m, pre, val, post) {
+            var r = resolveFontStyle(val, styles);
+            record(val, r);
+            return pre + escXml(r.style) + post;
+        });
+        return fragment;
+    }
+
+    function processStylesXml(xml, config) {
+        var subs = config._fontSubstitutions;
+        if (config.fontPrimary) {
+            xml = setFontOnStyle(xml, 'BRAND_PRIMARY', config.fontPrimary, config.fontStylesPrimary, subs);
+        }
+        // Use fontSecondary if specified, otherwise fallback to fontPrimary — and the
+        // available styles must follow the same fallback, or we would resolve against the
+        // wrong family.
+        var secondaryFont = config.fontSecondary || config.fontPrimary;
+        var secondaryStyles = config.fontSecondary ? config.fontStylesSecondary : config.fontStylesPrimary;
         if (secondaryFont) {
-            xml = setFontOnStyle(xml, 'BRAND_SECONDARY', secondaryFont);
+            xml = setFontOnStyle(xml, 'BRAND_SECONDARY', secondaryFont, secondaryStyles, subs);
         }
         return xml;
     }
@@ -612,7 +732,7 @@ const IDMLGenerator = (function () {
      * Set AppliedFont on a named ParagraphStyle or CharacterStyle.
      * Handles both attribute-level and Properties child-level font definitions.
      */
-    function setFontOnStyle(xml, styleName, fontFamily) {
+    function setFontOnStyle(xml, styleName, fontFamily, styles, subs) {
         var escaped = escXml(fontFamily);
 
         // --- 1. Handle the full element (tag + children) ---
@@ -660,6 +780,9 @@ const IDMLGenerator = (function () {
                     );
                 }
             }
+
+            // 1c. Adapter le style à la police réellement choisie (cf. resolveFontStyle).
+            result = rewriteFontStyles(result, fontFamily, styles, subs);
 
             return result;
         });
@@ -1783,12 +1906,13 @@ const IDMLGenerator = (function () {
 
         // Replace character-level AppliedFont overrides inside BRAND_PRIMARY / BRAND_SECONDARY ranges
         if (config.fontPrimary) {
-            xml = replaceStoryFonts(xml, 'BRAND_PRIMARY', config.fontPrimary);
+            xml = replaceStoryFonts(xml, 'BRAND_PRIMARY', config.fontPrimary, config.fontStylesPrimary, config._fontSubstitutions);
         }
-        // Use fontSecondary if specified, otherwise fallback to fontPrimary
+        // Use fontSecondary if specified, otherwise fallback to fontPrimary (styles too).
         var secondaryFont = config.fontSecondary || config.fontPrimary;
+        var secondaryStyles = config.fontSecondary ? config.fontStylesSecondary : config.fontStylesPrimary;
         if (secondaryFont) {
-            xml = replaceStoryFonts(xml, 'BRAND_SECONDARY', secondaryFont);
+            xml = replaceStoryFonts(xml, 'BRAND_SECONDARY', secondaryFont, secondaryStyles, config._fontSubstitutions);
         }
 
         return xml;
@@ -1800,7 +1924,7 @@ const IDMLGenerator = (function () {
      * so text inherits the chosen font instead of a hardcoded one.
      * Also handles AppliedFont as an attribute on CharacterStyleRange.
      */
-    function replaceStoryFonts(xml, styleName, fontFamily) {
+    function replaceStoryFonts(xml, styleName, fontFamily, styles, subs) {
         var escaped = escXml(fontFamily);
         // Match entire ParagraphStyleRange referencing this style
         var rangeRegex = new RegExp(
@@ -1819,6 +1943,9 @@ const IDMLGenerator = (function () {
                 /(<CharacterStyleRange[^>]*\bAppliedFont=")[^"]*(")/g,
                 '$1' + escaped + '$2'
             );
+            // Toute la famille du paragraphe vient d'être forcée à la police de marque :
+            // chaque FontStyle du bloc doit donc exister dans CETTE police.
+            rangeBlock = rewriteFontStyles(rangeBlock, fontFamily, styles, subs);
             return rangeBlock;
         });
 
@@ -1826,6 +1953,19 @@ const IDMLGenerator = (function () {
     }
 
     // ─── Main generate function ────────────────────────────────────
+
+    function dedupeFontSubstitutions(list) {
+        var seen = {};
+        var out = [];
+        for (var i = 0; i < (list || []).length; i++) {
+            var it = list[i];
+            var key = it.family + '\u0001' + it.requested + '\u0001' + it.used;
+            if (seen[key]) continue;
+            seen[key] = true;
+            out.push(it);
+        }
+        return out;
+    }
 
     async function generate(config) {
         try {
@@ -1839,6 +1979,10 @@ const IDMLGenerator = (function () {
             if (!fs.existsSync(config.templatePath)) {
                 return { success: false, error: 'Template introuvable : ' + nodePath.basename(config.templatePath) };
             }
+
+            // Collecteur des substitutions de style de police (cf. resolveFontStyle),
+            // renvoyé à l'appelant pour informer l'utilisateur.
+            config._fontSubstitutions = [];
 
             console.log('[IDML] Config: fontPrimary="' + (config.fontPrimary || '') +
                 '", fontSecondary="' + (config.fontSecondary || '') +
@@ -1973,7 +2117,7 @@ const IDMLGenerator = (function () {
             })[0];
             if (stylesFile && (config.fontPrimary || config.fontSecondary)) {
                 var stylesXml = await zip.file(stylesFile).async('string');
-                stylesXml = processStylesXml(stylesXml, config.fontPrimary, config.fontSecondary);
+                stylesXml = processStylesXml(stylesXml, config);
                 zip.file(stylesFile, stylesXml);
             }
 
@@ -1994,7 +2138,8 @@ const IDMLGenerator = (function () {
                 mockupData: {
                     mockups: mockupScan.mockups,
                     count: mockupScan.count
-                }
+                },
+                fontSubstitutions: dedupeFontSubstitutions(config._fontSubstitutions)
             };
 
         } catch (err) {

@@ -62,6 +62,9 @@ outputFolder: '',
 // d'action (cf. resolveOutputTarget) : outputFolder reste ce que l'UI affiche.
 parentFolder: { enabled: true, name: 'Logopack' },
 resolvedOutputFolder: '',
+// Substitutions de style de police faites par le generateur IDML lors de la derniere
+// presentation (ex. Medium -> Regular quand la police n'a pas de Medium).
+lastFontSubstitutions: [],
 documentSettings: {
   colorMode: 'RGB',  // RGB ou CMYK
   ppi: 72            // Résolution en PPI
@@ -1673,7 +1676,14 @@ async function handleAction() {
                 }
                 // Nommer le dossier reellement utilise : avec le repli "-2" ou apres un
                 // remplacement, l'utilisateur doit savoir ou son export a atterri.
-                showStatus(`Exportation terminée ! ${count} plans de travail exportés dans ${targetFolder}`, 'success');
+                if (wantsPresentation && appState.lastFontSubstitutions && appState.lastFontSubstitutions.length) {
+                    // Dire ce qui a ete adapte : sinon l'utilisateur decouvre une charte un peu
+                    // differente en l'ouvrant, sans savoir pourquoi.
+                    showStatus(`Exportation terminée ! ${count} plans de travail exportés dans ${targetFolder}<br>` +
+                               `<strong>Styles de police adaptés</strong> — ` + formatFontSubstitutions(appState.lastFontSubstitutions), 'warning');
+                } else {
+                    showStatus(`Exportation terminée ! ${count} plans de travail exportés dans ${targetFolder}`, 'success');
+                }
                 showExportDonePopup();
             } else if (wantsPresentation) {
                 // La presentation lit les fichiers deja exportes sur disque : sans dossier
@@ -1697,6 +1707,80 @@ async function handleAction() {
         document.body.classList.remove('exporting');
         updateUI();
     }
+}
+
+// ============================================================================
+//  Styles de police disponibles (pour la presentation InDesign)
+// ============================================================================
+
+// Demande a Illustrator la liste BRUTE des styles de chaque famille installee.
+// Resout avec { "Montserrat": ["Regular","Medium","Bold",...], "Bebas Neue": [""] , ... }.
+// Une chaine vide est un style legitime : police a style unique sans nom de style.
+// Separateurs = caracteres de controle (29/30/31) : aucun nom de police n'en contient.
+function fetchFontStylesFromIllustrator() {
+    return new Promise(function (resolve) {
+        var script =
+            'var f=app.textFonts,m={},i,fam,sty;' +
+            'for(i=0;i<f.length;i++){' +
+              'try{fam=f[i].family;sty=f[i].style;}catch(e){continue;}' +
+              'if(fam===undefined||fam===null||fam==="")continue;' +
+              'if(sty===undefined||sty===null)sty="";' +
+              'if(!m[fam])m[fam]=[];m[fam].push(sty);' +
+            '}' +
+            'var out=[];for(var k in m){out.push(k+String.fromCharCode(31)+m[k].join(String.fromCharCode(30)));}' +
+            'out.join(String.fromCharCode(29))';
+        try {
+            csInterface.evalScript(script, function (result) {
+                var map = {};
+                if (!result || result === 'EvalScript error.' || result === 'undefined') {
+                    console.warn('Styles de police : Illustrator n\'a pas répondu, aucune adaptation possible');
+                    resolve(map);
+                    return;
+                }
+                var records = result.split(String.fromCharCode(29));
+                for (var i = 0; i < records.length; i++) {
+                    var parts = records[i].split(String.fromCharCode(31));
+                    if (parts.length < 2) continue;
+                    map[parts[0]] = parts[1].split(String.fromCharCode(30));
+                }
+                resolve(map);
+            });
+        } catch (e) {
+            console.warn('Styles de police :', e);
+            resolve({});
+        }
+    });
+}
+
+// Styles d'une famille, par nom exact puis insensible a la casse. null si inconnue
+// (police saisie a la main et non installee) : le generateur ne touchera alors pas
+// aux FontStyle, comme avant.
+function lookupFontStyles(map, family) {
+    if (!family) return null;
+    if (map[family]) return map[family];
+    var want = String(family).toLowerCase().trim();
+    for (var k in map) {
+        if (k.toLowerCase().trim() === want) return map[k];
+    }
+    console.warn('Styles de police : famille introuvable dans Illustrator : "' + family + '"');
+    return null;
+}
+
+// "Montserrat : Medium → Regular, Italic → Regular · Lato : Light → Regular"
+function formatFontSubstitutions(list) {
+    var byFamily = {};
+    var order = [];
+    for (var i = 0; i < list.length; i++) {
+        var it = list[i];
+        if (!byFamily[it.family]) { byFamily[it.family] = []; order.push(it.family); }
+        var used = it.used === '' ? '(style unique)' : it.used;
+        byFamily[it.family].push(it.requested + ' → ' + used);
+    }
+    var parts = [];
+    for (var j = 0; j < order.length; j++) {
+        parts.push(order[j] + ' : ' + byFamily[order[j]].join(', '));
+    }
+    return parts.join(' · ');
 }
 
 async function handleGeneratePresentation() {
@@ -1749,14 +1833,30 @@ async function handleGeneratePresentation() {
         var extensionPath = csInterface.getSystemPath(SystemPath.EXTENSION);
         var nodePath = require('path');
 
+        var fontPrimaryValue = (document.getElementById('brand-font-primary') && document.getElementById('brand-font-primary').value) || '';
+        var fontSecondaryValue = (document.getElementById('brand-font-secondary') && document.getElementById('brand-font-secondary').value) || '';
+
+        // Styles reellement disponibles pour les polices choisies, demandes a Illustrator
+        // au moment de l'export (et non au chargement du panneau : une police peut avoir
+        // ete installee entre-temps). Voir resolveFontStyle() dans idml-generator.js.
+        appState.lastFontSubstitutions = [];
+        var fontStylesMap = {};
+        try {
+            fontStylesMap = await fetchFontStylesFromIllustrator();
+        } catch (fontErr) {
+            console.warn('Styles de police indisponibles :', fontErr);
+        }
+
         const config = {
             templatePath: nodePath.join(extensionPath, 'templates', templateName + '.idml'),
             outputFolder: getEffectiveOutputFolder(),
             extensionPath: extensionPath,
             colors: appState.customColors && appState.customColors.mapping ? appState.customColors.mapping : [],
             brandName: (document.getElementById('brand-name') && document.getElementById('brand-name').value) || 'Logo',
-            fontPrimary: (document.getElementById('brand-font-primary') && document.getElementById('brand-font-primary').value) || '',
-            fontSecondary: (document.getElementById('brand-font-secondary') && document.getElementById('brand-font-secondary').value) || '',
+            fontPrimary: fontPrimaryValue,
+            fontSecondary: fontSecondaryValue,
+            fontStylesPrimary: lookupFontStyles(fontStylesMap, fontPrimaryValue),
+            fontStylesSecondary: lookupFontStyles(fontStylesMap, fontSecondaryValue),
             monochromeColor: appState.colorVariations.monochromeColor || '#000000',
             monochromeLightColor: appState.colorVariations.monochromeLightColor || '#ffffff',
             protectionZoneMargin: parseInt(document.getElementById('zone-margin').value, 10) || 15
@@ -1770,6 +1870,10 @@ async function handleGeneratePresentation() {
         const result = await IDMLGenerator.generate(config);
 
         if (result.success) {
+            appState.lastFontSubstitutions = result.fontSubstitutions || [];
+            if (appState.lastFontSubstitutions.length) {
+                console.log('[IDML] Styles de police adaptés : ' + formatFontSubstitutions(appState.lastFontSubstitutions));
+            }
             var hasMockups = result.mockupData && result.mockupData.count > 0;
             // Toujours normaliser en forward slashes (évite les problèmes d'échappement Windows)
             var safePath = result.path.replace(/\\/g, '/');
