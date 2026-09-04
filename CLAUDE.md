@@ -16,7 +16,7 @@
 **Logo Déclinaisons** est un plugin **Adobe Illustrator CEP** (panneau HTML/JS + ExtendScript) commercialisé sous licence Lemon Squeezy. L'utilisateur sélectionne un logo dans son document `.ai`, le plugin génère automatiquement toutes les déclinaisons (icône / typo / horizontal / vertical / 3 customs) × (fit-content / carré) × (original / N&B / monochrome / monochrome clair / couleurs custom), les exporte (PNG/JPG/SVG/AI/PDF), et peut produire une **présentation InDesign `.idml`** avec des **mockups Photoshop** rendus via BridgeTalk.
 
 - **Auteur unique** : Pupille Studio (`pupille.agence@gmail.com`)
-- **Repo** : `github.com/pupilleagence-source/logo-declinaisons` (privé) — 32 commits sur `master`, oct. 2025 → juin 2026
+- **Repo** : `github.com/pupilleagence-source/logo-declinaisons` — ⚠️ **PUBLIC** (vérifié le 2026-09-04 : `isPrivate: false`). Tout l'historique est lisible par n'importe qui. 34 commits sur `master`, oct. 2025 → sept. 2026
 - **Releases** : publiées dans un **repo séparé public** `pupilleagence-source/logo-declinaisons-releases`
 - **Backend** : Vercel, projet `logotyps` → `https://logotyps.vercel.app` (12 endpoints, Redis Cloud)
 - **Stack** : zéro framework, zéro build step, zéro test, zéro lint. HTML/CSS/JS vanilla + ExtendScript ES3.
@@ -73,12 +73,14 @@ Donc `AutoUpdater.performUpdate` ne tourne jamais. Les warnings sur la staleness
 
 Rien ne dérive de rien. `iscc installer.iss` en local produit silencieusement un installeur estampillé **1.0.0** contenant du code 1.1.0.
 
-### 2.5 Secrets committés dans git
+### 2.5 Secrets committés dans un dépôt PUBLIC
 
-1. **`backend-trial/test-lemon.js:5`** — une clé API **Lemon Squeezy** (JWT de 1034 caractères, `exp` en 2035), fichier **tracké**.
+⚠️ Le dépôt est public depuis sa création (2025-10-04). Les deux secrets ci-dessous sont donc **publiquement lisibles dans l'historique git**, et les dépôts publics sont scannés en continu par des bots à la recherche d'identifiants. Traiter comme une compromission avérée, pas comme un risque théorique.
+
+1. **`backend-trial/test-lemon.js:5`** — une clé API **Lemon Squeezy** (JWT, `exp` en 2035), **publique depuis le 2025-11-08** (commit `76b3c13`).
    ✅ *2026-09-04 : le fichier lit maintenant `process.env.LEMONSQUEEZY_API_KEY`.*
    ⚠️ **La clé reste dans l'historique git et est toujours valide.** Le correctif ne fait qu'arrêter l'hémorragie. **Action utilisateur obligatoire : révoquer et régénérer la clé dans le dashboard Lemon Squeezy.** Une réécriture d'historique (`git filter-repo` + force-push) est un second chantier, à décider séparément.
-2. **`certificate.p12`** — certificat de signature ZXP **tracké**, malgré `.gitignore:35` (`*.p12` ajouté *après* le commit ; gitignore ne détrack jamais). Mot de passe en clair `logodeclinaisons2024` dans 4 fichiers trackés : `build-zxp.js:13`, `create-zxp.bat:10`, `create-zxp-clean.bat:10`, `create-zxp-simple.bat:11`.
+2. **`certificate.p12`** — certificat de signature ZXP **tracké et public depuis le 2025-11-06** (commit `596de5b`), malgré `.gitignore:35` (`*.p12` ajouté *après* le commit ; gitignore ne détrack jamais). Son mot de passe est en clair dans 4 fichiers également publics : `build-zxp.js:13`, `create-zxp.bat:10`, `create-zxp-clean.bat:10`, `create-zxp-simple.bat:11`. N'importe qui peut donc signer un ZXP au nom de cet éditeur. Sans objet si le canal ZXP est abandonné (§12.7) ; sinon, régénérer le certificat.
 
 **Jamais entrés dans git** (vérifié `git log --all --`) : `backend-trial/.env.local`, `backend-trial/.vercel/`, `apple-cert/`. Ces trois n'existent **que sur cette machine** — `apple-cert/` contient les seules copies des certificats Apple (perte = régénération complète).
 
