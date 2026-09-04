@@ -2872,6 +2872,64 @@ function getInstalledFonts() {
     }
 }
 
+// ============================================================================
+//  Fichier de statut de la présentation : le SEUL canal de retour vers le panneau
+// ============================================================================
+// BridgeTalk est "fire-and-forget" : les callbacks onResult ne se déclenchent jamais
+// depuis Illustrator (le contexte appelant est terminé). Le panneau ne peut donc savoir
+// où en sont Photoshop et InDesign qu'en lisant un fichier que les scripts générés
+// mettent à jour. Il vit HORS de _temp/, que le script InDesign supprime en dernier.
+//
+// Protocole : {"phase":"photoshop"|"indesign"|"done"|"error","ts":<ms>,...}
+//   photoshop : ,"mockupsDone":N,"mockupsTotal":M   (mis à jour à chaque PSD)
+//   indesign  : ,"mockupsOk":N,"mockupsFailed":M    (écrit par PS avant de passer la main)
+//   done      : reprend mockupsOk/Failed             (écrit par InDesign en toute fin)
+//   error     : ,"message":"…"
+// Le panneau n'accepte que les statuts dont ts est postérieur au lancement.
+var PRESENTATION_STATUS_FILE = '.logopack-status.json';
+
+function writePresentationStatus(outputFolder, phase, extraJson) {
+    try {
+        var f = new File(outputFolder + '/' + PRESENTATION_STATUS_FILE);
+        f.encoding = 'UTF-8';
+        f.open('w');
+        f.write('{"phase":"' + phase + '","ts":' + (new Date().getTime()) + (extraJson || '') + '}');
+        f.close();
+    } catch (e) {
+        $.writeln('⚠️ Statut présentation non écrit: ' + e.toString());
+    }
+}
+
+// Même logique, sous forme de TEXTE à injecter en tête des scripts Photoshop / InDesign
+// générés : ils tournent dans un autre moteur et n'ont pas accès aux fonctions d'ici.
+// Signature générée : _lpStatus(phase, extraJson, message)
+function presentationStatusSnippet(outputFolder) {
+    return "function _lpStatus(phase, extra, msg) {"
+        + " try {"
+        + " var f = new File('" + outputFolder + "/" + PRESENTATION_STATUS_FILE + "');"
+        + " f.encoding = 'UTF-8'; f.open('w');"
+        + " var body = '{\"phase\":\"' + phase + '\",\"ts\":' + (new Date().getTime()) + (extra || '');"
+        + " if (msg) { body += ',\"message\":\"' + String(msg).replace(/[\"\\\\]/g, ' ') + '\"'; }"
+        + " f.write(body + '}'); f.close();"
+        + " } catch (e) {}"
+        + " }\n";
+}
+
+// Passage en "done" par le script InDesign, en conservant les compteurs que Photoshop a
+// écrits (extraction par regex : pas de JSON garanti dans l'ExtendScript d'InDesign).
+function presentationDoneSnippet(outputFolder) {
+    return "try {"
+        + " var _sf = new File('" + outputFolder + "/" + PRESENTATION_STATUS_FILE + "');"
+        + " var _extra = '';"
+        + " if (_sf.exists) { _sf.open('r'); var _txt = _sf.read(); _sf.close();"
+        + " var _ok = _txt.match(/\"mockupsOk\":(\\d+)/); var _ko = _txt.match(/\"mockupsFailed\":(\\d+)/);"
+        + " if (_ok) { _extra += ',\"mockupsOk\":' + _ok[1]; } if (_ko) { _extra += ',\"mockupsFailed\":' + _ko[1]; } }"
+        + " _sf.encoding = 'UTF-8'; _sf.open('w');"
+        + " _sf.write('{\"phase\":\"done\",\"ts\":' + (new Date().getTime()) + _extra + '}');"
+        + " _sf.close();"
+        + " } catch (_se) {}\n";
+}
+
 /**
  * Ouvre un fichier IDML dans InDesign via BridgeTalk et exécute
  * le post-traitement des frames PROHIB (resize à 50% + centrage).
@@ -2880,9 +2938,16 @@ function getInstalledFonts() {
  */
 function openInInDesignAndProcess(idmlPath) {
     try {
+        // Dossier de sortie = parent de l'IDML (presentation-logo.idml est écrit à sa racine)
+        var outputFolder = '';
+        try { outputFolder = new File(idmlPath).parent.fsName.replace(/\\/g, '/'); } catch (ofErr) {}
+        if (outputFolder) writePresentationStatus(outputFolder, 'indesign', '');
+
         // Script qui sera exécuté dans InDesign
         var inddScript =
+            presentationStatusSnippet(outputFolder) +
             'var f = new File("' + idmlPath.replace(/\\/g, '/') + '");' +
+            "if (!f.exists) { _lpStatus('error', '', 'IDML introuvable'); }" +
             'if (f.exists) {' +
             '    var doc = app.open(f);' +
             '    var count = 0;' +
@@ -2915,7 +2980,8 @@ function openInInDesignAndProcess(idmlPath) {
             '            count++;' +
             '        }' +
             '    }' +
-            '}';
+            '}' +
+            presentationDoneSnippet(outputFolder);
 
         var bt = new BridgeTalk();
         bt.target = 'indesign';
@@ -2965,6 +3031,10 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
         if (!tempFolderObj.exists) {
             tempFolderObj.create();
         }
+
+        // Premier statut, avant même que Photoshop ne démarre : le panneau voit tout de
+        // suite "0/N" au lieu d'attendre dans le vide le lancement de PS.
+        writePresentationStatus(outputFolder, 'photoshop', ',"mockupsDone":0,"mockupsTotal":' + mockups.length);
 
         // Pré-convertir les logos vectoriels en PNG haute résolution
         // PS gère mal les SVG dans les smart objects
@@ -3059,6 +3129,10 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
 
         psContent += "var mockupsDir = new Folder(outputFolder + '/mockups');" + nl;
         psContent += "if (!mockupsDir.exists) { mockupsDir.create(); }" + nl;
+
+        // Statut pour le panneau (cf. writePresentationStatus / PRESENTATION_STATUS_FILE)
+        psContent += presentationStatusSnippet(outputFolder);
+        psContent += "_lpStatus('photoshop', ',\"mockupsDone\":0,\"mockupsTotal\":' + mockups.length);" + nl;
 
         // Log de démarrage (pas de JSON → pas de problème d'échappement)
         psContent += "try { var lf=new File(outputFolder+'/_temp/mockups-log.txt'); lf.open('w'); lf.write('PS_STARTED: '+mockups.length+' mockups'); lf.close(); } catch(le) {}" + nl;
@@ -3323,6 +3397,7 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
         psContent += "        if (doc) { try { doc.close(SaveOptions.DONOTSAVECHANGES); } catch(e2){} }" + nl;
         psContent += "        results.push({name:mockup.name,success:false,error:e.toString()});" + nl;
         psContent += "    }" + nl;
+        psContent += "    _lpStatus('photoshop', ',\"mockupsDone\":' + (i+1) + ',\"mockupsTotal\":' + mockups.length);" + nl;
         psContent += "}" + nl;
 
         // Log final (texte simple)
@@ -3334,12 +3409,15 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
 
         // À la fin du script PS : envoyer BridgeTalk à InDesign directement depuis PS
         // (les callbacks btPS.onResult dans Illustrator ne fonctionnent pas car le contexte est terminé)
+        // Bilan pour le panneau, puis passage de main à InDesign
+        psContent += "var _okCount=0,_koCount=0; for (var _r=0;_r<results.length;_r++) { if (results[_r].success) _okCount++; else _koCount++; }" + nl;
+        psContent += "_lpStatus('indesign', ',\"mockupsOk\":' + _okCount + ',\"mockupsFailed\":' + _koCount);" + nl;
         psContent += "try {" + nl;
         psContent += "    var btID = new BridgeTalk();" + nl;
         psContent += "    btID.target = 'indesign';" + nl;
         psContent += "    btID.body = '$.evalFile(new File(\"" + outputFolder + "/_temp/mockups-id-script.jsx\"))';" + nl;
         psContent += "    btID.send();" + nl;
-        psContent += "} catch(btErr) {}" + nl;
+        psContent += "} catch(btErr) { _lpStatus('error', '', 'Impossible de contacter InDesign : ' + btErr); }" + nl;
 
         // Fermer PS si il n'était pas ouvert avant (variable injectée par Illustrator)
         psContent += "if (typeof _shouldClosePS !== 'undefined' && _shouldClosePS) {" + nl;
@@ -3378,9 +3456,10 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
         var idScriptFile = new File(outputFolder + '/_temp/mockups-id-script.jsx');
         idScriptFile.open('w');
         idScriptFile.write('(function() {\n');
+        idScriptFile.write(presentationStatusSnippet(outputFolder));
         idScriptFile.write('var f = new File("' + safeIdmlPath + '");\n');
-        idScriptFile.write('if (!f.exists) return;\n');
-        idScriptFile.write('var doc = app.open(f);\n');
+        idScriptFile.write("if (!f.exists) { _lpStatus('error', '', 'IDML introuvable'); return; }\n");
+        idScriptFile.write("var doc; try { doc = app.open(f); } catch (openErr) { _lpStatus('error', '', 'InDesign : ouverture impossible : ' + openErr); return; }\n");
         idScriptFile.write('var count = 0;\n');
         idScriptFile.write('for (var p = 0; p < doc.pages.length; p++) {\n');
         idScriptFile.write('    var items = doc.pages[p].allPageItems;\n');
@@ -3424,6 +3503,8 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
         idScriptFile.write('        tmpDir.remove();\n');
         idScriptFile.write('    }\n');
         idScriptFile.write('} catch(cleanErr) {}\n');
+        // Tout dernier acte : signaler la fin au panneau (après la suppression de _temp/).
+        idScriptFile.write(presentationDoneSnippet(outputFolder));
         idScriptFile.write('})();\n');
         idScriptFile.close();
 
@@ -3457,6 +3538,10 @@ function rerunMockupsFromDisk(outputFolder, idmlPath) {
     try {
         outputFolder = outputFolder.replace(/\\/g, '/');
         idmlPath = idmlPath.replace(/\\/g, '/');
+
+        // Le script PS relu depuis le disque écrira sa propre progression s'il a été
+        // généré avec le fichier de statut ; sinon le panneau attendra simplement "done".
+        writePresentationStatus(outputFolder, 'photoshop', '');
 
         var psScriptFile = new File(outputFolder + '/_temp/mockups-ps-script.jsx');
         if (!psScriptFile.exists) {
@@ -3498,9 +3583,10 @@ function rerunMockupsFromDisk(outputFolder, idmlPath) {
         var idScriptFile = new File(outputFolder + '/_temp/mockups-id-script.jsx');
         idScriptFile.open('w');
         idScriptFile.write('(function() {\n');
+        idScriptFile.write(presentationStatusSnippet(outputFolder));
         idScriptFile.write('var f = new File("' + idmlPath + '");\n');
-        idScriptFile.write('if (!f.exists) return;\n');
-        idScriptFile.write('var doc = app.open(f);\n');
+        idScriptFile.write("if (!f.exists) { _lpStatus('error', '', 'IDML introuvable'); return; }\n");
+        idScriptFile.write("var doc; try { doc = app.open(f); } catch (openErr) { _lpStatus('error', '', 'InDesign : ouverture impossible : ' + openErr); return; }\n");
         idScriptFile.write('for (var p = 0; p < doc.pages.length; p++) {\n');
         idScriptFile.write('    var items = doc.pages[p].allPageItems;\n');
         idScriptFile.write('    for (var i = 0; i < items.length; i++) {\n');
@@ -3536,6 +3622,8 @@ function rerunMockupsFromDisk(outputFolder, idmlPath) {
         idScriptFile.write('        tmpDir.remove();\n');
         idScriptFile.write('    }\n');
         idScriptFile.write('} catch(cleanErr) {}\n');
+        // Tout dernier acte : signaler la fin au panneau (après la suppression de _temp/).
+        idScriptFile.write(presentationDoneSnippet(outputFolder));
         idScriptFile.write('})();\n');
         idScriptFile.close();
 

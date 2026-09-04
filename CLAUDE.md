@@ -278,7 +278,20 @@ Tests : `tests/font-style.test.js` (35 assertions sur le résolveur) et `tests/f
 4. Photoshop traite les 9 PSD puis, **à la fin de son propre script**, envoie lui-même un BridgeTalk à InDesign (`hostscript.jsx:3329-3198`). Le commentaire `:3191-3192` explique pourquoi : les callbacks `onResult` de BridgeTalk ne se déclenchent jamais depuis Illustrator (le contexte appelant est déjà terminé).
 5. InDesign ouvre l'IDML, `fit()` les cadres `MOCKUP_*`, redimensionne les images `PROHIB_*` à 75 %, puis **supprime tout `_temp/`**.
 
-**BridgeTalk est fire-and-forget** : `processPhotoshopThenInDesign` renvoie `{"success":true,"status":"processing"}` dès l'envoi. Le panneau n'apprend **jamais** si les mockups ont réussi.
+**BridgeTalk est fire-and-forget** : `processPhotoshopThenInDesign` renvoie `{"success":true,"status":"processing"}` dès l'envoi. Jusqu'au 2026-09-04 le panneau n'apprenait **jamais** si les mockups avaient réussi, et affichait « Exportation terminée » avant même que Photoshop n'ouvre le premier PSD.
+
+✅ **Corrigé : un fichier de statut fait le retour.** `<outputFolder>/.logopack-status.json` — **hors de `_temp/`**, que le script InDesign supprime en dernier. Protocole :
+
+| Phase | Écrit par | Champs |
+|---|---|---|
+| `photoshop` | Illustrator (`writePresentationStatus`) au lancement, puis le script PS généré **après chaque PSD** | `mockupsDone`, `mockupsTotal` |
+| `indesign` | le script PS, juste avant son BridgeTalk vers InDesign | `mockupsOk`, `mockupsFailed` |
+| `done` | le script InDesign, **en tout dernier** (après la suppression de `_temp/`), en conservant les compteurs par regex | `mockupsOk`, `mockupsFailed` |
+| `error` | n'importe lequel (IDML introuvable, ouverture InDesign impossible, BridgeTalk vers InDesign en échec) | `message` |
+
+Chaque statut porte un `ts` (ms) ; `waitForPresentationCompletion()` (`js/main.js`) n'accepte que les statuts postérieurs au lancement, lit le fichier chaque seconde, affiche la progression (« Photoshop : mockup 3/9… »), et résout sur `done`, `error` ou **timeout** (15 min avec mockups, 3 min sans). `handleGeneratePresentation()` **attend** cette résolution ; `handleAction()` ne compose donc « Exportation terminée » et la popup qu'après la fin réelle, avec le bilan (« Présentation InDesign prête · 9/9 mockups », ou un triangle d'avertissement si échec / timeout). Le fichier est supprimé une fois lu. Le bouton « Re-tester mockups » suit le même protocole.
+
+Les snippets ExtendScript injectés dans les scripts générés (`presentationStatusSnippet`, `presentationDoneSnippet` dans `hostscript.jsx`) évitent JSON : chaîne construite à la main, compteurs relus par regex — l'ExtendScript d'InDesign n'a pas de JSON garanti. Couvert par `tests/presentation-status.test.js`, qui écrit les statuts **au format exact des scripts générés**.
 
 ---
 
@@ -514,7 +527,8 @@ Toutes les autres sont toujours présentes dans le code.
 - **Repli horizontal ↔ vertical → typo** pour les cadres `LOGO_` de la charte (§7.3)
 - **Popup d'avertissement** quand aucun export n'est configuré (§5.2 bis)
 - **Résolution des styles de police** dans la charte (§5.3 ter) — plus de « MaPolice Medium » manquante
-- **Premiers tests du projet** : `npm test` — 4 fichiers, ~80 assertions : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
+- **Fin réelle de Photoshop / InDesign attendue** avant d'annoncer « Exportation terminée » (§5.4) — fichier de statut `.logopack-status.json`, progression affichée, timeout
+- **Premiers tests du projet** : `npm test` — 5 fichiers, ~100 assertions : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
 
 ### À faire, par ordre de priorité
 

@@ -65,6 +65,9 @@ resolvedOutputFolder: '',
 // Substitutions de style de police faites par le generateur IDML lors de la derniere
 // presentation (ex. Medium -> Regular quand la police n'a pas de Medium).
 lastFontSubstitutions: [],
+// Resultat final de la derniere presentation (phase done / error / timeout + compteurs
+// de mockups), tel que remonte par le fichier de statut ecrit par Photoshop et InDesign.
+lastPresentationResult: null,
 documentSettings: {
   colorMode: 'RGB',  // RGB ou CMYK
   ppi: 72            // Résolution en PPI
@@ -1650,6 +1653,11 @@ async function handleAction() {
             isExport ? 300000 : 120000
         );
 
+        // Illustrator a fini : retirer l'overlay plein ecran maintenant, pour que la
+        // progression Photoshop / InDesign reste lisible dans la barre de statut.
+        // Le bouton d'action, lui, reste desactive jusqu'au finally.
+        document.body.classList.remove('exporting');
+
         if (result && result.startsWith('SUCCESS')) {
             const count = result.split(':')[1];
 
@@ -1676,15 +1684,25 @@ async function handleAction() {
                 }
                 // Nommer le dossier reellement utilise : avec le repli "-2" ou apres un
                 // remplacement, l'utilisateur doit savoir ou son export a atterri.
-                if (wantsPresentation && appState.lastFontSubstitutions && appState.lastFontSubstitutions.length) {
-                    // Dire ce qui a ete adapte : sinon l'utilisateur decouvre une charte un peu
-                    // differente en l'ouvrant, sans savoir pourquoi.
-                    showStatus(`Exportation terminée ! ${count} plans de travail exportés dans ${targetFolder}<br>` +
-                               `<strong>Styles de police adaptés</strong> — ` + formatFontSubstitutions(appState.lastFontSubstitutions), 'warning');
-                } else {
-                    showStatus(`Exportation terminée ! ${count} plans de travail exportés dans ${targetFolder}`, 'success');
+                // Bilan final. On n'arrive ici qu'apres la fin reelle de Photoshop et
+                // InDesign (handleGeneratePresentation attend le fichier de statut).
+                var finalLines = [`${count} plans de travail exportés dans ${targetFolder}`];
+                var finalLevel = 'success';
+                var popupSubtitle = '';
+                if (wantsPresentation) {
+                    var pres = describePresentationOutcome(appState.lastPresentationResult);
+                    finalLines.push(pres.text);
+                    popupSubtitle = pres.text;
+                    if (pres.level !== 'success') finalLevel = 'warning';
+                    if (appState.lastFontSubstitutions && appState.lastFontSubstitutions.length) {
+                        // Dire ce qui a ete adapte : sinon l'utilisateur decouvre une charte un
+                        // peu differente en l'ouvrant, sans savoir pourquoi.
+                        finalLines.push('<strong>Styles de police adaptés</strong> — ' + formatFontSubstitutions(appState.lastFontSubstitutions));
+                        finalLevel = 'warning';
+                    }
                 }
-                showExportDonePopup();
+                showStatus('Exportation terminée ! ' + finalLines.join('<br>'), finalLevel);
+                showExportDonePopup(popupSubtitle, finalLevel);
             } else if (wantsPresentation) {
                 // La presentation lit les fichiers deja exportes sur disque : sans dossier
                 // de sortie ni format elle ne peut rien produire. Le dire explicitement
@@ -1783,6 +1801,129 @@ function formatFontSubstitutions(list) {
     return parts.join(' · ');
 }
 
+// ============================================================================
+//  Suivi de la presentation : Photoshop et InDesign ont-ils VRAIMENT fini ?
+// ============================================================================
+// BridgeTalk est fire-and-forget : le retour de processPhotoshopThenInDesign() signifie
+// "message envoye", jamais "presentation prete". Les scripts generes ecrivent donc un
+// fichier de statut a la racine du dossier de sortie (cf. PRESENTATION_STATUS_FILE dans
+// jsx/hostscript.jsx), que l'on lit en boucle ici. Sans ca, "Exportation terminee"
+// s'affichait alors que Photoshop n'avait pas encore ouvert le premier PSD.
+
+const PRESENTATION_STATUS_FILE = '.logopack-status.json';
+const PRESENTATION_TIMEOUT_WITH_MOCKUPS = 15 * 60 * 1000; // 9 PSD de 8 a 65 Mo : ca peut etre long
+const PRESENTATION_TIMEOUT_NO_MOCKUPS   =  3 * 60 * 1000;
+const PRESENTATION_POLL_INTERVAL        = 1000;
+
+// evalScript dont le retour est un JSON {success, ...}. Ne rejette jamais.
+function evalScriptJson(script) {
+    return new Promise(function (resolve) {
+        try {
+            csInterface.evalScript(script, function (res) {
+                try {
+                    resolve(JSON.parse(res));
+                } catch (e) {
+                    resolve({ success: false, error: 'Réponse ExtendScript invalide : ' + res });
+                }
+            });
+        } catch (e) {
+            resolve({ success: false, error: e.message || String(e) });
+        }
+    });
+}
+
+// null si absent ou en cours d'ecriture (JSON tronque) : on reessaiera au tick suivant.
+function readPresentationStatus(outputFolder) {
+    try {
+        const fs = require('fs');
+        const nodePath = require('path');
+        const p = nodePath.join(outputFolder, PRESENTATION_STATUS_FILE);
+        if (!fs.existsSync(p)) return null;
+        return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearPresentationStatus(outputFolder) {
+    try {
+        const fs = require('fs');
+        const nodePath = require('path');
+        const p = nodePath.join(outputFolder, PRESENTATION_STATUS_FILE);
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch (e) {}
+}
+
+// Resout { phase: 'done' | 'error' | 'timeout', ...champs du statut }. Ne rejette jamais.
+// Un statut dont ts est anterieur au lancement est un residu d'un run precedent : ignore.
+function waitForPresentationCompletion(outputFolder, opts) {
+    opts = opts || {};
+    const startedAt = opts.startedAt || Date.now();
+    const timeoutMs = opts.timeoutMs || PRESENTATION_TIMEOUT_WITH_MOCKUPS;
+    const interval  = opts.intervalMs || PRESENTATION_POLL_INTERVAL;
+    return new Promise(function (resolve) {
+        let lastKey = '';
+        function tick() {
+            const st = readPresentationStatus(outputFolder);
+            if (st && typeof st.ts === 'number' && st.ts >= startedAt - 5000) {
+                const key = JSON.stringify(st);
+                if (key !== lastKey) {
+                    lastKey = key;
+                    if (opts.onProgress) { try { opts.onProgress(st); } catch (e) {} }
+                }
+                if (st.phase === 'done' || st.phase === 'error') {
+                    resolve(st);
+                    return;
+                }
+            }
+            if (Date.now() - startedAt > timeoutMs) {
+                resolve({ phase: 'timeout', last: st || null });
+                return;
+            }
+            setTimeout(tick, interval);
+        }
+        tick();
+    });
+}
+
+// Ligne de progression pendant l'attente.
+function describePresentationPhase(st) {
+    if (!st) return '';
+    if (st.phase === 'photoshop') {
+        if (typeof st.mockupsTotal === 'number' && st.mockupsTotal > 0) {
+            return 'Photoshop : mockup ' + (st.mockupsDone || 0) + '/' + st.mockupsTotal + '…';
+        }
+        return 'Photoshop : traitement des mockups…';
+    }
+    if (st.phase === 'indesign') return 'InDesign : mise en page de la présentation…';
+    if (st.phase === 'done') return 'Présentation InDesign prête.';
+    if (st.phase === 'error') return 'Erreur présentation : ' + (st.message || 'inconnue');
+    if (st.phase === 'timeout') return 'Photoshop / InDesign n\'ont pas signalé la fin dans le délai imparti.';
+    return '';
+}
+
+// Bilan final, pour le statut et la popup. { text, level: 'success' | 'warning' }
+function describePresentationOutcome(pr) {
+    if (!pr) return { text: 'Présentation InDesign : aucun retour.', level: 'warning' };
+    if (pr.phase === 'done') {
+        let t = 'Présentation InDesign prête';
+        if (typeof pr.mockupsOk === 'number') {
+            const failed = pr.mockupsFailed || 0;
+            t += ' · ' + pr.mockupsOk + '/' + (pr.mockupsOk + failed) + ' mockups';
+            if (failed) return { text: t + ' (' + failed + ' en échec)', level: 'warning' };
+        }
+        return { text: t + '.', level: 'success' };
+    }
+    if (pr.phase === 'timeout') {
+        return {
+            text: 'Photoshop / InDesign n\'ont pas signalé la fin dans le délai imparti. '
+                + 'Les fichiers Illustrator sont bien exportés ; vérifiez les deux applications.',
+            level: 'warning'
+        };
+    }
+    return { text: 'Présentation InDesign : ' + (pr.message || 'erreur inconnue'), level: 'warning' };
+}
+
 async function handleGeneratePresentation() {
     try {
         showStatus('Génération de la présentation InDesign...', 'info');
@@ -1875,6 +2016,13 @@ async function handleGeneratePresentation() {
                 console.log('[IDML] Styles de police adaptés : ' + formatFontSubstitutions(appState.lastFontSubstitutions));
             }
             var hasMockups = result.mockupData && result.mockupData.count > 0;
+
+            // Signal de fin : purger un statut residuel d'un run precedent, puis dater le
+            // lancement pour n'accepter que les statuts ecrits apres (cf. helpers ci-dessus).
+            clearPresentationStatus(config.outputFolder);
+            var startedAt = Date.now();
+            var dispatch = null;
+            var dispatchHasMockups = false;
             // Toujours normaliser en forward slashes (évite les problèmes d'échappement Windows)
             var safePath = result.path.replace(/\\/g, '/');
 
@@ -1971,52 +2119,42 @@ async function handleGeneratePresentation() {
                     // Seules les apostrophes doivent être échappées pour le wrapper de l'evalScript
                     var mockupDataStr = JSON.stringify(mockupData).replace(/'/g, "\\'");
 
-                    csInterface.evalScript("processPhotoshopThenInDesign('" + safePath + "', '" + mockupDataStr + "')", function (res) {
-                        try {
-                            var r = JSON.parse(res);
-                            if (r.success) {
-                                showStatus('Présentation avec mockups ouverte dans InDesign : ' + result.filename, 'success');
-                            } else {
-                                showStatus('Présentation générée : ' + result.filename + ' (erreur mockups : ' + r.error + ')', 'success');
-                            }
-                        } catch (e) {
-                            showStatus('Présentation générée : ' + result.filename, 'success');
-                        }
-                    });
+                    dispatch = await evalScriptJson("processPhotoshopThenInDesign('" + safePath + "', '" + mockupDataStr + "')");
+                    dispatchHasMockups = true;
                 } else {
                     // No horizontal logo found → skip mockups, open InDesign directly
                     writeDebug('→ NO logoPath, skipping Photoshop, opening InDesign directly');
                     showStatus('Présentation InDesign générée, ouverture dans InDesign...', 'info');
-                    csInterface.evalScript('openInInDesignAndProcess("' + safePath + '")', function (res) {
-                        try {
-                            var r = JSON.parse(res);
-                            if (r.success) {
-                                showStatus('Présentation ouverte dans InDesign : ' + result.filename, 'success');
-                            } else {
-                                showStatus('Présentation générée : ' + result.filename, 'success');
-                            }
-                        } catch (e) {
-                            showStatus('Présentation générée : ' + result.filename, 'success');
-                        }
-                    });
+                    dispatch = await evalScriptJson('openInInDesignAndProcess("' + safePath + '")');
                 }
             } else {
                 // No mockups → direct InDesign opening (existing flow)
                 writeDebug('→ hasMockups=false, opening InDesign directly (no mockup processing)');
                 showStatus('Présentation InDesign générée, ouverture dans InDesign...', 'info');
-                csInterface.evalScript('openInInDesignAndProcess("' + safePath + '")', function (res) {
-                    try {
-                        var r = JSON.parse(res);
-                        if (r.success) {
-                            showStatus('Présentation ouverte dans InDesign : ' + result.filename, 'success');
-                        } else {
-                            showStatus('Présentation générée : ' + result.filename + ' (ouverture InDesign échouée : ' + r.error + ')', 'success');
-                        }
-                    } catch (e) {
-                        showStatus('Présentation générée : ' + result.filename, 'success');
-                    }
-                });
+                dispatch = await evalScriptJson('openInInDesignAndProcess("' + safePath + '")');
             }
+
+            // ---- Attendre la fin REELLE de Photoshop puis InDesign -------------------
+            // dispatch.success = "message BridgeTalk envoye", rien de plus. Le seul retour
+            // possible est le fichier de statut que les scripts generes mettent a jour.
+            if (!dispatch || !dispatch.success) {
+                var dispatchErr = (dispatch && dispatch.error) || 'réponse invalide';
+                appState.lastPresentationResult = { phase: 'error', message: 'envoi vers Photoshop/InDesign échoué : ' + dispatchErr };
+                showStatus('Présentation générée : ' + result.filename + ' (' + appState.lastPresentationResult.message + ')', 'warning');
+                return;
+            }
+
+            showStatus(dispatchHasMockups ? 'Photoshop : préparation des mockups…'
+                                          : 'InDesign : ouverture de la présentation…', 'info');
+            var finalStatus = await waitForPresentationCompletion(config.outputFolder, {
+                startedAt: startedAt,
+                timeoutMs: dispatchHasMockups ? PRESENTATION_TIMEOUT_WITH_MOCKUPS : PRESENTATION_TIMEOUT_NO_MOCKUPS,
+                onProgress: function (st) { showStatus(describePresentationPhase(st), 'info'); }
+            });
+            clearPresentationStatus(config.outputFolder);
+            appState.lastPresentationResult = finalStatus;
+            var outcome = describePresentationOutcome(finalStatus);
+            showStatus(outcome.text, outcome.level);
         } else {
             showStatus('Erreur présentation : ' + result.error, 'error');
         }
@@ -2026,26 +2164,37 @@ async function handleGeneratePresentation() {
     }
 }
 
-function handleRerunMockups() {
+async function handleRerunMockups() {
     var outputFolder = window._lastOutputFolder;
     var idmlPath = window._lastIdmlPath;
     if (!outputFolder || !idmlPath) {
         showStatus('Aucune génération précédente trouvée. Générez d\'abord la présentation.', 'error');
         return;
     }
-    showStatus('Re-lancement mockups PS → InDesign...', 'info');
-    csInterface.evalScript("rerunMockupsFromDisk('" + outputFolder + "', '" + idmlPath + "')", function (res) {
-        try {
-            var r = JSON.parse(res);
-            if (r.success) {
-                showStatus('Mockups relancés. Photoshop traite les PSD puis InDesign ouvrira.', 'success');
-            } else {
-                showStatus('Erreur re-run mockups : ' + r.error, 'error');
-            }
-        } catch (e) {
-            showStatus('Re-run mockups envoyé.', 'success');
+    var btn = document.getElementById('btn-rerun-mockups');
+    if (btn) btn.disabled = true;
+    try {
+        showStatus('Re-lancement mockups PS → InDesign...', 'info');
+        clearPresentationStatus(outputFolder);
+        var startedAt = Date.now();
+        var r = await evalScriptJson("rerunMockupsFromDisk('" + outputFolder + "', '" + idmlPath + "')");
+        if (!r.success) {
+            showStatus('Erreur re-run mockups : ' + r.error, 'error');
+            return;
         }
-    });
+        // Meme attente que l'export : ne pas annoncer "termine" avant InDesign.
+        var finalStatus = await waitForPresentationCompletion(outputFolder, {
+            startedAt: startedAt,
+            timeoutMs: PRESENTATION_TIMEOUT_WITH_MOCKUPS,
+            onProgress: function (st) { showStatus(describePresentationPhase(st), 'info'); }
+        });
+        clearPresentationStatus(outputFolder);
+        appState.lastPresentationResult = finalStatus;
+        var outcome = describePresentationOutcome(finalStatus);
+        showStatus(outcome.text, outcome.level);
+    } finally {
+        if (btn) btn.disabled = false;
+    }
 }
 
 function resetSelections() {
@@ -2090,13 +2239,24 @@ function getTypeName(type) {
   return names[type] || type;
 }
 
-function showExportDonePopup() {
+// subtitle : ligne optionnelle sous le titre (bilan de la presentation InDesign).
+// level    : 'success' (coche verte) ou 'warning' (triangle) selon ce bilan.
+function showExportDonePopup(subtitle, level) {
     // Overlay popup simple
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
     var popup = document.createElement('div');
-    popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 32px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:280px;';
-    popup.innerHTML = '<div style="font-size:32px;margin-bottom:12px;">&#10003;</div><p style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--text-color);">Exportation terminée !</p><button style="padding:8px 24px;background:var(--primary-color);border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">OK</button>';
+    popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 32px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:300px;';
+    var isWarning = level === 'warning';
+    var icon = isWarning ? '&#9888;' : '&#10003;';
+    var iconColor = isWarning ? 'var(--warning-color)' : 'var(--success-color)';
+    var sub = subtitle
+        ? '<p style="font-size:12px;color:var(--text-muted);line-height:1.5;margin:-8px 0 16px 0;">' + subtitle + '</p>'
+        : '';
+    popup.innerHTML = '<div style="font-size:32px;margin-bottom:12px;color:' + iconColor + ';">' + icon + '</div>'
+        + '<p style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--text-color);">Exportation terminée !</p>'
+        + sub
+        + '<button style="padding:8px 24px;background:var(--primary-color);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">OK</button>';
     popup.querySelector('button').addEventListener('click', function() { overlay.remove(); });
     overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
     overlay.appendChild(popup);
