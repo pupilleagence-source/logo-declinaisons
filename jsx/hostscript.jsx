@@ -616,6 +616,15 @@ function getSelectionInfo() {
 
 // Réinitialiser toutes les sélections stockées
 function clearStoredSelections() {
+    // Supprimer aussi les duplicatas masqués créés par storeSelection() : sans ça ils
+    // s'accumulaient dans le document de l'utilisateur à chaque Reset. La version par
+    // slot, clearStoredSelection(type), le faisait déjà ; celle-ci se contentait de
+    // remettre les slots à null.
+    for (var k in storedSelections) {
+        if (storedSelections[k]) {
+            try { storedSelections[k].remove(); } catch (e) {}
+        }
+    }
     storedSelections = { icon: null, text: null, horizontal: null, vertical: null, custom1: null, custom2: null, custom3: null };
     storedSelectionsDoc = null;
     return "OK";

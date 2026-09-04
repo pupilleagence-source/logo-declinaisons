@@ -697,18 +697,23 @@ function setupEventListeners() {
     // Bouton reset
     const resetBtn = document.getElementById('reset-btn');
     if (resetBtn) {
-        resetBtn.addEventListener('click', function() {
-            resetSelections();
-            // Réinitialiser aussi les inputs de présentation
-            var brandNameInput = document.getElementById('brand-name');
-            if (brandNameInput) brandNameInput.value = '';
-            var fontPrimary = document.getElementById('brand-font-primary');
-            if (fontPrimary) fontPrimary.value = '';
-            var fontSecondary = document.getElementById('brand-font-secondary');
-            if (fontSecondary) fontSecondary.value = '';
-            // Réinitialiser les sélections ExtendScript
-            evalExtendScript('clearStoredSelections').catch(function() {});
-            showStatus('Paramètres réinitialisés.', 'success');
+        resetBtn.addEventListener('click', async function() {
+            // Remise à zéro COMPLÈTE, par construction : on recharge le panneau, ce qui
+            // reconstruit le DOM depuis index.html (toutes les valeurs par défaut) et
+            // rejoue init(). L'ancienne remise à zéro champ par champ (resetSelections)
+            // oubliait toujours quelque chose : croix de sélection, lignes custom,
+            // couleurs, tailles, dossier de sortie, présentation, onglet actif...
+            // Ce qui survit volontairement, comme à un redémarrage du logiciel : la
+            // langue, la licence / le trial et « Ne plus afficher » (localStorage).
+            resetBtn.disabled = true;
+            try {
+                // Le moteur ExtendScript, lui, persiste à travers un rechargement du
+                // panneau : vider les slots ET supprimer les duplicatas masqués.
+                await evalExtendScript('clearStoredSelections');
+            } catch (e) {
+                console.warn('clearStoredSelections:', e);
+            }
+            window.location.reload();
         });
     }
 
@@ -2150,28 +2155,6 @@ async function handleGeneratePresentation() {
         console.error('Presentation generation error:', err);
         showStatus('Erreur lors de la génération de la présentation : ' + (err.message || err), 'error');
     }
-}
-
-function resetSelections() {
-  appState.selections = {
-    horizontal: null,
-    vertical: null,
-    icon: null,
-    text: null,
-    custom1: null,
-    custom2: null,
-    custom3: null
-  };
-  ['horizontal','vertical','icon','text','custom1','custom2','custom3'].forEach(type => {
-    const statusEl = document.getElementById(`status-${type}`);
-    if (statusEl) {
-      statusEl.textContent = 'Pas sélect';
-      statusEl.classList.remove('selected');
-    }
-    const btnEl = document.querySelector(`.btn-select[data-type="${type}"]`);
-    if (btnEl) btnEl.classList.remove('selected');
-  });
-  updateUI();
 }
 
 function getTypeName(type) {

@@ -444,6 +444,7 @@ Illustrator 2024 = CSXS 13, 2026+ = CSXS 14. **Sur Windows, Illustrator 2024+ n'
 - **Tout le wiring statique est au même endroit** : `setupEventListeners()` (`main.js:325`, ~420 lignes). Commencer là pour trouver ce que fait un contrôle.
 - **Helpers de validation** : renvoient `{valid: boolean, error: '<français>'}`.
 - **Show/hide** : toujours `element.style.display = 'block'|'none'` depuis JS, amorcé par un `style="display: none;"` inline. **Aucune classe `.hidden`.**
+- **Reset = `window.location.reload()`** après avoir vidé le côté ExtendScript. Ne pas réintroduire une remise à zéro champ par champ : elle sera incomplète dès le prochain contrôle ajouté. Tout nouvel état doit avoir sa valeur par défaut **dans `index.html`** (ou dans `appState` à l'init), c'est ce que le reload rejoue.
 - **Les 7 types de sélection** `['horizontal','vertical','icon','text','custom1','custom2','custom3']` sont **dupliqués littéralement dans au moins 9 endroits** : `main.js:1418, 1508, 1661` · `hostscript.jsx:713, 1455, 1569, 1628, 2852` · `idml-generator.js:421`. Ajouter un type = éditer les 9.
 - **Conventions d'ID DOM** : `status-<type>`, `label-<type>`, `variation-<type>`, `.btn-select[data-type]`, `.btn-clear-selection[data-type]`, `tab-<name>` + `.tab-button[data-tab=<name>]`.
 - **Backend** : chaque endpoint est `export default async function handler(req, res)` en ESM. Préambule identique partout : 4 `res.setHeader` CORS → court-circuit `OPTIONS` → garde de méthode (405) → `try/catch` (500). Le helper Redis `getRedisClient` est **copié-collé à l'identique dans 8 fichiers**.
@@ -530,6 +531,7 @@ Toutes les autres sont toujours présentes dans le code.
 - **Fin réelle de Photoshop / InDesign attendue** avant d'annoncer « Exportation terminée » (§5.4) — fichier de statut `.logopack-status.json`, progression affichée, timeout
 - **Bouton de debug « Re-tester mockups » supprimé** (§10.17)
 - **Polyfill `JSON` dans `hostscript.jsx`** (§4) — tous les retours JSON vers le panneau étaient cassés depuis toujours, masqués par un faux succès
+- **Bouton Reset = rechargement du panneau** après `clearStoredSelections()`. L'ancienne remise à zéro champ par champ (`resetSelections`, supprimée) oubliait croix ✕, lignes custom, couleurs, tailles, dossier de sortie, présentation, onglet actif. `clearStoredSelections()` supprime maintenant aussi les duplicatas masqués (ils s'accumulaient dans le document à chaque Reset). Survivent au Reset, comme à un redémarrage : langue, licence/trial, « Ne plus afficher ».
 - **Premiers tests du projet** : `npm test` — 6 fichiers, ~130 assertions : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
 
 ### À faire, par ordre de priorité
