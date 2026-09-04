@@ -176,9 +176,23 @@ Tout passe par **`evalExtendScript(fnName, params, timeout)`** — `js/main.js:1
 ## 5. Flux principaux
 
 ### 5.1 Sélection
-`.btn-select[data-type]` → `handleSelection` (`main.js:1054`) → `hasOpenDocument()` → `getSelectionInfo()` → `storeSelection(type)` (`hostscript.jsx:468`).
+`.btn-select[data-type]` → `handleSelection` (`main.js:1054`) → `hasOpenDocument()` → `getSelectionInfo()` → `storeSelection(type)` (`hostscript.jsx:549`).
 
 `storeSelection` **duplique** la sélection, la **masque**, et garde la **référence PageItem vivante** dans le global `storedSelections` (`hostscript.jsx:6`, 7 slots). Cet état persiste entre les `evalScript` — c'est ce qui fait marcher le panneau, et c'est la source de la fragilité : si l'utilisateur ferme/change de document ou fait undo, les références deviennent obsolètes et `generateArtboards` échoue en `:1485`.
+
+### 5.1 bis Le document source — le piège n°1 de ce projet
+
+`generateArtboards()` laisse **volontairement le document généré actif** en sortie (« décision 1.A », `hostscript.jsx:~2114`). Or `storedSelections` contient des `PageItem` **vivants qui appartiennent au document d'origine**. Prendre `app.activeDocument` comme document source était donc juste au premier appel et faux à tous les suivants : `app.copy()` copiait la sélection (vide) du document généré, `app.paste()` ne collait rien, et les sept transferts échouaient avec *« Impossible de transférer certains éléments »*, en laissant un document vide avec un unique plan de travail 50×50.
+
+✅ **Corrigé le 2026-09-04.** Un global `storedSelectionsDoc` (`hostscript.jsx:26`) mémorise le document propriétaire au moment du `storeSelection()`, et `resolveSourceDocument()` (`:54`) l'utilise en priorité, avec repli sur le document actif si rien n'est encore stocké. Trois garde-fous accompagnent le correctif :
+
+- si le document propriétaire a été **fermé**, message clair demandant de le rouvrir et de re-sélectionner, au lieu d'un échec de transfert incompréhensible ;
+- si l'utilisateur **sélectionne depuis un autre document** alors que des slots sont déjà remplis ailleurs, `storeSelection()` refuse et invite à Réinitialiser — sans ça on se retrouvait avec des slots mélangés entre deux documents, ce qui n'échouait qu'au transfert ;
+- si **aucun** élément n'a pu être transféré, le document d'export vide est **refermé** au lieu d'être « conservé pour vérification » (il n'y avait rien à vérifier).
+
+`generateVerticalVersion()` et `generateHorizontalVersion()` avaient exactement le même défaut et ont été corrigées de la même façon.
+
+**Règle à retenir : dans `jsx/`, ne jamais supposer que `app.activeDocument` est le document de l'utilisateur.** Passer par `resolveSourceDocument()`.
 
 ### 5.2 Le bouton d'action unique
 
@@ -191,7 +205,7 @@ Il n'y a **qu'un seul bouton d'action** depuis le 2026-09-04 : `#export-btn`, c�
 
 Le bouton est actif dès qu'il y a de quoi générer (≥1 sélection, ≥1 type, ≥1 couleur) : **la sortie n'est pas une condition d'activation, seulement un choix de mode.** `getExportReadiness()` (`main.js:1210`) est l'arbitre ; en mode génération le `title` du bouton liste ce qui manque pour passer en mode export. Une taille peut venir d'un préréglage, de la taille custom, ou du favicon si l'icône est sélectionnée.
 
-**Pourquoi la fusion.** Il y avait avant deux boutons, et l'enchaînement « Générer » puis « Exporter » était cassé **par construction** : `generateArtboards()` prend `app.activeDocument` comme document source (`jsx/hostscript.jsx:1413`) et laisse volontairement le document généré actif à la fin (« décision 1.A », `~:1990`). Le second clic relançait donc la génération en prenant le **document généré** comme source, alors que `storedSelections` référence des PageItems du document d'origine. Ne pas réintroduire deux boutons sans traiter ce point d'abord.
+**Pourquoi la fusion.** Il y avait avant deux boutons, et l'enchaînement « Générer » puis « Exporter » était cassé. Voir §5.1 bis : la cause racine est corrigée depuis, mais ne réintroduisez pas deux boutons sans relire ce point.
 
 Si la présentation InDesign est cochée mais qu'on est en mode génération, `handleAction` le dit explicitement dans le statut au lieu d'échouer en silence — la présentation lit les fichiers déjà exportés sur disque, elle ne peut rien produire sans eux.
 
@@ -212,8 +226,8 @@ Même appel `generateArtboards` avec les vrais paramètres d'export, timeout 300
 
 1. Si aucun mapping couleur n'existe, re-dérive les couleurs de marque en **regexant les SVG déjà exportés** (`<outputFolder>/<type>/original/SVG/*.svg`) — donc si SVG n'était pas dans les formats cochés, la palette est vide.
 2. `IDMLGenerator.generate(config)` — dézippe `templates/template-1.idml`, patche le XML à la regex, rezippe vers `<outputFolder>/presentation-logo.idml`.
-3. `processPhotoshopThenInDesign(idmlPath, mockupDataJson)` (`hostscript.jsx:2795`) — **génère un script Photoshop sous forme de string géante**, l'écrit dans `<outputFolder>/_temp/mockups-ps-script.jsx`, envoie un BridgeTalk `$.evalFile(...)`.
-4. Photoshop traite les 9 PSD puis, **à la fin de son propre script**, envoie lui-même un BridgeTalk à InDesign (`hostscript.jsx:3193-3198`). Le commentaire `:3191-3192` explique pourquoi : les callbacks `onResult` de BridgeTalk ne se déclenchent jamais depuis Illustrator (le contexte appelant est déjà terminé).
+3. `processPhotoshopThenInDesign(idmlPath, mockupDataJson)` (`hostscript.jsx:2939`) — **génère un script Photoshop sous forme de string géante**, l'écrit dans `<outputFolder>/_temp/mockups-ps-script.jsx`, envoie un BridgeTalk `$.evalFile(...)`.
+4. Photoshop traite les 9 PSD puis, **à la fin de son propre script**, envoie lui-même un BridgeTalk à InDesign (`hostscript.jsx:3329-3198`). Le commentaire `:3191-3192` explique pourquoi : les callbacks `onResult` de BridgeTalk ne se déclenchent jamais depuis Illustrator (le contexte appelant est déjà terminé).
 5. InDesign ouvre l'IDML, `fit()` les cadres `MOCKUP_*`, redimensionne les images `PROHIB_*` à 75 %, puis **supprime tout `_temp/`**.
 
 **BridgeTalk est fire-and-forget** : `processPhotoshopThenInDesign` renvoie `{"success":true,"status":"processing"}` dès l'envoi. Le panneau n'apprend **jamais** si les mockups ont réussi.
@@ -256,7 +270,7 @@ Le backend est un **proxy fin devant Lemon Squeezy** + cache Redis. Clés : `tri
 
 **Dans les PSD** (lus par le script Photoshop généré) :
 - Smart Objects dont le **contenu interne** porte des calques nommés `LOGO`, `LOGO_HORIZONTAL`, `LOGO_VERTICAL`, `LOGO_ICON`, `LOGO_TEXT`, `LOGO_CUSTOM1..3`
-  ⚠️ Nommer le Smart Object lui-même `LOGO_ICON` **ne suffit pas** — le code ignore le nom du SO et inspecte uniquement le document *à l'intérieur* (`hostscript.jsx:3058-3068`).
+  ⚠️ Nommer le Smart Object lui-même `LOGO_ICON` **ne suffit pas** — le code ignore le nom du SO et inspecte uniquement le document *à l'intérieur* (`hostscript.jsx:3202-3068`).
 - Calques Solid Fill : `COLOR`, `COLOR_1..COLOR_5`, `COLOR_DARK`, `COLOR_LIGHT`
 - Calques texte contenant `{{BRAND_NAME}}`
 
@@ -286,7 +300,7 @@ Le backend est un **proxy fin devant Lemon Squeezy** + cache Redis. Clés : `tri
 Inaccessible depuis l'UI (`index.html:274-284` n'offre que `template-1` et un radio `custom` désactivé), aucun cadre `MOCKUP_`, seulement 3 des 34 placeholders — **et 16 `LinkResourceURI` absolus pointant vers un projet client privé** `C:/Pupille/Projets/hebi%20tatoo/*`. Pourtant `installer.iss:63` le livre. 7,3 MB + fuite de confidentialité pour rien.
 
 ### 7.5 Chaque génération écrit ~400 MB chez l'utilisateur
-`hostscript.jsx:3171-3175` sauvegarde chaque mockup traité en **PSD complet avec calques** dans `<outputFolder>/mockups/`, en plus du PNG. Rien ne les relit jamais. Le nettoyage de `_temp/` n'y touche pas.
+`hostscript.jsx:3315-3175` sauvegarde chaque mockup traité en **PSD complet avec calques** dans `<outputFolder>/mockups/`, en plus du PNG. Rien ne les relit jamais. Le nettoyage de `_temp/` n'y touche pas.
 
 ---
 
@@ -361,14 +375,14 @@ Illustrator 2024 = CSXS 13, 2026+ = CSXS 14. **Sur Windows, Illustrator 2024+ n'
 - **Français** pour tout ce qui est visible et pour les commentaires ; **anglais** pour les identifiants. Nouveaux messages → en français, avec un remède concret (`'Déverrouillez-le dans le panneau Calques'`).
 - **`jsx/` est en ES3 strict** : `var` uniquement, pas de `let`/`const`, pas d'arrow functions, pas de `Array.map/forEach/filter`, boucles `for` avec index manuel. Regex et `try/catch` sont OK.
 - **`js/` est un dialecte mixte** : le code original est ES6 (`const`/`let`, arrow, `async/await`, template literals), les blocs ajoutés plus tard sont ES5. Les deux sont acceptés.
-- **Jamais d'`alert()` depuis le host** — `hostscript.jsx:914` documente le remplacement d'un `alert()` par `$.writeln` parce que les alertes **bloquent le panneau CEP**. (Les scripts standalone `fit-image-in-frame.jsx` et `optimize-mockups.jsx` peuvent alerter : ils sont lancés depuis le menu Scripts.)
+- **Jamais d'`alert()` depuis le host** — `hostscript.jsx:1008` documente le remplacement d'un `alert()` par `$.writeln` parce que les alertes **bloquent le panneau CEP**. (Les scripts standalone `fit-image-in-frame.jsx` et `optimize-mockups.jsx` peuvent alerter : ils sont lancés depuis le menu Scripts.)
 - **Logs à préfixe emoji**, utilisés partout de façon cohérente : 🚀 démarrage · 📄/📦 phase · ✓/✅ succès · ⚠️ warning · ❌ erreur · 🧹 nettoyage · 🎨 couleur · 🌐 favicon · 💾 sauvegarde · 🔍 debug. **Grepper un emoji est souvent le moyen le plus rapide de trouver un chemin de code.**
 - **`appState` est l'unique source de vérité** (`main.js:9-65`). Pattern : listener lit le contrôle DOM → écrit `appState` → appelle `updateUI()`. Ne jamais relire l'état d'un contrôle ailleurs.
 - **Un seul point de recalcul** : `updateUI()` (`main.js:1190`).
 - **Tout le wiring statique est au même endroit** : `setupEventListeners()` (`main.js:325`, ~420 lignes). Commencer là pour trouver ce que fait un contrôle.
 - **Helpers de validation** : renvoient `{valid: boolean, error: '<français>'}`.
 - **Show/hide** : toujours `element.style.display = 'block'|'none'` depuis JS, amorcé par un `style="display: none;"` inline. **Aucune classe `.hidden`.**
-- **Les 7 types de sélection** `['horizontal','vertical','icon','text','custom1','custom2','custom3']` sont **dupliqués littéralement dans au moins 9 endroits** : `main.js:1418, 1508, 1661` · `hostscript.jsx:619, 1455, 1569, 1628, 2852` · `idml-generator.js:421`. Ajouter un type = éditer les 9.
+- **Les 7 types de sélection** `['horizontal','vertical','icon','text','custom1','custom2','custom3']` sont **dupliqués littéralement dans au moins 9 endroits** : `main.js:1418, 1508, 1661` · `hostscript.jsx:713, 1455, 1569, 1628, 2852` · `idml-generator.js:421`. Ajouter un type = éditer les 9.
 - **Conventions d'ID DOM** : `status-<type>`, `label-<type>`, `variation-<type>`, `.btn-select[data-type]`, `.btn-clear-selection[data-type]`, `tab-<name>` + `.tab-button[data-tab=<name>]`.
 - **Backend** : chaque endpoint est `export default async function handler(req, res)` en ESM. Préambule identique partout : 4 `res.setHeader` CORS → court-circuit `OPTIONS` → garde de méthode (405) → `try/catch` (500). Le helper Redis `getRedisClient` est **copié-collé à l'identique dans 8 fichiers**.
 - **Coordonnées** : les `bounds` Illustrator sont `[left, top, right, bottom]` avec Y croissant vers le haut (`width = b[2]-b[0]`, `height = b[1]-b[3]`). Les `geometricBounds` InDesign sont `[y1, x1, y2, x2]`. **Les deux conventions apparaissent dans `hostscript.jsx` — vérifier dans quel host on est.**
@@ -383,8 +397,8 @@ Toutes les autres sont toujours présentes dans le code.
 
 | # | Bug | Localisation |
 |---|---|---|
-| 1 | **Tous les exports font 60 % de la taille annoncée.** L'UI propose « Petit (1000 px) / Moyen (2000) / Grand (4000) » mais le plan de travail fait **600 points** en dur et l'échelle d'export est `(exportSize/1000)*100`. → 1000 donne 600 px, 2000 → 1200, 4000 → 2400. Seuls les favicons sont corrects (32 pt, `exportSize` forcé à 1000). | `hostscript.jsx:1565`, `:2318, :2326, :2635, :2643` ; libellés `index.html:223/227/231` |
-| 2 | **La taille custom W×H est silencieusement ignorée.** Elle est réduite à `Math.max(width,height)` et passée dans la même formule. Le préfixe de nom de fichier `custom_1920x1080_` ment. | `hostscript.jsx:1862-1872` vs `:2620` |
+| 1 | **Tous les exports font 60 % de la taille annoncée.** L'UI propose « Petit (1000 px) / Moyen (2000) / Grand (4000) » mais le plan de travail fait **600 points** en dur et l'échelle d'export est `(exportSize/1000)*100`. → 1000 donne 600 px, 2000 → 1200, 4000 → 2400. Seuls les favicons sont corrects (32 pt, `exportSize` forcé à 1000). | `hostscript.jsx:1689`, `:2318, :2326, :2635, :2643` ; libellés `index.html:223/227/231` |
+| 2 | **La taille custom W×H est silencieusement ignorée.** Elle est réduite à `Math.max(width,height)` et passée dans la même formule. Le préfixe de nom de fichier `custom_1920x1080_` ment. | `hostscript.jsx:1986-1872` vs `:2620` |
 | 3 | ✅ **CORRIGÉ 2026-09-04.** **Le compteur de plans de travail est gonflé ~×3 et la garde « au moins une couleur » est morte.** `Object.values(appState.colorVariations).filter(v => v).length` compte les deux propriétés **string** `monochromeColor:'#000000'` et `monochromeLightColor:'#ffffff'` (truthy). Avec seulement « original » coché, `colorCount` vaut 3. Comme il ne peut jamais descendre sous 2, le test `colorCount > 0` qui active les boutons est un no-op. | `main.js:1212` (état déclaré `:32, :34`) ; gardes `:1258, :1265` |
 | 4 | **Le webhook Lemon Squeezy est totalement non authentifié.** La vérification HMAC est écrite mais désactivée (commentaire sur le body parser de Vercel) ; `verifyWebhookSignature` n'est jamais appelée. Quiconque connaît l'URL peut POSTer un faux `order_refunded` et supprimer l'activation d'un client payant. Fix : `export const config = { api: { bodyParser: false } }` + parsing manuel du raw body. | `webhooks/lemonsqueezy.js:34, :49-57` |
 | 5 | **`LEMONSQUEEZY_API_KEY` est utilisée dans 4 endroits mais absente de `.env.local`.** Si elle n'est pas non plus dans le dashboard Vercel, toutes les libérations de slot partent en `Bearer undefined` et échouent en silence (le code ne fait qu'un `console.warn` puis supprime quand même de Redis) → slots Lemon Squeezy orphelins à vie, jusqu'à ce que le client atteigne la limite d'activation. **Vérifier le dashboard Vercel avant de toucher au code de licence.** | `force-deactivate.js:75` ; `webhooks/lemonsqueezy.js:105, :164, :215` |
@@ -398,19 +412,19 @@ Toutes les autres sont toujours présentes dans le code.
 | 13 | **Le texte de statut de sélection ment après un changement de langue.** Les spans portent `data-i18n="sel_not_selected"` ; `handleSelection` y écrit « Sélectionné ✓ » en dur sans retirer l'attribut → le `applyToDOM()` suivant les réécrit en « Not selected » alors que `appState.selections` est toujours vrai et que le texte reste vert. | `main.js:1091` + `i18n.js:741` |
 | 14 | **IDs dupliqués sur les variations custom.** `addCustomVariation` incrémente un compteur, mais `removeCustomVariation` le recalcule depuis `container.children.length`. Ajouter custom1/2/3 puis supprimer custom1 → le prochain ajout crée un **second** `variation-custom3`, et `getElementById` ne verra que le premier. | `main.js:238-300` (recalcul `:296`) |
 | 15 | **Le `mimetype` de l'IDML est recompressé.** Les templates le stockent en `Stored` (convention OCF) mais `generate()` passe un `compression:'DEFLATE'` global. InDesign le tolère aujourd'hui, mais ça viole la spec OCF. Fix : `zip.file('mimetype', data, {compression:'STORE'})`. | `idml-generator.js:1949-1953` |
-| 16 | **Génération de code sans échappement.** Le script Photoshop est construit par concaténation ; **seul `brandName`** est échappé. Un chemin contenant une apostrophe (`C:/Users/O'Brien/…`) produit un script syntaxiquement cassé qui meurt en silence — visible uniquement dans `_temp/mockups-build-debug.txt`. | `hostscript.jsx:2882-2884, 2896-2898, 2906-2913` (échappement `:2887`) |
-| 17 | **Le nettoyage de `_temp/` casse le bouton « Re-tester mockups ».** Le script InDesign généré supprime tout `_temp/` à la fin ; `rerunMockupsFromDisk` a besoin de `_temp/mockups-ps-script.jsx`. Après une génération réussie, le bouton renvoie « mockups-ps-script.jsx introuvable ». Pour débugger les mockups, il faut interrompre la chaîne avant InDesign. | `hostscript.jsx:3271-3282` vs `:3312` |
-| 18 | **Le script Photoshop généré quitte Photoshop.** Si PS n'était pas déjà lancé, un `_shouldClosePS = true` est ajouté et le script fait `$.sleep(3000)` puis `app.quit()`. Si le BridgeTalk vers InDesign n'est pas parti dans ces 3 secondes, la présentation ne s'ouvre jamais. | `hostscript.jsx:3201-3204, :3220` |
+| 16 | **Génération de code sans échappement.** Le script Photoshop est construit par concaténation ; **seul `brandName`** est échappé. Un chemin contenant une apostrophe (`C:/Users/O'Brien/…`) produit un script syntaxiquement cassé qui meurt en silence — visible uniquement dans `_temp/mockups-build-debug.txt`. | `hostscript.jsx:3026-2884, 2896-2898, 2906-2913` (échappement `:2887`) |
+| 17 | **Le nettoyage de `_temp/` casse le bouton « Re-tester mockups ».** Le script InDesign généré supprime tout `_temp/` à la fin ; `rerunMockupsFromDisk` a besoin de `_temp/mockups-ps-script.jsx`. Après une génération réussie, le bouton renvoie « mockups-ps-script.jsx introuvable ». Pour débugger les mockups, il faut interrompre la chaîne avant InDesign. | `hostscript.jsx:3406-3282` vs `:3312` |
+| 18 | **Le script Photoshop généré quitte Photoshop.** Si PS n'était pas déjà lancé, un `_shouldClosePS = true` est ajouté et le script fait `$.sleep(3000)` puis `app.quit()`. Si le BridgeTalk vers InDesign n'est pas parti dans ces 3 secondes, la présentation ne s'ouvre jamais. | `hostscript.jsx:3345-3204, :3220` |
 
 ### Références mortes qui ont l'air vivantes (vérifiées par grep)
 
 - `#reset-trial-btn` — référencé 2× dans `main.js` (`:685`, `:847`), **0 fois** dans `index.html`. Tout le bloc DEBUG et `Trial.reset()` sont inatteignables.
-- `getInstalledFonts()` (`hostscript.jsx:2713`) — aucun appelant ; `main.js:1773` inline la même logique en string.
-- `enablePlayerDebugMode()` (`hostscript.jsx:3428`) — aucun appelant ; `js/debug-mode-enabler.js` passe par Node.
+- `getInstalledFonts()` (`hostscript.jsx:2857`) — aucun appelant ; `main.js:1773` inline la même logique en string.
+- `enablePlayerDebugMode()` (`hostscript.jsx:3572`) — aucun appelant ; `js/debug-mode-enabler.js` passe par Node.
 - `convertAnyColorToRGB` / `convertColorManually` (`:57`, `:137`) — **mortes**, alors qu'elles gèrent SpotColor/LabColor/GrayColor. Conséquence : **un logo construit sur des nuanciers globaux/tons directs ne renvoie aucune couleur** et l'onglet couleurs custom apparaît vide sans erreur.
 - `applyMonochromeToGradient` (`:718`) — morte. Du coup `applyColorRecursive` (`:879`) **aplatit les dégradés en couleur unie** en monochrome, alors que le chemin couleurs-custom (`:930`) les gère correctement. Deux comportements différents sur la même illustration.
 - `extractColors` (`:560`), `hexToCMYKColor` (`:1131`) — mortes.
-- `documentSettings.ppi` — lu puis seulement `$.writeln`é. **Jamais appliqué.** (`hostscript.jsx:1226-1234`)
+- `documentSettings.ppi` — lu puis seulement `$.writeln`é. **Jamais appliqué.** (`hostscript.jsx:1320-1234`)
 - `appState.artboardSize` (`main.js:41`) et `appState.customColors.enabled` (`:38`) — jamais lus.
 - **73 des 148 clés i18n** ne sont référencées nulle part (les 47 `stat_*`, les 4 `name_*`, les 2 `err_*`, les 3 `trial_*`…). Il n'y a **qu'un seul appel à `t()`** dans toute l'application : `main.js:1131`. Tout le reste des messages runtime est du français en dur.
 
@@ -435,7 +449,8 @@ Toutes les autres sont toujours présentes dans le code.
 
 - Branche `backup-v1.0.2-full` poussée sur `origin` — les 11 commits d'historique unique sont sauvés
 - `colorCount` corrigé (§10.3) · course au double-clic trial fermée sur le bouton d'action (§6)
-- **Boutons Générer / Exporter fusionnés en un seul** (§5.2) — l'enchaînement des deux était cassé par construction
+- **Boutons Générer / Exporter fusionnés en un seul** (§5.2)
+- **Document source résolu correctement** (§5.1 bis) — la vraie cause racine derrière l'échec « Impossible de transférer certains éléments » au second lancement
 - Licence fantôme corrigée **des deux côtés** (`getStatus` + `canGenerate`) (§10.7) · désactivation normale purge enfin le disque (§10.8)
 - `filesFailedé` → `filesFailed` (§10.10) · `@import` Inter remonté en ligne 1 (§10.11) · remplissage des sliders (§10.12)
 - `installer.iss` + `install.bat` : PlayerDebugMode étendu à **CSXS 13/14** → Illustrator 2024+ se charge enfin sous Windows

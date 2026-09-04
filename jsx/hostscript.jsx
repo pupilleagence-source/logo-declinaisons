@@ -14,6 +14,86 @@ var storedSelections = {
 };
 
 /**
+ * Document Illustrator auquel appartiennent les éléments de storedSelections.
+ *
+ * Indispensable : generateArtboards() laisse volontairement le document GÉNÉRÉ actif
+ * en fin d'exécution ("décision 1.A"). Sans mémoriser le document d'origine, un second
+ * appel prenait app.activeDocument — donc le document généré — comme document source,
+ * alors que storedSelections référence des PageItems du document d'origine. Résultat :
+ * app.copy() copiait la sélection (vide) du mauvais document et TOUS les transferts
+ * échouaient avec "Impossible de transférer certains éléments".
+ */
+var storedSelectionsDoc = null;
+
+/**
+ * Le document est-il toujours ouvert ? Accéder à une propriété d'un Document fermé
+ * lève une erreur, d'où le try/catch. La comparaison par référence est doublée d'une
+ * comparaison par nom, ExtendScript ne garantissant pas l'identité des objets Document.
+ */
+function isDocumentOpen(doc) {
+    if (!doc) return false;
+    try {
+        var probeName = doc.name;
+        var i;
+        for (i = 0; i < app.documents.length; i++) {
+            if (app.documents[i] === doc) return true;
+        }
+        for (i = 0; i < app.documents.length; i++) {
+            if (app.documents[i].name === probeName) return true;
+        }
+        return false;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * Document à utiliser comme source d'une génération : celui qui possède réellement les
+ * éléments stockés, et seulement à défaut le document actif.
+ */
+function resolveSourceDocument() {
+    if (storedSelectionsDoc && isDocumentOpen(storedSelectionsDoc)) {
+        return storedSelectionsDoc;
+    }
+    if (app.documents.length === 0) return null;
+    return app.activeDocument;
+}
+
+/**
+ * Y a-t-il au moins une sélection stockée ?
+ */
+function hasAnyStoredSelection() {
+    for (var k in storedSelections) {
+        if (storedSelections[k]) return true;
+    }
+    return false;
+}
+
+/**
+ * Y a-t-il une sélection stockée dans un AUTRE slot que celui-ci ?
+ */
+function hasStoredSelectionOtherThan(type) {
+    for (var k in storedSelections) {
+        if (k !== type && storedSelections[k]) return true;
+    }
+    return false;
+}
+
+/**
+ * Deux références pointent-elles vers le même document ? La comparaison par référence
+ * n'étant pas fiable en ExtendScript, on double par le nom.
+ */
+function isSameDocument(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    try {
+        return a.name === b.name;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
  * Constantes pour les limites d'Illustrator
  */
 var ILLUSTRATOR_MAX_CANVAS = 16383; // Points (227 inches)
@@ -461,6 +541,7 @@ function getSelectionInfo() {
 // Réinitialiser toutes les sélections stockées
 function clearStoredSelections() {
     storedSelections = { icon: null, text: null, horizontal: null, vertical: null, custom1: null, custom2: null, custom3: null };
+    storedSelectionsDoc = null;
     return "OK";
 }
 
@@ -474,6 +555,16 @@ function storeSelection(type) {
         var doc = app.activeDocument;
         if (!doc.selection || doc.selection.length === 0) {
             return "NO_SELECTION";
+        }
+
+        // Toutes les sélections doivent provenir du MÊME document : generateArtboards()
+        // les transfère ensemble depuis un unique document source. Après une génération
+        // c'est le document GÉNÉRÉ qui est actif — sélectionner dedans par mégarde
+        // produirait un mélange incohérent qui n'échouerait qu'au moment du transfert.
+        if (storedSelectionsDoc && isDocumentOpen(storedSelectionsDoc) &&
+            !isSameDocument(storedSelectionsDoc, doc) && hasStoredSelectionOtherThan(type)) {
+            return "ERROR: Vos sélections précédentes proviennent du document « " + storedSelectionsDoc.name +
+                   " ». Cliquez sur Réinitialiser avant de sélectionner depuis ce document.";
         }
 
         var selection = doc.selection[0];
@@ -519,6 +610,9 @@ function storeSelection(type) {
         }
 
         storedSelections[type] = elementToStore;
+        // Mémoriser le document propriétaire : c'est lui, et non app.activeDocument,
+        // qui servira de source à generateArtboards() (voir storedSelectionsDoc).
+        storedSelectionsDoc = doc;
         $.writeln("✓ Sélection '" + type + "' stockée avec succès");
 
         // Désélectionner tout dans Illustrator
@@ -1410,7 +1504,14 @@ function generateArtboards(paramsJSON) {
         // 🆕 NOUVEAU : Créer un document dédié pour l'exportation
         $.writeln("🚀 Début de la génération des plans de travail...");
 
-        sourceDoc = app.activeDocument;
+        // ⚠️ NE PAS utiliser app.activeDocument ici. Après une première génération c'est
+        // le document généré qui est actif, alors que storedSelections référence des
+        // PageItems restés dans le document d'origine (voir storedSelectionsDoc).
+        if (hasAnyStoredSelection() && storedSelectionsDoc && !isDocumentOpen(storedSelectionsDoc)) {
+            return "ERROR: Le document contenant vos sélections a été fermé. Rouvrez-le, puis re-sélectionnez vos logos avant de relancer.";
+        }
+
+        sourceDoc = resolveSourceDocument();
         if (!sourceDoc) {
             return "ERROR: Aucun document source actif";
         }
@@ -1539,7 +1640,30 @@ function generateArtboards(paramsJSON) {
         if (transferErrors.length > 0) {
             var errorMsg = "Impossible de transférer certains éléments : " + transferErrors.join(", ");
             $.writeln("❌ " + errorMsg);
-            // Garder le nouveau document ouvert pour debug (selon 5.B)
+
+            // Compter ce qui a réellement été transféré.
+            var transferredCount = 0;
+            for (var tk in transferredSelections) {
+                if (transferredSelections[tk]) transferredCount++;
+            }
+
+            if (transferredCount === 0) {
+                // Rien n'a été transféré : le document généré est vide (un seul plan de
+                // travail 50×50). Le "conserver pour vérification" n'apporte rien et laisse
+                // un document vide encombrant à l'écran — on le referme.
+                try {
+                    targetDoc.close(SaveOptions.DONOTSAVECHANGES);
+                    $.writeln("🧹 Document d'exportation vide refermé");
+                } catch (closeErr) {
+                    $.writeln("⚠️ Impossible de refermer le document vide: " + closeErr.toString());
+                }
+                try {
+                    app.activeDocument = sourceDoc;
+                } catch (e) {}
+                return "ERROR: " + errorMsg + ". Vos sélections ne sont plus valides : re-sélectionnez vos logos dans le document d'origine.";
+            }
+
+            // Transfert partiel : garder le document ouvert pour vérification (décision 5.B).
             return "ERROR: " + errorMsg + ". Le nouveau document a été conservé pour vérification.";
         }
 
@@ -2342,7 +2466,17 @@ function exportArtboard(doc, artboardName, folderPath, format, exportSize) {
 function generateVerticalVersion() {
     try {
         if (app.documents.length === 0) return "NO_DOCUMENT";
-        var doc = app.activeDocument;
+
+        // Même piège que dans generateArtboards : storedSelections appartient au document
+        // d'origine, qui n'est plus l'actif après une génération. On travaille donc dans le
+        // document propriétaire, et on l'active pour que safeDuplicate() et doc.selection
+        // opèrent au bon endroit.
+        if (storedSelectionsDoc && !isDocumentOpen(storedSelectionsDoc)) {
+            return "ERROR: Le document contenant vos sélections a été fermé. Rouvrez-le, puis re-sélectionnez vos logos.";
+        }
+        var doc = resolveSourceDocument();
+        if (!doc) return "NO_DOCUMENT";
+        try { app.activeDocument = doc; } catch (e) {}
 
         if (!storedSelections.icon || !storedSelections.text) {
             return "ERROR: Vous devez d'abord sélectionner l'icône ET la typographie dans l'onglet Sélection.";
@@ -2480,7 +2614,17 @@ function generateVerticalVersion() {
 function generateHorizontalVersion() {
     try {
         if (app.documents.length === 0) return "NO_DOCUMENT";
-        var doc = app.activeDocument;
+
+        // Même piège que dans generateArtboards : storedSelections appartient au document
+        // d'origine, qui n'est plus l'actif après une génération. On travaille donc dans le
+        // document propriétaire, et on l'active pour que safeDuplicate() et doc.selection
+        // opèrent au bon endroit.
+        if (storedSelectionsDoc && !isDocumentOpen(storedSelectionsDoc)) {
+            return "ERROR: Le document contenant vos sélections a été fermé. Rouvrez-le, puis re-sélectionnez vos logos.";
+        }
+        var doc = resolveSourceDocument();
+        if (!doc) return "NO_DOCUMENT";
+        try { app.activeDocument = doc; } catch (e) {}
 
         if (!storedSelections.icon || !storedSelections.text) {
             return "ERROR: Vous devez d'abord sélectionner l'icône ET la typographie dans l'onglet Sélection.";
