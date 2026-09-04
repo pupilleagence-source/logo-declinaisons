@@ -289,7 +289,7 @@ Tests : `tests/font-style.test.js` (35 assertions sur le résolveur) et `tests/f
 | `done` | le script InDesign, **en tout dernier** (après la suppression de `_temp/`), en conservant les compteurs par regex | `mockupsOk`, `mockupsFailed` |
 | `error` | n'importe lequel (IDML introuvable, ouverture InDesign impossible, BridgeTalk vers InDesign en échec) | `message` |
 
-Chaque statut porte un `ts` (ms) ; `waitForPresentationCompletion()` (`js/main.js`) n'accepte que les statuts postérieurs au lancement, lit le fichier chaque seconde, affiche la progression (« Photoshop : mockup 3/9… »), et résout sur `done`, `error` ou **timeout** (15 min avec mockups, 3 min sans). `handleGeneratePresentation()` **attend** cette résolution ; `handleAction()` ne compose donc « Exportation terminée » et la popup qu'après la fin réelle, avec le bilan (« Présentation InDesign prête · 9/9 mockups », ou un triangle d'avertissement si échec / timeout). Le fichier est supprimé une fois lu. Le bouton « Re-tester mockups » suit le même protocole.
+Chaque statut porte un `ts` (ms) ; `waitForPresentationCompletion()` (`js/main.js`) n'accepte que les statuts postérieurs au lancement, lit le fichier chaque seconde, affiche la progression (« Photoshop : mockup 3/9… »), et résout sur `done`, `error` ou **timeout** (15 min avec mockups, 3 min sans). `handleGeneratePresentation()` **attend** cette résolution ; `handleAction()` ne compose donc « Exportation terminée » et la popup qu'après la fin réelle, avec le bilan (« Présentation InDesign prête · 9/9 mockups », ou un triangle d'avertissement si échec / timeout). Le fichier est supprimé une fois lu.
 
 Les snippets ExtendScript injectés dans les scripts générés (`presentationStatusSnippet`, `presentationDoneSnippet` dans `hostscript.jsx`) évitent JSON : chaîne construite à la main, compteurs relus par regex — l'ExtendScript d'InDesign n'a pas de JSON garanti. Couvert par `tests/presentation-status.test.js`, qui écrit les statuts **au format exact des scripts générés**.
 
@@ -316,7 +316,7 @@ Le backend est un **proxy fin devant Lemon Squeezy** + cache Redis. Clés : `tri
 - `~/.logotyps-license` est du JSON en clair : écrire `{"active":true,"key":"x","activatedAt":<now>}` + bloquer `logotyps.vercel.app` = 7 jours illimités.
 - `/api/trial/reset` est **routé publiquement sans auth** malgré son en-tête « DÉVELOPPEMENT SEULEMENT » (`api/trial/reset.js:3`).
 - `/api/trial/increment` fait un GET→+1→SET **non atomique**.
-- Points d'entrée **non gatés du tout** : `generateHorizontalLayout` (`main.js:526`), `generateVerticalLayout` (`:561`), `analyzeColors` (`:1970`), `handleGeneratePresentation` (`:1406`), `handleRerunMockups` (`:1629`).
+- Points d'entrée **non gatés du tout** : `generateHorizontalLayout` (`main.js:526`), `generateVerticalLayout` (`:561`), `analyzeColors` (`:1970`), `handleGeneratePresentation` (`:1406`).
 - **Race au double-clic** : `checkTrialAllowed()` est `await`é (`main.js:1289`) *avant* que le bouton soit désactivé (`:1291`). Pendant les ~5 s de round-trip réseau, deux clics passent tous les deux → une génération gratuite **et** deux `generateArtboards` concurrents dans un moteur ExtendScript mono-thread. *Fix : désactiver le bouton en première instruction.*
 
 ---
@@ -475,7 +475,7 @@ Toutes les autres sont toujours présentes dans le code.
 | 14 | **IDs dupliqués sur les variations custom.** `addCustomVariation` incrémente un compteur, mais `removeCustomVariation` le recalcule depuis `container.children.length`. Ajouter custom1/2/3 puis supprimer custom1 → le prochain ajout crée un **second** `variation-custom3`, et `getElementById` ne verra que le premier. | `main.js:238-300` (recalcul `:296`) |
 | 15 | **Le `mimetype` de l'IDML est recompressé.** Les templates le stockent en `Stored` (convention OCF) mais `generate()` passe un `compression:'DEFLATE'` global. InDesign le tolère aujourd'hui, mais ça viole la spec OCF. Fix : `zip.file('mimetype', data, {compression:'STORE'})`. | `idml-generator.js:1949-1953` |
 | 16 | **Génération de code sans échappement.** Le script Photoshop est construit par concaténation ; **seul `brandName`** est échappé. Un chemin contenant une apostrophe (`C:/Users/O'Brien/…`) produit un script syntaxiquement cassé qui meurt en silence — visible uniquement dans `_temp/mockups-build-debug.txt`. | `hostscript.jsx:3026-2884, 2896-2898, 2906-2913` (échappement `:2887`) |
-| 17 | **Le nettoyage de `_temp/` casse le bouton « Re-tester mockups ».** Le script InDesign généré supprime tout `_temp/` à la fin ; `rerunMockupsFromDisk` a besoin de `_temp/mockups-ps-script.jsx`. Après une génération réussie, le bouton renvoie « mockups-ps-script.jsx introuvable ». Pour débugger les mockups, il faut interrompre la chaîne avant InDesign. | `hostscript.jsx:3406-3282` vs `:3312` |
+| 17 | ✅ **RÉGLÉ 2026-09-04 par suppression.** Le bouton « Re-tester mockups (PS → InDesign) » était un outil de debug de développement fuité dans l'UI (commit `42f4eb5`), affiché après chaque export réussi alors qu'il ne pouvait fonctionner qu'après un échec (il relisait `_temp/mockups-ps-script.jsx`, que le script InDesign supprime en fin de chaîne réussie). Supprimé avec `handleRerunMockups()`, `rerunMockupsFromDisk()` et les globals `window._lastIdmlPath` / `_lastOutputFolder`. | — |
 | 18 | **Le script Photoshop généré quitte Photoshop.** Si PS n'était pas déjà lancé, un `_shouldClosePS = true` est ajouté et le script fait `$.sleep(3000)` puis `app.quit()`. Si le BridgeTalk vers InDesign n'est pas parti dans ces 3 secondes, la présentation ne s'ouvre jamais. | `hostscript.jsx:3345-3204, :3220` |
 
 ### Références mortes qui ont l'air vivantes (vérifiées par grep)
@@ -528,6 +528,7 @@ Toutes les autres sont toujours présentes dans le code.
 - **Popup d'avertissement** quand aucun export n'est configuré (§5.2 bis)
 - **Résolution des styles de police** dans la charte (§5.3 ter) — plus de « MaPolice Medium » manquante
 - **Fin réelle de Photoshop / InDesign attendue** avant d'annoncer « Exportation terminée » (§5.4) — fichier de statut `.logopack-status.json`, progression affichée, timeout
+- **Bouton de debug « Re-tester mockups » supprimé** (§10.17)
 - **Premiers tests du projet** : `npm test` — 5 fichiers, ~100 assertions : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
 
 ### À faire, par ordre de priorité

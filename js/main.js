@@ -712,11 +712,6 @@ function setupEventListeners() {
         });
     }
 
-    // Bouton re-tester mockups (PS → InDesign) sans tout regénérer
-    const btnRerunMockups = document.getElementById('btn-rerun-mockups');
-    if (btnRerunMockups) {
-        btnRerunMockups.addEventListener('click', handleRerunMockups);
-    }
 
     // DEBUG: Bouton reset trial
     const resetTrialBtn = document.getElementById('reset-trial-btn');
@@ -2026,13 +2021,6 @@ async function handleGeneratePresentation() {
             // Toujours normaliser en forward slashes (évite les problèmes d'échappement Windows)
             var safePath = result.path.replace(/\\/g, '/');
 
-            // Stocker pour le bouton "Re-tester mockups"
-            window._lastIdmlPath = safePath;
-            window._lastOutputFolder = config.outputFolder.replace(/\\/g, '/');
-            if (hasMockups) {
-                var btnRerun = document.getElementById('btn-rerun-mockups');
-                if (btnRerun) btnRerun.style.display = 'block';
-            }
 
             // DEBUG: écrire un fichier debug.txt dans le dossier _temp/
             var debugLines = [];
@@ -2161,39 +2149,6 @@ async function handleGeneratePresentation() {
     } catch (err) {
         console.error('Presentation generation error:', err);
         showStatus('Erreur lors de la génération de la présentation : ' + (err.message || err), 'error');
-    }
-}
-
-async function handleRerunMockups() {
-    var outputFolder = window._lastOutputFolder;
-    var idmlPath = window._lastIdmlPath;
-    if (!outputFolder || !idmlPath) {
-        showStatus('Aucune génération précédente trouvée. Générez d\'abord la présentation.', 'error');
-        return;
-    }
-    var btn = document.getElementById('btn-rerun-mockups');
-    if (btn) btn.disabled = true;
-    try {
-        showStatus('Re-lancement mockups PS → InDesign...', 'info');
-        clearPresentationStatus(outputFolder);
-        var startedAt = Date.now();
-        var r = await evalScriptJson("rerunMockupsFromDisk('" + outputFolder + "', '" + idmlPath + "')");
-        if (!r.success) {
-            showStatus('Erreur re-run mockups : ' + r.error, 'error');
-            return;
-        }
-        // Meme attente que l'export : ne pas annoncer "termine" avant InDesign.
-        var finalStatus = await waitForPresentationCompletion(outputFolder, {
-            startedAt: startedAt,
-            timeoutMs: PRESENTATION_TIMEOUT_WITH_MOCKUPS,
-            onProgress: function (st) { showStatus(describePresentationPhase(st), 'info'); }
-        });
-        clearPresentationStatus(outputFolder);
-        appState.lastPresentationResult = finalStatus;
-        var outcome = describePresentationOutcome(finalStatus);
-        showStatus(outcome.text, outcome.level);
-    } finally {
-        if (btn) btn.disabled = false;
     }
 }
 
