@@ -35,11 +35,11 @@ export default async function handler(req, res) {
             releaseDate: '2026-09-05',
             downloadUrl: 'https://github.com/pupilleagence-source/logo-declinaisons-releases/releases/latest',
             changelog: [
-            '🎯 Un seul bouton Générer / Exporter : l'export fonctionne enfin après une génération',
-            '📁 Dossier parent « Logopack » et gestion des exports déjà présents',
-            '⏳ La fin réelle de Photoshop et InDesign est attendue avant de conclure l'export',
-            '🔤 Styles de police adaptés à la police choisie dans la charte : plus de polices manquantes',
-            '🛠️ Repli horizontal ↔ vertical dans la charte, bouton Reset complet, corrections diverses'
+            "🎯 Un seul bouton Générer / Exporter : l'export fonctionne enfin après une génération",
+            "📁 Dossier parent « Logopack » et gestion des exports déjà présents",
+            "⏳ La fin réelle de Photoshop et InDesign est attendue avant de conclure l'export",
+            "🔤 Styles de police adaptés à la police choisie dans la charte : plus de polices manquantes",
+            "🛠️ Repli horizontal ↔ vertical dans la charte, bouton Reset complet, corrections diverses"
         ]
         };
 
