@@ -409,6 +409,7 @@ Le contournement du commit `96ff1d9` (grep du log de notarisation) a été **ent
 ### Échecs silencieux à surveiller
 - `installer.iss:62-64` utilise `skipifsourcedoesntexist` sur les 3 lignes de templates ; `build-pkg.sh:44,46` utilise `2>/dev/null || true`. Un checkout sans `templates/` produit un build **vert** livrant un installeur sans présentation ni mockups, **sans aucun avertissement**.
 - Si `APPLE_DEVELOPER_ID_APPLICATION` manque, `build-pkg.sh:77` n'affiche qu'un WARNING et continue ; le build échoue bien plus tard à la notarisation avec une erreur Apple incompréhensible. **C'est le premier secret à vérifier quand un build Mac casse.**
+- **Notarisation refusée avec `HTTP 403 — A required agreement is missing or has expired`** (vu le 2026-09-05, run `33973115550`) : Apple a publié un nouvel accord du Developer Program et l'**Account Holder doit l'accepter à la main** sur developer.apple.com (bandeau en haut du compte, ou *Agreements, Tax, and Banking*). Rien à corriger dans le repo : tout le pipeline jusqu'à `productsign` réussit, seul `notarytool submit` échoue. Le script enchaîne alors sur un second message trompeur (`The value '' is invalid for '<submission-id>'`) parce qu'aucun identifiant de soumission n'a été rendu. Après acceptation, relancer le workflow avec la **même** version : aucune release n'ayant été créée, `gh release delete` est un no-op.
 
 ### Portées d'installation différentes selon la plateforme
 - **Windows** (`installer.iss:28`) : par utilisateur, `%APPDATA%\Adobe\CEP\extensions\logo-declinaisons`
@@ -556,4 +557,4 @@ Toutes les autres sont toujours présentes dans le code.
 - L'auto-install in-panel a-t-il été abandonné délibérément ? Il a été **construit et désactivé dans le même commit** `f6b915c` (« Release v1.1.0 with auto-update for all users »).
 - Le trial-reset debug devait-il être supprimé entièrement (sa docstring dit « à retirer en production ») ou le bouton restauré ?
 - `BLOB_READ_WRITE_TOKEN` existe dans `.env.local` mais rien sous `api/` ne référence Vercel Blob. Store externe ?
-- Le trick du binaire stub a-t-il déjà produit un build notarisé vert ? Les commits `955b47c` → `b00d37a` → `2c4d0d0` s'enchaînent sur deux jours et se lisent comme une session de debug inachevée ; aucun commit ne confirme un succès.
+- ~~Le trick du binaire stub a-t-il déjà produit un build notarisé vert ?~~ **Oui** : `gh run list` montre un run vert le 2026-06-03 (5 min 44) qui a publié `v1.1.0` notarisé. Le 2026-09-05, le même pipeline a de nouveau franchi `productsign` et n'a buté que sur l'accord Apple expiré (voir §8).
