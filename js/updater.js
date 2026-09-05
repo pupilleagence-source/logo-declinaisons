@@ -4,7 +4,7 @@
 
 const UpdateChecker = {
     // Version actuelle du plugin (doit correspondre au manifest.xml)
-    CURRENT_VERSION: '1.1.0',
+    CURRENT_VERSION: '1.2.0',
 
     // URL de l'API de versionning
     API_URL: 'https://logotyps.vercel.app/api/version/latest',

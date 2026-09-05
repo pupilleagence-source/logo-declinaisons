@@ -31,15 +31,16 @@ export default async function handler(req, res) {
         // Configuration de la dernière version
         // TODO: Vous pourrez mettre à jour ces valeurs à chaque nouvelle release
         const latestVersion = {
-            version: '1.1.0',
-            releaseDate: '2026-04-17',
+            version: '1.2.0',
+            releaseDate: '2026-09-05',
             downloadUrl: 'https://github.com/pupilleagence-source/logo-declinaisons-releases/releases/latest',
             changelog: [
-                '🌍 Support multilangue (FR / EN / ES / IT)',
-                '📄 Presentation InDesign avec mockups Photoshop',
-                '🔑 Licence stable (HWID hardware, persistance disque)',
-                '🎨 Nouveau design DA Logotyps'
-            ]
+            '🎯 Un seul bouton Générer / Exporter : l'export fonctionne enfin après une génération',
+            '📁 Dossier parent « Logopack » et gestion des exports déjà présents',
+            '⏳ La fin réelle de Photoshop et InDesign est attendue avant de conclure l'export',
+            '🔤 Styles de police adaptés à la police choisie dans la charte : plus de polices manquantes',
+            '🛠️ Repli horizontal ↔ vertical dans la charte, bouton Reset complet, corrections diverses'
+        ]
         };
 
         return res.status(200).json(latestVersion);

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<ExtensionManifest Version="11.0" ExtensionBundleId="com.graphiste.logodeclinaisons" ExtensionBundleVersion="1.1.0">
+<ExtensionManifest Version="11.0" ExtensionBundleId="com.graphiste.logodeclinaisons" ExtensionBundleVersion="1.2.0">
     <ExtensionList>
-        <Extension Id="com.graphiste.logodeclinaisons.panel" Version="1.1.0" />
+        <Extension Id="com.graphiste.logodeclinaisons.panel" Version="1.2.0" />
     </ExtensionList>
     <ExecutionEnvironment>
         <HostList>
