@@ -532,7 +532,7 @@ Toutes les autres sont toujours présentes dans le code.
 - **Bouton de debug « Re-tester mockups » supprimé** (§10.17)
 - **Polyfill `JSON` dans `hostscript.jsx`** (§4) — tous les retours JSON vers le panneau étaient cassés depuis toujours, masqués par un faux succès
 - **Bouton Reset = rechargement du panneau** après `clearStoredSelections()`. L'ancienne remise à zéro champ par champ (`resetSelections`, supprimée) oubliait croix ✕, lignes custom, couleurs, tailles, dossier de sortie, présentation, onglet actif. `clearStoredSelections()` supprime maintenant aussi les duplicatas masqués (ils s'accumulaient dans le document à chaque Reset). Survivent au Reset, comme à un redémarrage : langue, licence/trial, « Ne plus afficher ».
-- **Premiers tests du projet** : `npm test` — 6 fichiers, ~130 assertions : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
+- **Premiers tests du projet** : `npm test` — 7 fichiers, ~160 assertions, dont `tests/static-crosscheck.test.js` : cohérence HTML ↔ JS ↔ JSX ↔ i18n (chaque ID cherché existe, chaque fonction ExtendScript appelée existe, chaque clé i18n existe dans les 4 langues, `hostscript.jsx` reste ES3, ordre de chargement des scripts). **À lancer avant tout commit qui touche `index.html`, `js/` ou `jsx/`.** : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
 
 ### À faire, par ordre de priorité
 

@@ -6,7 +6,7 @@
   "license": "Commercial",
   "scripts": {
     "build:zxp": "node build-zxp.js",
-    "test": "node tests/output-folder.test.js && node tests/idml-fallback.test.js && node tests/font-style.test.js && node tests/font-style-template.test.js && node tests/presentation-status.test.js && node tests/json-polyfill.test.js"
+    "test": "node tests/output-folder.test.js && node tests/idml-fallback.test.js && node tests/font-style.test.js && node tests/font-style-template.test.js && node tests/presentation-status.test.js && node tests/json-polyfill.test.js && node tests/static-crosscheck.test.js"
   },
   "cep": {
     "name": "Logo Déclinaisons",
