@@ -761,6 +761,25 @@ input[type="range"]:disabled::-moz-range-thumb {
     box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
 }
 
+.btn-cancel {
+    background: transparent;
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.btn-cancel:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: var(--error-color);
+}
+
+/* Pendant un export, body.exporting::after couvre tout l'ecran (z-index 9998) : sans
+   ceci, chaque clic sur Annuler atterrissait sur l'overlay pendant toute la phase
+   Illustrator. */
+body.exporting #cancel-btn {
+    position: relative;
+    z-index: 10000;
+}
+
 .btn-export {
     background: rgba(255, 255, 255, 0.12);
     color: #FFFFFF;

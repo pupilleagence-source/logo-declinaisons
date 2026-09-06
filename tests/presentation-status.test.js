@@ -88,6 +88,18 @@ function writeStatus(dir, phase, extra, ts) {
     check('resolu en timeout', fin3.phase, 'timeout');
     check('sans depasser de beaucoup', Date.now() - t0 < 1000, true);
 
+    console.log('\n--- Annulation par l utilisateur ---');
+    H.clearPresentationStatus(root);
+    let cancel = false;
+    const p4 = H.waitForPresentationCompletion(root, { startedAt: Date.now(), timeoutMs: 5000, intervalMs: 30, shouldCancel: () => cancel });
+    await sleep(60); writeStatus(root, 'photoshop', ',"mockupsDone":1,"mockupsTotal":9');
+    await sleep(60); cancel = true;
+    const fin4 = await p4;
+    check('resolu en cancelled', fin4.phase, 'cancelled');
+    check('le dernier statut vu est transmis', fin4.last && fin4.last.phase, 'photoshop');
+    check('bilan cancelled -> warning', H.describePresentationOutcome({ phase: 'cancelled' }).level, 'warning');
+    check('bilan cancelled avant dispatch', H.describePresentationOutcome({ phase: 'cancelled', beforeDispatch: true }).text, 'Présentation InDesign non lancée (annulée).');
+
     console.log('\n--- Libelles ---');
     check('phase PS avec compteur', H.describePresentationPhase({ phase: 'photoshop', mockupsDone: 3, mockupsTotal: 9 }), 'Photoshop : mockup 3/9…');
     check('phase PS sans compteur', H.describePresentationPhase({ phase: 'photoshop' }), 'Photoshop : traitement des mockups…');

@@ -88,6 +88,7 @@ const I18N = {
             // Actions
             act_generate: 'Générer',
             act_export: 'Exporter',
+            act_cancel: 'Annuler',
             act_artboards_count: 'Plans de travail :',
 
             // License modal
@@ -119,9 +120,9 @@ const I18N = {
             // Status messages
             stat_init_error: "Erreur d'initialisation",
             stat_reset_done: 'Paramètres réinitialisés.',
-            stat_trial_reset_confirm: 'Réinitialiser le trial ?\n\nCela va remettre le compteur à 7/7 (local + serveur).',
+            stat_trial_reset_confirm: 'Réinitialiser le trial ?\n\nCela va remettre le compteur à 3/3 (local + serveur).',
             stat_trial_reset_progress: 'Réinitialisation en cours...',
-            stat_trial_reset_success: '✓ Trial réinitialisé ! 7/7 générations disponibles',
+            stat_trial_reset_success: '✓ Trial réinitialisé ! 3/3 générations disponibles',
             stat_trial_reset_error: '⚠️ Erreur lors de la réinitialisation',
 
             // Selection messages
@@ -192,7 +193,7 @@ const I18N = {
             stat_trial_offline: 'Connexion Internet requise pour utiliser le trial gratuit.\n\nActivez une license pour un accès offline illimité.',
             stat_license_revoked: 'Votre licence a été révoquée.\n\nVeuillez contacter le support.',
             stat_license_too_long_offline: 'Connexion Internet requise pour valider votre licence.\n\n(Offline depuis plus de 7 jours)',
-            stat_trial_exhausted: 'Vos 7 générations gratuites sont épuisées.\n\nActivez une license pour un accès illimité et offline.',
+            stat_trial_exhausted: 'Vos 3 générations gratuites sont épuisées.\n\nActivez une license pour un accès illimité et offline.',
 
             // Generic
             err_unknown: 'Erreur inconnue',
@@ -271,6 +272,7 @@ const I18N = {
 
             act_generate: 'Generate',
             act_export: 'Export',
+            act_cancel: 'Cancel',
             act_artboards_count: 'Artboards:',
 
             lic_title: '🔑 License Key',
@@ -299,9 +301,9 @@ const I18N = {
 
             stat_init_error: 'Initialization error',
             stat_reset_done: 'Settings reset.',
-            stat_trial_reset_confirm: 'Reset trial?\n\nThis will reset the counter to 7/7 (local + server).',
+            stat_trial_reset_confirm: 'Reset trial?\n\nThis will reset the counter to 3/3 (local + server).',
             stat_trial_reset_progress: 'Resetting...',
-            stat_trial_reset_success: '✓ Trial reset! 7/7 generations available',
+            stat_trial_reset_success: '✓ Trial reset! 3/3 generations available',
             stat_trial_reset_error: '⚠️ Error during reset',
 
             stat_max_custom: 'Maximum 3 custom variations',
@@ -364,7 +366,7 @@ const I18N = {
             stat_trial_offline: 'Internet connection required to use the free trial.\n\nActivate a license for unlimited offline access.',
             stat_license_revoked: 'Your license has been revoked.\n\nPlease contact support.',
             stat_license_too_long_offline: 'Internet connection required to validate your license.\n\n(Offline for more than 7 days)',
-            stat_trial_exhausted: 'Your 7 free generations are exhausted.\n\nActivate a license for unlimited offline access.',
+            stat_trial_exhausted: 'Your 3 free generations are exhausted.\n\nActivate a license for unlimited offline access.',
 
             err_unknown: 'Unknown error',
             err_generic: 'Error: {message}',
@@ -442,6 +444,7 @@ const I18N = {
 
             act_generate: 'Generar',
             act_export: 'Exportar',
+            act_cancel: 'Cancelar',
             act_artboards_count: 'Mesas de trabajo:',
 
             lic_title: '🔑 Clave de licencia',
@@ -470,9 +473,9 @@ const I18N = {
 
             stat_init_error: 'Error de inicialización',
             stat_reset_done: 'Configuración restablecida.',
-            stat_trial_reset_confirm: '¿Restablecer el trial?\n\nEsto reseteará el contador a 7/7 (local + servidor).',
+            stat_trial_reset_confirm: '¿Restablecer el trial?\n\nEsto reseteará el contador a 3/3 (local + servidor).',
             stat_trial_reset_progress: 'Restableciendo...',
-            stat_trial_reset_success: '✓ ¡Trial restablecido! 7/7 generaciones disponibles',
+            stat_trial_reset_success: '✓ ¡Trial restablecido! 3/3 generaciones disponibles',
             stat_trial_reset_error: '⚠️ Error durante el restablecimiento',
 
             stat_max_custom: 'Máximo 3 variaciones personalizadas',
@@ -535,7 +538,7 @@ const I18N = {
             stat_trial_offline: 'Conexión a Internet requerida para usar el trial gratuito.\n\nActiva una licencia para acceso offline ilimitado.',
             stat_license_revoked: 'Tu licencia ha sido revocada.\n\nPor favor contacta con soporte.',
             stat_license_too_long_offline: 'Conexión a Internet requerida para validar tu licencia.\n\n(Offline desde hace más de 7 días)',
-            stat_trial_exhausted: 'Tus 7 generaciones gratuitas están agotadas.\n\nActiva una licencia para acceso ilimitado y offline.',
+            stat_trial_exhausted: 'Tus 3 generaciones gratuitas están agotadas.\n\nActiva una licencia para acceso ilimitado y offline.',
 
             err_unknown: 'Error desconocido',
             err_generic: 'Error: {message}',
@@ -613,6 +616,7 @@ const I18N = {
 
             act_generate: 'Genera',
             act_export: 'Esporta',
+            act_cancel: 'Annulla',
             act_artboards_count: 'Tavole da disegno:',
 
             lic_title: '🔑 Chiave di licenza',
@@ -641,9 +645,9 @@ const I18N = {
 
             stat_init_error: 'Errore di inizializzazione',
             stat_reset_done: 'Impostazioni ripristinate.',
-            stat_trial_reset_confirm: 'Reimpostare il trial?\n\nQuesto ripristinerà il contatore a 7/7 (locale + server).',
+            stat_trial_reset_confirm: 'Reimpostare il trial?\n\nQuesto ripristinerà il contatore a 3/3 (locale + server).',
             stat_trial_reset_progress: 'Ripristino in corso...',
-            stat_trial_reset_success: '✓ Trial ripristinato! 7/7 generazioni disponibili',
+            stat_trial_reset_success: '✓ Trial ripristinato! 3/3 generazioni disponibili',
             stat_trial_reset_error: '⚠️ Errore durante il ripristino',
 
             stat_max_custom: 'Massimo 3 variazioni personalizzate',
@@ -706,7 +710,7 @@ const I18N = {
             stat_trial_offline: 'Connessione Internet richiesta per usare il trial gratuito.\n\nAttiva una licenza per accesso offline illimitato.',
             stat_license_revoked: 'La tua licenza è stata revocata.\n\nContatta il supporto.',
             stat_license_too_long_offline: 'Connessione Internet richiesta per validare la tua licenza.\n\n(Offline da più di 7 giorni)',
-            stat_trial_exhausted: 'Le tue 7 generazioni gratuite sono esaurite.\n\nAttiva una licenza per accesso illimitato e offline.',
+            stat_trial_exhausted: 'Le tue 3 generazioni gratuite sono esaurite.\n\nAttiva una licenza per accesso illimitato e offline.',
 
             err_unknown: 'Errore sconosciuto',
             err_generic: 'Errore: {message}',

@@ -1,12 +1,12 @@
 /**
- * Trial System - Compteur 7 générations gratuites
+ * Trial System - Compteur 3 générations gratuites
  * Validation serveur + cache local avec grace period (7 jours)
  */
 
 const Trial = {
     // Configuration
     config: {
-        freeGenerations: 7,
+        freeGenerations: 3,
         gracePeriodDays: 7,
         serverURL: 'https://logotyps.vercel.app/api/trial',
     },
@@ -230,8 +230,15 @@ const Trial = {
             return {
                 type: 'trial',
                 generationsUsed: data.generationsUsed || 0,
-                generationsRemaining: this.config.freeGenerations - (data.generationsUsed || 0),
-                generationsLimit: this.config.freeGenerations
+                // Faire confiance au serveur : c'est lui qui détient la limite ET le compteur.
+                // Le calcul local n'est qu'un repli, borné à 0. Sans ça, un changement de
+                // limite côté serveur laissait le client calculer avec SA constante — et
+                // comme l'échec de l'incrément est avalé, le trial devenait illimité.
+                generationsLimit: (typeof data.generationsLimit === 'number')
+                    ? data.generationsLimit : this.config.freeGenerations,
+                generationsRemaining: (typeof data.generationsRemaining === 'number')
+                    ? Math.max(0, data.generationsRemaining)
+                    : Math.max(0, this.config.freeGenerations - (data.generationsUsed || 0))
             };
         } catch (error) {
             clearTimeout(timeoutId);
@@ -358,7 +365,7 @@ const Trial = {
         return {
             allowed: false,
             reason: 'trial_expired',
-            message: 'Vos 7 générations gratuites sont épuisées.\n\nActivez une license pour un accès illimité et offline.'
+            message: 'Vos 3 générations gratuites sont épuisées.\n\nActivez une license pour un accès illimité et offline.'
         };
     },
 
@@ -398,7 +405,7 @@ const Trial = {
 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('✓ Génération comptabilisée:', data.generationsUsed + '/' + this.config.freeGenerations);
+                    console.log('✓ Génération comptabilisée, restantes :', (typeof data.generationsRemaining === 'number' ? data.generationsRemaining : '?') + '/' + (data.generationsLimit || this.config.freeGenerations));
                     return data.generationsUsed;
                 } else {
                     // Erreur serveur

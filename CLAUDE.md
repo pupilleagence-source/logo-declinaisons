@@ -125,7 +125,7 @@ Aucun `*.test.js`, aucun `.eslintrc`, aucun `tsconfig`, aucun `.prettierrc`, auc
 │  js/trial.js (683 l.)  ← machine à états trial/licence          │
 │  js/hwid.js (213 l.)   ← empreinte machine HWID-<sha256>        │
 │  js/updater.js (254 l.) + js/auto-updater.js (388 l.)  [DORMANT]│
-│  js/debug-mode-enabler.js (182 l.) ← modale macOS PlayerDebug   │
+│  (debug-mode-enabler.js supprimé le 2026-09-06)                 │
 │  js/idml-generator.js (1981 l.) ← chirurgie XML sur .idml       │
 │  lib/CSInterface.js (vendored) + lib/jszip.min.js (3.10.1)      │
 └────────────────────┬────────────────────────────────────────────┘
@@ -208,6 +208,8 @@ Le bouton est actif dès qu'il y a de quoi générer (≥1 sélection, ≥1 type
 **Pourquoi la fusion.** Il y avait avant deux boutons, et l'enchaînement « Générer » puis « Exporter » était cassé. Voir §5.1 bis : la cause racine est corrigée depuis, mais ne réintroduisez pas deux boutons sans relire ce point.
 
 Si la présentation InDesign est cochée mais qu'on est en mode génération, `handleAction` le dit explicitement dans le statut au lieu d'échouer en silence — la présentation lit les fichiers déjà exportés sur disque, elle ne peut rien produire sans eux.
+
+**Bouton Annuler** (`#cancel-btn`, visible seulement pendant une action). C'est un **drapeau** (`appState.cancelRequested`), pas une interruption : ce qui tourne dans Illustrator (`evalScript` synchrone) ne peut pas être stoppé. L'annulation prend effet au point d'attente suivant — popups, contrôle trial, résolution du dossier, ou l'attente Photoshop / InDesign (`shouldCancel` du poller). Demandée pendant la phase Illustrator, elle s'applique au retour : l'export fichiers est alors déjà fait (il se passe dans le même appel), seule la présentation est sautée, et le statut le dit. Pendant l'attente Photoshop / InDesign, annuler rend la main sans arrêter les deux applications, qui finiront seules — et recréeront le fichier de statut, sans conséquence (un run ultérieur sur le même dossier le purge au départ et n'accepte que les statuts postérieurs à son lancement ; la popup de conflit prévient qu'un traitement précédent peut encore écrire là). `appState.actionInProgress` garde le bouton d'action désactivé pendant toute l'action, y compris quand `updateUI()` est rappelée par un autre contrôle, et `handleAction()` refuse la réentrée.
 
 ### 5.2 bis Détail du mode génération
 Une popup bloquante (`confirmNoExportConfigured()`) prévient d'abord que **rien ne sera écrit sur le disque**, avec une case « Ne plus afficher » mémorisée dans `localStorage['skip_no_export_warning']`. Elle s'affiche **avant** le contrôle trial, pour ne pas consommer une génération si l'utilisateur annule.
@@ -301,7 +303,7 @@ Les snippets ExtendScript injectés dans les scripts générés (`presentationSt
 
 - **HWID** = `HWID-<sha256>` de `['v2', hostname, username, MAC, osType, osArch, cpuModel, cpuCores]`. Priorité **disque > localStorage > génération** : `~/.logotyps-hwid`, puis `localStorage._hwid`.
 - **Licence** : `localStorage._license` (en `btoa`, **pas** du chiffrement) **+** `~/.logotyps-license` (JSON en clair). Le tier disque existe parce qu'une mise à jour d'Illustrator efface la partition localStorage de CEP.
-- **Trial** : 7 générations, **comptées côté serveur uniquement**. Aucun fallback hors-ligne → le trial **échoue fermé** sans réseau.
+- **Trial** : **3** générations (7 jusqu'au 2026-09-06 ; `js/trial.js` `freeGenerations` + `FREE_GENERATIONS_LIMIT` dupliqué dans les 3 endpoints trial — **à changer aux 4 endroits ensemble**, puis `vercel --prod`), **comptées côté serveur uniquement**. Depuis le 2026-09-06 le client **suit le serveur** (`generationsRemaining` / `generationsLimit` de la réponse, bornés à 0) et le serveur rapporte `generationsUsed >= 7` dès que le trial est épuisé (`reportedUsed()` dans `check.js` / `increment.js`) : c'est ce qui bloque les clients ≤ 1.2.0, qui calculent `7 − utilisé` avec un 7 codé en dur et avalent le 403 de l'incrément — sans ça, baisser la limite les rendait **illimités**. Aucun fallback hors-ligne → le trial **échoue fermé** sans réseau.
 - **Licence hors-ligne** : **échoue ouvert** pendant 7 jours de grâce, mesurés depuis `activatedAt` (pas depuis la dernière validation réussie).
 - **Deux chemins de décision indépendants et non partagés** : `getStatus()` (`:40`, peint le badge, avec cache) et `canGenerate()` (`:245`, la vraie porte, **sans cache**, revalide à chaque clic).
 
@@ -385,7 +387,17 @@ workflow_dispatch sur .github/workflows/build-installers.yml
 
 ⚠️ **Re-lancer une version déjà publiée détruit la release existante et son tag** (`build-installers.yml:109`).
 
-### Checklist de bump de version (8 endroits, tous à la main)
+### Sortir une version : `npm run release`
+
+```
+npm run release -- 1.3.0 "Première ligne du changelog" "Deuxième ligne"
+```
+
+Le script (`scripts/release.js`) refuse un arbre git sale ou une branche ≠ `master`, bumpe les 7 chaînes de version vivantes, écrit `version` / `releaseDate` / `changelog` dans `backend-trial/api/version/latest.js`, lance `npm test`, committe, pousse, et déclenche le workflow avec `publish=true`. Il affiche ensuite l'URL du run et la commande `vercel --prod` à lancer **une fois la release en ligne** pour que les installs existantes voient la modale de mise à jour. Compter 5 à 40 min de build (notarisation Apple).
+
+**Ce que « mettre à jour le plugin » veut dire pour l'utilisateur final** : la modale lui donne un bouton qui ouvre la page de la release ; il retélécharge l'installeur et le relance par-dessus (`.pkg` / `.exe`). Il n'y a **pas** de mise à jour en place — l'OTA est du code mort (§2.3) et, sur macOS, le `.pkg` installe dans `/Library`, propriété de root, où le panneau ne pourrait de toute façon pas écrire.
+
+### Checklist de bump de version (ce que `npm run release` fait, si on doit le refaire à la main)
 
 1. `CSXS/manifest.xml` lignes 2 **et** 4 ← *la seule que lit Illustrator, jamais bumpée depuis 1.0.0*
 2. `package.json` lignes 3, 19, 25
@@ -484,7 +496,7 @@ Toutes les autres sont toujours présentes dans le code.
 
 - `#reset-trial-btn` — référencé 2× dans `main.js` (`:685`, `:847`), **0 fois** dans `index.html`. Tout le bloc DEBUG et `Trial.reset()` sont inatteignables.
 - `getInstalledFonts()` (`hostscript.jsx:2857`) — aucun appelant ; `main.js:1773` inline la même logique en string.
-- `enablePlayerDebugMode()` (`hostscript.jsx:3572`) — aucun appelant ; `js/debug-mode-enabler.js` passe par Node.
+- `enablePlayerDebugMode()` (`hostscript.jsx`) — aucun appelant ; son seul consommateur potentiel, `js/debug-mode-enabler.js`, a été supprimé le 2026-09-06 (le `postinstall` du `.pkg` règle le flag).
 - `convertAnyColorToRGB` / `convertColorManually` (`:57`, `:137`) — **mortes**, alors qu'elles gèrent SpotColor/LabColor/GrayColor. Conséquence : **un logo construit sur des nuanciers globaux/tons directs ne renvoie aucune couleur** et l'onglet couleurs custom apparaît vide sans erreur.
 - `applyMonochromeToGradient` (`:718`) — morte. Du coup `applyColorRecursive` (`:879`) **aplatit les dégradés en couleur unie** en monochrome, alors que le chemin couleurs-custom (`:930`) les gère correctement. Deux comportements différents sur la même illustration.
 - `extractColors` (`:560`), `hexToCMYKColor` (`:1131`) — mortes.
@@ -532,6 +544,7 @@ Toutes les autres sont toujours présentes dans le code.
 - **Fin réelle de Photoshop / InDesign attendue** avant d'annoncer « Exportation terminée » (§5.4) — fichier de statut `.logopack-status.json`, progression affichée, timeout
 - **Bouton de debug « Re-tester mockups » supprimé** (§10.17)
 - **Polyfill `JSON` dans `hostscript.jsx`** (§4) — tous les retours JSON vers le panneau étaient cassés depuis toujours, masqués par un faux succès
+- **2026-09-06, après les premiers tests d'installation** : trial **7 → 3** générations (client + 3 endpoints, à déployer) · **bouton Annuler** (§5.2) · **`debug-mode-enabler.js` retiré** — il affichait sur macOS, 3 s après chaque ouverture, une modale « lancez `defaults write…` dans le Terminal », devenue inutile depuis que le `postinstall` du `.pkg` règle `PlayerDebugMode` (et logiquement absurde : si le panneau s'affiche, le flag est déjà actif) · **`npm run release`** (§8)
 - **Release `v1.2.0` publiée le 2026-09-06** dans `pupilleagence-source/logo-declinaisons-releases` : `.pkg` macOS signé + notarisé et `.exe` Windows (non signé). Le backend `latest.js` annonce encore 1.1.0 tant que `vercel --prod` n'a pas été lancé — voulu tant que la release n'était pas en ligne.
 - **Bouton Reset = rechargement du panneau** après `clearStoredSelections()`. L'ancienne remise à zéro champ par champ (`resetSelections`, supprimée) oubliait croix ✕, lignes custom, couleurs, tailles, dossier de sortie, présentation, onglet actif. `clearStoredSelections()` supprime maintenant aussi les duplicatas masqués (ils s'accumulaient dans le document à chaque Reset). Survivent au Reset, comme à un redémarrage : langue, licence/trial, « Ne plus afficher ».
 - **Premiers tests du projet** : `npm test` — 7 fichiers, ~160 assertions, dont `tests/static-crosscheck.test.js` : cohérence HTML ↔ JS ↔ JSX ↔ i18n (chaque ID cherché existe, chaque fonction ExtendScript appelée existe, chaque clé i18n existe dans les 4 langues, `hostscript.jsx` reste ES3, ordre de chargement des scripts). **À lancer avant tout commit qui touche `index.html`, `js/` ou `jsx/`.** : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.

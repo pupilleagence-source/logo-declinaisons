@@ -9,7 +9,17 @@
 import { createClient } from 'redis';
 
 // Configuration
-const FREE_GENERATIONS_LIMIT = 7;
+const FREE_GENERATIONS_LIMIT = 3;
+
+// Compatibilité clients <= 1.2.0 : ils ignorent generationsRemaining et calculent
+// "7 - generationsUsed" avec une limite de 7 codée en dur, puis avalent le 403 de
+// /increment. Sans ceci, baisser la limite ici les rendait ILLIMITÉS. Dès que le
+// trial est épuisé côté serveur, on leur rapporte donc generationsUsed >= 7 : leur
+// propre garde (7 - 7 = 0) les bloque AVANT tout travail dans Illustrator.
+const LEGACY_CLIENT_LIMIT = 7;
+function reportedUsed(used) {
+    return used >= FREE_GENERATIONS_LIMIT ? Math.max(used, LEGACY_CLIENT_LIMIT) : used;
+}
 
 // Créer le client Redis avec les variables d'environnement Vercel
 let redis = null;
@@ -75,7 +85,7 @@ export default async function handler(req, res) {
             return res.status(403).json({
                 error: 'Trial limit reached',
                 message: 'Limite de générations gratuites atteinte',
-                generationsUsed: generationsUsed,
+                generationsUsed: reportedUsed(generationsUsed),
                 generationsLimit: FREE_GENERATIONS_LIMIT,
                 generationsRemaining: 0
             });
@@ -91,7 +101,7 @@ export default async function handler(req, res) {
         // Retourner le nouveau statut
         return res.status(200).json({
             success: true,
-            generationsUsed: generationsUsed,
+            generationsUsed: reportedUsed(generationsUsed),
             generationsLimit: FREE_GENERATIONS_LIMIT,
             generationsRemaining: Math.max(0, FREE_GENERATIONS_LIMIT - generationsUsed)
         });

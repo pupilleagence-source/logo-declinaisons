@@ -32,7 +32,7 @@
 
             <!-- Trial Status Badge -->
             <div id="trial-badge" class="trial-badge" style="display: none;">
-                <span id="trial-text">🎁 7 générations gratuites</span>
+                <span id="trial-text">🎁 3 générations gratuites</span>
             </div>
         </header>
 
@@ -338,6 +338,10 @@
                          au changement de langue (le handler de #lang-select rappelle
                          updateUI() pour retraduire). -->
                     <button id="export-btn" class="btn-action btn-generate" disabled>Générer</button>
+                    <!-- Visible uniquement pendant une action. Voir requestCancel() : ce qui est en
+                         cours dans Illustrator ne peut pas etre interrompu, l'annulation prend effet
+                         au premier point d'attente suivant (trial, dossier, Photoshop / InDesign). -->
+                    <button id="cancel-btn" class="btn-action btn-cancel" style="display:none;" data-i18n="act_cancel">Annuler</button>
                     <button id="next-tab-btn" class="btn-nav">→</button>
                 </div>
                 <div class="summary" id="summary" style="display: none;">
@@ -443,7 +447,6 @@
     <!-- Trial & Licensing System -->
     <script src="js/i18n.js"></script>
     <script src="js/hwid.js"></script>
-    <script src="js/debug-mode-enabler.js"></script>
     <script src="js/trial.js"></script>
     <script src="js/auto-updater.js"></script>
     <script src="lib/jszip.min.js"></script>

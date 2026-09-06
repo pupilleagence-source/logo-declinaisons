@@ -9,7 +9,7 @@
 import { createClient } from 'redis';
 
 // Configuration
-const FREE_GENERATIONS_LIMIT = 7;
+const FREE_GENERATIONS_LIMIT = 3;
 
 // Créer le client Redis avec les variables d'environnement Vercel
 let redis = null;

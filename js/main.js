@@ -68,6 +68,11 @@ lastFontSubstitutions: [],
 // Resultat final de la derniere presentation (phase done / error / timeout + compteurs
 // de mockups), tel que remonte par le fichier de statut ecrit par Photoshop et InDesign.
 lastPresentationResult: null,
+// Demande d'annulation de l'action en cours (bouton Annuler). Lue a chaque point
+// d'attente de handleAction / handleGeneratePresentation / waitForPresentationCompletion.
+cancelRequested: false,
+// Une action (generation / export / attente Photoshop-InDesign) est en cours.
+actionInProgress: false,
 documentSettings: {
   colorMode: 'RGB',  // RGB ou CMYK
   ppi: 72            // Résolution en PPI
@@ -154,7 +159,7 @@ function updateTrialBadge(status) {
 
         const remaining = status.generationsRemaining;
 
-        if (remaining === 0) {
+        if (remaining <= 0) {
             // Trial épuisé
             badge.className = 'trial-badge expired';
             text.textContent = '🔒 Trial épuisé - Activez une license';
@@ -674,6 +679,11 @@ function setupEventListeners() {
         syncParentFolder();
     }
 
+    const cancelBtn = document.getElementById('cancel-btn');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', requestCancel);
+    }
+
     // Bouton d'action unique : génère seul, ou génère puis exporte (cf. handleAction).
     const actionBtn = document.getElementById('export-btn');
     if (actionBtn) {
@@ -722,7 +732,7 @@ function setupEventListeners() {
     const resetTrialBtn = document.getElementById('reset-trial-btn');
     if (resetTrialBtn) {
         resetTrialBtn.addEventListener('click', async () => {
-            if (confirm('Réinitialiser le trial ?\n\nCela va remettre le compteur à 7/7 (local + serveur).')) {
+            if (confirm('Réinitialiser le trial ?\n\nCela va remettre le compteur à 3/3 (local + serveur).')) {
                 try {
                     // Afficher un message de chargement
                     showStatus('Réinitialisation en cours...', 'warning');
@@ -734,7 +744,7 @@ function setupEventListeners() {
                     const status = await Trial.init();
                     updateTrialBadge(status);
 
-                    showStatus('✓ Trial réinitialisé ! 7/7 générations disponibles', 'success');
+                    showStatus('✓ Trial réinitialisé ! 3/3 générations disponibles', 'success');
                 } catch (error) {
                     console.error('Erreur reset:', error);
                     showStatus('⚠️ Erreur lors de la réinitialisation', 'error');
@@ -1320,7 +1330,10 @@ function updateUI() {
   if (actionBtn) {
     const label = (key, fr) => (typeof t === 'function' ? t(key) : fr);
 
-    actionBtn.disabled = !(selectedCount > 0 && typeCount > 0 && colorCount > 0);
+    // Pendant une action, rester désactivé quoi qu'il arrive : updateUI() est appelée par
+    // une vingtaine de contrôles (langue, couleurs, cases…) et réactivait le bouton en
+    // plein export, permettant un second lancement qui écrasait l'annulation du premier.
+    actionBtn.disabled = appState.actionInProgress || !(selectedCount > 0 && typeCount > 0 && colorCount > 0);
     actionBtn.textContent = readiness.ready ? label('act_export', 'Exporter')
                                             : label('act_generate', 'Générer');
 
@@ -1528,6 +1541,14 @@ async function resolveOutputTarget() {
     if (conflict) {
         const where = useParent ? ('Le dossier « ' + escapeHtml(folderName) + ' »')
                                 : 'Le dossier de sortie';
+        // Un run précédent annulé ou en timeout sur CE dossier : Photoshop / InDesign
+        // y écrivent peut-être encore. Le dire avant que l'utilisateur ne le vide.
+        const prev = appState.lastPresentationResult;
+        const maybeStillRunning = !!(prev && (prev.phase === 'cancelled' || prev.phase === 'timeout')
+            && appState.resolvedOutputFolder && appState.resolvedOutputFolder === target.replace(/\\/g, '/'));
+        const stillRunningNote = maybeStillRunning
+            ? '<br><br><strong>⚠️ Un traitement Photoshop / InDesign lancé précédemment peut encore écrire dans ce dossier.</strong>'
+            : '';
         const choice = await showChoicePopup({
             title: 'Un export existe déjà',
             body: where + ' contient déjà un export.<br><br>'
@@ -1535,7 +1556,8 @@ async function resolveOutputTarget() {
                 + 'définitivement tout le contenu de ce dossier</strong>, y compris les fichiers '
                 + 'qui ne viennent pas du plugin. La suppression est irréversible : elle ne passe '
                 + 'pas par la corbeille.<br><br>'
-                + '<span style="font-size:11px;word-break:break-all;">' + escapeHtml(target) + '</span>',
+                + '<span style="font-size:11px;word-break:break-all;">' + escapeHtml(target) + '</span>'
+                + stillRunningNote,
             buttons: [
                 { value: 'new', label: 'Créer un nouveau dossier', primary: true },
                 { value: 'replace', label: 'Vider et remplacer', danger: true },
@@ -1577,6 +1599,31 @@ function getEffectiveOutputFolder() {
     return appState.resolvedOutputFolder || appState.outputFolder;
 }
 
+// ---- Annulation --------------------------------------------------------------
+// Ce qui tourne dans Illustrator (evalScript synchrone) ne peut PAS etre interrompu :
+// l'annulation est donc un drapeau, lu a chaque point d'attente. Elle prend effet
+// immediatement pendant les phases JS (popups, trial, attente Photoshop / InDesign)
+// et au retour d'Illustrator sinon.
+function setActionInProgress(on) {
+    appState.actionInProgress = !!on;
+    appState.cancelRequested = false;
+    if (on) appState.lastPresentationResult = null;
+    const cancelBtn = document.getElementById('cancel-btn');
+    if (cancelBtn) {
+        cancelBtn.style.display = on ? '' : 'none';
+        cancelBtn.disabled = false;
+    }
+}
+
+function requestCancel() {
+    if (appState.cancelRequested) return;
+    appState.cancelRequested = true;
+    const cancelBtn = document.getElementById('cancel-btn');
+    if (cancelBtn) cancelBtn.disabled = true;
+    showStatus('Annulation demandée. Ce qu\'Illustrator a déjà commencé ira jusqu\'au bout ; '
+             + 'l\'annulation prend effet dès la prochaine étape.', 'warning');
+}
+
 // Bouton d'action UNIQUE (#export-btn). Deux modes, choisis par getExportReadiness() :
 //   - sortie incomplete -> genere uniquement les plans de travail (ex-bouton "Generer") ;
 //   - sortie complete    -> genere PUIS exporte les fichiers, et la presentation InDesign
@@ -1589,6 +1636,7 @@ function getEffectiveOutputFolder() {
 // generation en prenant le document GENERE comme source, alors que storedSelections
 // reference des PageItems du document d'origine.
 async function handleAction() {
+    if (appState.actionInProgress) return; // réentrée : un run est déjà en cours
     const actionBtn = document.getElementById('export-btn');
     const readiness = getExportReadiness();
     const isExport  = readiness.ready;
@@ -1599,6 +1647,7 @@ async function handleAction() {
         // generation gratuite et lancant deux generateArtboards concurrents dans le
         // moteur ExtendScript mono-thread. Le finally reactive dans tous les cas.
         if (actionBtn) actionBtn.disabled = true;
+        setActionInProgress(true);
 
         // Mode generation seule : prevenir que rien ne sera ecrit sur le disque.
         // Avant le controle trial, pour ne rien consommer si l'utilisateur annule.
@@ -1619,7 +1668,9 @@ async function handleAction() {
         }
         appState.resolvedOutputFolder = targetFolder;
 
+        if (appState.cancelRequested) { showStatus('Annulé.', 'warning'); return; }
         if (!(await checkTrialAllowed())) return;
+        if (appState.cancelRequested) { showStatus('Annulé.', 'warning'); return; }
 
         if (isExport) {
             showStatus('Exportation en cours...', 'warning');
@@ -1663,14 +1714,27 @@ async function handleAction() {
 
             try {
                 await Trial.incrementGeneration();
-                const newStatus = await Trial.getStatus();
-                updateTrialBadge(newStatus);
             } catch (e) {
                 console.error('Erreur incrémentation trial:', e);
             }
+            // Rafraîchir le badge dans tous les cas : si le serveur a refusé l'incrément
+            // (limite atteinte), c'est justement là que l'utilisateur doit le voir.
+            try {
+                updateTrialBadge(await Trial.getStatus());
+            } catch (e) {}
 
             const presentationChecked = document.getElementById('presentation-enable');
             const wantsPresentation = !!(presentationChecked && presentationChecked.checked);
+
+            // Annulation demandee pendant qu'Illustrator travaillait : les plans de travail
+            // (et l'export fichiers, qui se fait dans le meme appel) sont deja faits — on
+            // s'arrete la, sans lancer la presentation.
+            if (appState.cancelRequested && isExport && wantsPresentation) {
+                showStatus(`Annulé après l'export : ${count} plans de travail exportés dans ${targetFolder}, présentation InDesign non lancée.`, 'warning');
+                return;
+            }
+            // Sinon il ne restait rien à annuler : l'export / la génération est complète,
+            // on affiche le bilan normal.
 
             if (isExport) {
                 if (wantsPresentation) {
@@ -1721,6 +1785,7 @@ async function handleAction() {
         console.error('Action error:', error);
         showStatus(`Erreur: ${error.message || 'Erreur inconnue'}`, 'error');
     } finally {
+        setActionInProgress(false);
         if (actionBtn) actionBtn.disabled = false;
         document.body.classList.remove('exporting');
         updateUI();
@@ -1876,6 +1941,10 @@ function waitForPresentationCompletion(outputFolder, opts) {
                     return;
                 }
             }
+            if (opts.shouldCancel && opts.shouldCancel()) {
+                resolve({ phase: 'cancelled', last: st || null });
+                return;
+            }
             if (Date.now() - startedAt > timeoutMs) {
                 resolve({ phase: 'timeout', last: st || null });
                 return;
@@ -1899,6 +1968,7 @@ function describePresentationPhase(st) {
     if (st.phase === 'done') return 'Présentation InDesign prête.';
     if (st.phase === 'error') return 'Erreur présentation : ' + (st.message || 'inconnue');
     if (st.phase === 'timeout') return 'Photoshop / InDesign n\'ont pas signalé la fin dans le délai imparti.';
+    if (st.phase === 'cancelled') return 'Attente annulée.';
     return '';
 }
 
@@ -1913,6 +1983,15 @@ function describePresentationOutcome(pr) {
             if (failed) return { text: t + ' (' + failed + ' en échec)', level: 'warning' };
         }
         return { text: t + '.', level: 'success' };
+    }
+    if (pr.phase === 'cancelled') {
+        return {
+            text: pr.beforeDispatch
+                ? 'Présentation InDesign non lancée (annulée).'
+                : 'Attente annulée : Photoshop et InDesign continuent en arrière-plan, le document '
+                  + 's\'ouvrira dans InDesign quand ils auront terminé.',
+            level: 'warning'
+        };
     }
     if (pr.phase === 'timeout') {
         return {
@@ -2005,6 +2084,7 @@ async function handleGeneratePresentation() {
 
         if (!config.outputFolder) {
             showStatus('Veuillez d\'abord générer les logos (dossier de sortie requis).', 'error');
+            appState.lastPresentationResult = { phase: 'error', message: 'dossier de sortie requis' };
             return;
         }
 
@@ -2023,6 +2103,11 @@ async function handleGeneratePresentation() {
             var startedAt = Date.now();
             var dispatch = null;
             var dispatchHasMockups = false;
+
+            if (appState.cancelRequested) {
+                appState.lastPresentationResult = { phase: 'cancelled', beforeDispatch: true };
+                return;
+            }
             // Toujours normaliser en forward slashes (évite les problèmes d'échappement Windows)
             var safePath = result.path.replace(/\\/g, '/');
 
@@ -2142,18 +2227,25 @@ async function handleGeneratePresentation() {
             var finalStatus = await waitForPresentationCompletion(config.outputFolder, {
                 startedAt: startedAt,
                 timeoutMs: dispatchHasMockups ? PRESENTATION_TIMEOUT_WITH_MOCKUPS : PRESENTATION_TIMEOUT_NO_MOCKUPS,
-                onProgress: function (st) { showStatus(describePresentationPhase(st), 'info'); }
+                onProgress: function (st) { showStatus(describePresentationPhase(st), 'info'); },
+                shouldCancel: function () { return appState.cancelRequested; }
             });
+            // Purger dans tous les cas. Après une annulation, Photoshop / InDesign continuent
+            // et recréeront le fichier (open('w')) jusqu'à "done" : sans conséquence, il ne
+            // sera relu que par un run ultérieur visant le MÊME dossier, qui le purge au
+            // départ et n'accepte que les statuts postérieurs à son propre lancement.
             clearPresentationStatus(config.outputFolder);
             appState.lastPresentationResult = finalStatus;
             var outcome = describePresentationOutcome(finalStatus);
             showStatus(outcome.text, outcome.level);
         } else {
             showStatus('Erreur présentation : ' + result.error, 'error');
+            appState.lastPresentationResult = { phase: 'error', message: result.error || 'génération IDML échouée' };
         }
     } catch (err) {
         console.error('Presentation generation error:', err);
         showStatus('Erreur lors de la génération de la présentation : ' + (err.message || err), 'error');
+        appState.lastPresentationResult = { phase: 'error', message: err.message || String(err) };
     }
 }
 
