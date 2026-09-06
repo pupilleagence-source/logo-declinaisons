@@ -31,15 +31,16 @@ export default async function handler(req, res) {
         // Configuration de la dernière version
         // TODO: Vous pourrez mettre à jour ces valeurs à chaque nouvelle release
         const latestVersion = {
-            version: '1.2.0',
-            releaseDate: '2026-09-05',
+            version: '1.3.0',
+            releaseDate: '2026-09-06',
             downloadUrl: 'https://github.com/pupilleagence-source/logo-declinaisons-releases/releases/latest',
             changelog: [
-            "🎯 Un seul bouton Générer / Exporter : l'export fonctionne enfin après une génération",
+            "🎯 Un seul bouton Générer / Exporter, et l'export fonctionne après une génération",
+            "⏹️ Bouton Annuler pendant une action",
             "📁 Dossier parent « Logopack » et gestion des exports déjà présents",
             "⏳ La fin réelle de Photoshop et InDesign est attendue avant de conclure l'export",
             "🔤 Styles de police adaptés à la police choisie dans la charte : plus de polices manquantes",
-            "🛠️ Repli horizontal ↔ vertical dans la charte, bouton Reset complet, corrections diverses"
+            "🎁 Essai gratuit : 3 générations"
         ]
         };
 
