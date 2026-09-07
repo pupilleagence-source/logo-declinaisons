@@ -78,6 +78,15 @@ if (typeof JSON.parse !== 'function') {
     };
 }
 
+// Version de CE fichier tel que charge par Illustrator. Le panneau (js/main.js) la
+// compare a UpdateChecker.CURRENT_VERSION : apres une mise a jour a chaud, les
+// fichiers sur disque sont neufs mais Illustrator garde l'ancien hostscript en
+// memoire jusqu'a son relancement. Bumpee par scripts/release.js.
+var HOSTSCRIPT_VERSION = '1.3.0';
+function getHostscriptVersion() {
+    return HOSTSCRIPT_VERSION;
+}
+
 var storedSelections = {
     horizontal: null,
     vertical: null,

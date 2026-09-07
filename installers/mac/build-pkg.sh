@@ -100,6 +100,18 @@ fi
 for version in 9 10 11 12 13 14; do
     sudo -u "$CONSOLE_USER" defaults write com.adobe.CSXS.${version} PlayerDebugMode -string 1 2>/dev/null || true
 done
+
+# Hand the extension folder to the console user: the panel updates itself in place
+# (js/auto-updater.js) and must be able to write there. Root-owned = the panel falls
+# back to "download the installer" for every update.
+# Trade-off, deliberate: /Library/... is loaded by EVERY macOS account on the machine,
+# so on a shared Mac the installing user (or anything running as them) can edit code
+# that other accounts' Illustrator will execute. Acceptable for single-user
+# workstations, which is this plugin's audience. To go back to installer-only updates
+# on macOS, delete this block: the panel detects the read-only folder by itself.
+if [ -n "$CONSOLE_USER" ] && [ "$CONSOLE_USER" != "root" ] && [ -d "/Library/Application Support/Adobe/CEP/extensions/logo-declinaisons" ]; then
+    chown -R "$CONSOLE_USER" "/Library/Application Support/Adobe/CEP/extensions/logo-declinaisons" 2>/dev/null || true
+fi
 exit 0
 POSTINSTALL
 chmod +x "$SCRIPTS_DIR/postinstall"

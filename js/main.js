@@ -73,6 +73,9 @@ lastPresentationResult: null,
 cancelRequested: false,
 // Une action (generation / export / attente Photoshop-InDesign) est en cours.
 actionInProgress: false,
+// Les fichiers du plugin ont ete mis a jour (a chaud) mais Illustrator n'a pas encore
+// ete relance : hostscript.jsx en memoire est l'ancien, on bloque l'action.
+restartRequired: false,
 documentSettings: {
   colorMode: 'RGB',  // RGB ou CMYK
   ppi: 72            // Résolution en PPI
@@ -103,6 +106,10 @@ async function init() {
         }
 
         csInterface = new CSInterface();
+
+        // hostscript.jsx charge dans Illustrator == version du panneau ? Sinon (mise a
+        // jour a chaud pas encore suivie d'un relancement), bloquer l'action.
+        checkHostscriptVersion();
 
         // Initialiser le système de trial/licensing
         await initTrialSystem();
@@ -794,45 +801,7 @@ function setupEventListeners() {
         });
     }
 
-    // === UPDATE MODAL ===
-    const updateModal = document.getElementById('update-modal');
-    const closeUpdateModal = document.getElementById('close-update-modal');
-    const updateSkipBtn = document.getElementById('update-skip-btn');
-    const updateDownloadBtn = document.getElementById('update-download-btn');
-
-    if (closeUpdateModal) {
-        closeUpdateModal.addEventListener('click', () => {
-            UpdateChecker.closeUpdateModal();
-        });
-    }
-
-    if (updateSkipBtn) {
-        updateSkipBtn.addEventListener('click', () => {
-            UpdateChecker.closeUpdateModal();
-        });
-    }
-
-    if (updateDownloadBtn) {
-        updateDownloadBtn.addEventListener('click', () => {
-            // Ouvrir le lien de download dans le navigateur (pas d'auto-écrasement)
-            var url = updateDownloadBtn.dataset.downloadUrl;
-            if (url) {
-                window.cep && window.cep.util
-                    ? window.cep.util.openURLInDefaultBrowser(url)
-                    : window.open(url, '_blank');
-            }
-            UpdateChecker.closeUpdateModal();
-        });
-    }
-
-    // Fermer la modal en cliquant en dehors
-    if (updateModal) {
-        updateModal.addEventListener('click', (e) => {
-            if (e.target === updateModal) {
-                UpdateChecker.closeUpdateModal();
-            }
-        });
-    }
+    // Les modales de mise a jour sont cablees dans js/updater.js (bindModals).
 
 }
 
@@ -1333,7 +1302,7 @@ function updateUI() {
     // Pendant une action, rester désactivé quoi qu'il arrive : updateUI() est appelée par
     // une vingtaine de contrôles (langue, couleurs, cases…) et réactivait le bouton en
     // plein export, permettant un second lancement qui écrasait l'annulation du premier.
-    actionBtn.disabled = appState.actionInProgress || !(selectedCount > 0 && typeCount > 0 && colorCount > 0);
+    actionBtn.disabled = appState.actionInProgress || appState.restartRequired || !(selectedCount > 0 && typeCount > 0 && colorCount > 0);
     actionBtn.textContent = readiness.ready ? label('act_export', 'Exporter')
                                             : label('act_generate', 'Générer');
 
@@ -2316,6 +2285,57 @@ function showPresentationInfoPopup() {
     overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
     overlay.appendChild(popup);
     document.body.appendChild(overlay);
+}
+
+/**
+ * Compare la version de hostscript.jsx chargee dans Illustrator avec celle du panneau.
+ * Apres une mise a jour a chaud, les fichiers sur disque sont neufs mais Illustrator
+ * garde l'ancien hostscript.jsx en memoire jusqu'a son relancement ; les nouveaux
+ * appels JS -> JSX pourraient alors viser des fonctions absentes. Un hostscript trop
+ * vieux pour repondre (< 1.4.0, pas de getHostscriptVersion) est traite pareil.
+ */
+function checkHostscriptVersion() {
+    if (!csInterface || typeof UpdateChecker === 'undefined') return;
+    const expected = UpdateChecker.CURRENT_VERSION;
+    let attempts = 0;
+    // 'EvalScript error.' ou réponse vide = on ne SAIT PAS (JSX pas encore évalué au
+    // tout premier evalScript, dialogue modal ouvert dans Illustrator…). On réessaie
+    // quelques fois, et si ça n'aboutit pas on ne bloque rien : un faux bandeau
+    // désactiverait le bouton d'action à tort pour toute la session.
+    const attempt = function () {
+        attempts++;
+        let done = false;
+        try {
+            csInterface.evalScript('getHostscriptVersion()', function (result) {
+                if (done) return;
+                done = true;
+                const v = (result || '').toString().trim();
+                if (/^\d+\.\d+\.\d+$/.test(v)) {
+                    if (v === expected) return;
+                    console.warn('⚠️ hostscript.jsx chargé en ' + v + ', panneau en ' + expected + ' : relancer Illustrator');
+                    markRestartRequired();
+                    return;
+                }
+                if (attempts < 4) setTimeout(attempt, 1500);
+                else console.warn('⚠️ Version de hostscript.jsx indéterminée (' + v + ') : contrôle abandonné');
+            });
+        } catch (e) {
+            // Pas de CEP (navigateur) : rien à contrôler.
+        }
+    };
+    attempt();
+}
+
+// Appele par js/updater.js quand une mise a jour a chaud vient d'etre appliquee.
+window.__logopackOnHotUpdateApplied = function () { markRestartRequired(); };
+
+function markRestartRequired() {
+    appState.restartRequired = true;
+    const banner = document.getElementById('restart-banner');
+    if (banner) banner.style.display = 'block';
+    // Le bandeau est fixé en bas : décaler la barre d'action pour qu'il ne la couvre pas.
+    document.body.classList.add('restart-required');
+    updateUI();
 }
 
 function showStatus(message, type = '') {

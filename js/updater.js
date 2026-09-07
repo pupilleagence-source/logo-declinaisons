@@ -1,254 +1,314 @@
 /**
- * Système de vérification et notification de mises à jour
+ * Vérification des mises à jour et modales.
+ *
+ * Source de vérité : le manifeste SIGNÉ servi par /api/updates/manifest (généré par
+ * scripts/release.js). Deux modales, selon ce que le manifeste dit :
+ *   - #update-modal            mise à jour À CHAUD, appliquée par js/auto-updater.js,
+ *                              puis "relancez Illustrator" ;
+ *   - #update-installer-modal  la version exige l'INSTALLEUR (elle modifie des fichiers
+ *                              que la mise à jour à chaud ne couvre pas : templates,
+ *                              PSD…), ou le dossier de l'extension n'est pas modifiable.
+ *
+ * CURRENT_VERSION est bumpée par scripts/release.js — ne pas la déplacer.
  */
 
 const UpdateChecker = {
-    // Version actuelle du plugin (doit correspondre au manifest.xml)
     CURRENT_VERSION: '1.3.0',
 
-    // URL de l'API de versionning
-    API_URL: 'https://logotyps.vercel.app/api/version/latest',
+    BASE_URL: 'https://logotyps.vercel.app',
+    MANIFEST_URL: 'https://logotyps.vercel.app/api/updates/manifest',
+    FILES_BASE_URL: 'https://logotyps.vercel.app/api/updates/files?file=',
+    RELEASES_URL: 'https://github.com/pupilleagence-source/logo-declinaisons-releases/releases/latest',
 
-    // URL de l'API de mise à jour
-    UPDATES_API_URL: 'https://logotyps.vercel.app/api/updates',
+    SNOOZE_MS: 24 * 60 * 60 * 1000,
+    // Au-delà, une mise à jour à chaud est considérée en échec (750 Ko à télécharger :
+    // largement suffisant, même sur une connexion lente).
+    APPLY_DEADLINE_MS: 10 * 60 * 1000,
 
-    /**
-     * Compare deux versions (format: x.y.z)
-     * @returns 1 si v1 > v2, -1 si v1 < v2, 0 si égales
-     */
-    compareVersions: function(v1, v2) {
-        const parts1 = v1.split('.').map(Number);
-        const parts2 = v2.split('.').map(Number);
+    _manifest: null,
+    // Action du bouton principal de la modale a chaud : change selon l'etat
+    // (mettre a jour -> fermer / telecharger l'installeur). Un seul listener, pas de
+    // onclick concurrent.
+    _applyAction: null,
 
+    // x.y.z ; segments manquants = 0, non numériques = 0. 1 / -1 / 0.
+    compareVersions: function (v1, v2) {
+        const a = String(v1 || '').split('.'), b = String(v2 || '').split('.');
         for (let i = 0; i < 3; i++) {
-            if (parts1[i] > parts2[i]) return 1;
-            if (parts1[i] < parts2[i]) return -1;
+            const x = parseInt(a[i], 10) || 0, y = parseInt(b[i], 10) || 0;
+            if (x > y) return 1;
+            if (x < y) return -1;
         }
         return 0;
     },
 
-    /**
-     * Vérifie s'il y a une nouvelle version disponible
-     */
-    checkForUpdates: async function() {
+    tr: function (key, fallback) {
+        try { if (typeof t === 'function') { const s = t(key); if (s && s !== key) return s; } } catch (e) {}
+        return fallback;
+    },
+
+    // ---- Manifeste -----------------------------------------------------------------
+
+    fetchManifest: async function () {
+        const controller = new AbortController();
+        const timer = setTimeout(function () { controller.abort(); }, 5000);
         try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-            const response = await fetch(this.API_URL, {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
-                },
-                signal: controller.signal
-            });
-
-            clearTimeout(timeoutId);
-
-            if (!response.ok) {
-                console.warn('⚠️ Impossible de vérifier les mises à jour');
+            const res = await fetch(this.MANIFEST_URL, { headers: { 'Accept': 'application/json' }, signal: controller.signal, cache: 'no-store' });
+            if (res.status === 404) return null;          // aucun manifeste publié encore
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const manifest = await res.json();
+            if (!AutoUpdater.verifyManifestSignature(manifest)) {
+                console.warn('⚠️ Manifeste de mise à jour rejeté : signature invalide');
                 return null;
             }
+            return manifest;
+        } finally {
+            clearTimeout(timer);
+        }
+    },
 
-            const data = await response.json();
+    // Version la plus haute déjà vue dans un manifeste valide : un serveur qui
+    // resservirait un ancien manifeste (pourtant signé) ne peut pas faire reculer un
+    // client qui a déjà vu plus récent. Protection partielle, mais gratuite.
+    rememberSeen: function (version) {
+        try {
+            const seen = localStorage.getItem('update_max_seen');
+            if (!seen || this.compareVersions(version, seen) > 0) localStorage.setItem('update_max_seen', version);
+        } catch (e) {}
+    },
+    isOlderThanSeen: function (version) {
+        try {
+            const seen = localStorage.getItem('update_max_seen');
+            return !!seen && this.compareVersions(version, seen) < 0;
+        } catch (e) { return false; }
+    },
 
-            // Comparer les versions
-            const comparison = this.compareVersions(data.version, this.CURRENT_VERSION);
+    // 'hot' | 'installer' | null (à jour ou rien à proposer)
+    decideMode: function (manifest) {
+        if (!manifest || this.compareVersions(manifest.version, this.CURRENT_VERSION) <= 0) return null;
+        if (this.isOlderThanSeen(manifest.version)) return null;
+        if (manifest.hotUpdateFrom && this.compareVersions(this.CURRENT_VERSION, manifest.hotUpdateFrom) < 0) return 'installer';
+        try {
+            if (!AutoUpdater.isExtensionWritable(AutoUpdater.getExtensionPath())) return 'installer';
+        } catch (e) {
+            return 'installer';
+        }
+        return 'hot';
+    },
 
-            if (comparison > 0) {
-                // Vérifier si cette version a déjà été ignorée
-                try {
-                    var ignoredVersion = localStorage.getItem('ignored_update_version');
-                    if (ignoredVersion === data.version) {
-                        console.log(`🔕 Version ${data.version} déjà ignorée par l'utilisateur`);
-                        return null;
-                    }
-                } catch (e) {}
+    // "Plus tard" = 24 h de silence pour cette version, pas un enterrement définitif.
+    isSnoozed: function (version) {
+        try {
+            const raw = localStorage.getItem('update_snooze');
+            if (!raw) return false;
+            const s = JSON.parse(raw);
+            return s && s.version === version && typeof s.until === 'number' && Date.now() < s.until;
+        } catch (e) { return false; }
+    },
+    snooze: function (version) {
+        try { localStorage.setItem('update_snooze', JSON.stringify({ version: version, until: Date.now() + this.SNOOZE_MS })); } catch (e) {}
+    },
 
-                // Nouvelle version disponible
-                console.log(`🆕 Nouvelle version disponible: ${data.version} (actuelle: ${this.CURRENT_VERSION})`);
-                return data;
-            } else {
-                console.log(`✓ Plugin à jour (version ${this.CURRENT_VERSION})`);
-                return null;
-            }
-
-        } catch (error) {
-            console.warn('⚠️ Erreur lors de la vérification des mises à jour:', error.message);
+    checkForUpdates: async function () {
+        try {
+            const manifest = await this.fetchManifest();
+            if (!manifest) { console.log('✓ Aucun manifeste de mise à jour (version ' + this.CURRENT_VERSION + ')'); return null; }
+            const mode = this.decideMode(manifest);
+            if (!mode) { console.log('✓ Plugin à jour (version ' + this.CURRENT_VERSION + ')'); return null; }
+            this.rememberSeen(manifest.version);
+            if (this.isSnoozed(manifest.version)) { console.log('🔕 Mise à jour ' + manifest.version + ' reportée par l\'utilisateur'); return null; }
+            console.log('🆕 Version ' + manifest.version + ' disponible (' + mode + '), actuelle ' + this.CURRENT_VERSION);
+            return { manifest: manifest, mode: mode };
+        } catch (e) {
+            console.warn('⚠️ Vérification des mises à jour impossible :', e.message || e);
             return null;
         }
     },
 
-    /**
-     * Affiche la modal de mise à jour
-     */
-    showUpdateModal: function(updateInfo) {
-        const modal = document.getElementById('update-modal');
+    // ---- Modales ---------------------------------------------------------------------
 
-        // Remplir les informations
-        document.getElementById('update-current-version').textContent = this.CURRENT_VERSION;
-        document.getElementById('update-new-version').textContent = updateInfo.version;
-        document.getElementById('update-release-date').textContent = new Date(updateInfo.releaseDate).toLocaleDateString('fr-FR');
-
-        // Remplir le changelog
-        const changelogList = document.getElementById('update-changelog');
-        changelogList.innerHTML = '';
-        updateInfo.changelog.forEach(change => {
-            const li = document.createElement('li');
-            li.textContent = change;
-            changelogList.appendChild(li);
-        });
-
-        // Stocker l'URL de téléchargement
-        document.getElementById('update-download-btn').dataset.downloadUrl = updateInfo.downloadUrl;
-
-        // Afficher la modal
-        modal.style.display = 'flex';
-    },
-
-    /**
-     * Ferme la modal de mise à jour
-     */
-    closeUpdateModal: function() {
-        document.getElementById('update-modal').style.display = 'none';
-
-        // Sauvegarder la version ignorée (persistant : ne redemande plus pour cette version)
-        try {
-            var newVer = document.getElementById('update-new-version');
-            if (newVer && newVer.textContent && newVer.textContent !== '-') {
-                localStorage.setItem('ignored_update_version', newVer.textContent.trim());
-            }
-        } catch (e) {}
-    },
-
-    /**
-     * Installe la mise à jour automatiquement
-     */
-    installUpdate: async function() {
-        const modal = document.getElementById('update-modal');
-        const downloadBtn = document.getElementById('update-download-btn');
-        const skipBtn = document.getElementById('update-skip-btn');
-        const modalBody = modal.querySelector('.modal-body');
-
-        try {
-            // Désactiver les boutons
-            downloadBtn.disabled = true;
-            skipBtn.disabled = true;
-            downloadBtn.textContent = 'Installation en cours...';
-
-            // Afficher la progression
-            const progressDiv = document.createElement('div');
-            progressDiv.id = 'update-progress';
-            progressDiv.style.marginTop = '20px';
-            progressDiv.style.padding = '15px';
-            progressDiv.style.background = '#f0f0f0';
-            progressDiv.style.borderRadius = '8px';
-            progressDiv.innerHTML = '<strong>Installation...</strong><br><span id="progress-text">Téléchargement du manifest...</span>';
-            modalBody.appendChild(progressDiv);
-
-            const progressText = document.getElementById('progress-text');
-
-            // Télécharger le manifest de mise à jour
-            const manifestResponse = await fetch(`${this.UPDATES_API_URL}/manifest`);
-            if (!manifestResponse.ok) {
-                throw new Error('Impossible de récupérer le manifest de mise à jour');
-            }
-
-            const manifest = await manifestResponse.json();
-
-            // Effectuer la mise à jour avec AutoUpdater
-            const result = await AutoUpdater.performUpdate(manifest, (file, current, total) => {
-                progressText.textContent = `Mise à jour (${current}/${total}): ${file}`;
+    fillCommon: function (prefix, manifest) {
+        const q = function (id) { return document.getElementById(id); };
+        if (q(prefix + '-current-version')) q(prefix + '-current-version').textContent = this.CURRENT_VERSION;
+        if (q(prefix + '-new-version')) q(prefix + '-new-version').textContent = manifest.version;
+        if (q(prefix + '-release-date')) {
+            let d = manifest.releaseDate || '';
+            const locales = { fr: 'fr-FR', en: 'en-US', es: 'es-ES', it: 'it-IT' };
+            const lang = (typeof I18N !== 'undefined' && I18N.currentLang) || 'fr';
+            try { d = new Date(manifest.releaseDate).toLocaleDateString(locales[lang] || 'fr-FR'); } catch (e) {}
+            q(prefix + '-release-date').textContent = d;
+        }
+        const list = q(prefix + '-changelog');
+        if (list) {
+            list.innerHTML = '';
+            (manifest.changelog || []).forEach(function (line) {
+                const li = document.createElement('li');
+                li.textContent = line;
+                list.appendChild(li);
             });
+        }
+    },
 
-            if (result.success) {
-                // Succès !
-                progressDiv.innerHTML = `
-                    <strong style="color: #4CAF50;">✅ Mise à jour installée avec succès !</strong><br><br>
-                    <p>${result.filesUpdated.length} fichier(s) mis à jour.</p>
-                    <p style="color: #ff9800;"><strong>⚠️ Veuillez fermer et rouvrir Illustrator pour appliquer les changements.</strong></p>
-                `;
+    showHotModal: function (manifest) {
+        this._manifest = manifest;
+        this.fillCommon('update', manifest);
+        const body = document.getElementById('update-modal-body');
+        if (body) body.hidden = false;
+        const done = document.getElementById('update-done');
+        if (done) done.hidden = true;
+        const err = document.getElementById('update-error');
+        if (err) { err.hidden = true; err.textContent = ''; }
+        const apply = document.getElementById('update-apply-btn');
+        if (apply) { apply.disabled = false; apply.textContent = this.tr('upd_apply', 'Télécharger et installer'); }
+        const self = this;
+        this._applyAction = function () { self.applyHotUpdate(); };
+        const skip = document.getElementById('update-skip-btn');
+        if (skip) { skip.disabled = false; skip.hidden = false; }
+        const prog = document.getElementById('update-progress');
+        if (prog) { prog.hidden = true; prog.textContent = ''; }
+        document.getElementById('update-modal').style.display = 'flex';
+    },
 
-                // Changer le bouton
-                downloadBtn.textContent = 'Fermer';
-                downloadBtn.disabled = false;
-                downloadBtn.onclick = () => {
-                    modal.style.display = 'none';
-                };
+    showInstallerModal: function (manifest) {
+        this._manifest = manifest;
+        this.fillCommon('update-installer', manifest);
+        document.getElementById('update-installer-modal').style.display = 'flex';
+    },
 
-                // Masquer le bouton "Plus tard"
-                skipBtn.style.display = 'none';
+    closeHotModal: function (snooze) {
+        document.getElementById('update-modal').style.display = 'none';
+        if (snooze && this._manifest) this.snooze(this._manifest.version);
+    },
 
-            } else {
-                // Échec
-                throw new Error('La mise à jour a échoué');
-            }
+    closeInstallerModal: function (snooze) {
+        document.getElementById('update-installer-modal').style.display = 'none';
+        if (snooze && this._manifest) this.snooze(this._manifest.version);
+    },
 
-        } catch (error) {
-            console.error('❌ Erreur d\'installation:', error);
+    openReleasesPage: function () {
+        const url = this.RELEASES_URL;
+        try {
+            if (window.cep && window.cep.util) window.cep.util.openURLInDefaultBrowser(url);
+            else window.open(url, '_blank');
+        } catch (e) { window.open(url, '_blank'); }
+    },
 
-            // Afficher l'erreur
-            const errorDiv = document.createElement('div');
-            errorDiv.style.marginTop = '15px';
-            errorDiv.style.padding = '10px';
-            errorDiv.style.background = '#ffebee';
-            errorDiv.style.border = '1px solid #f44336';
-            errorDiv.style.borderRadius = '6px';
-            errorDiv.style.color = '#c62828';
-            errorDiv.innerHTML = `<strong>❌ Erreur :</strong> ${error.message}`;
-            modalBody.appendChild(errorDiv);
+    // ---- Application de la mise à jour à chaud -----------------------------------------
 
-            // Réactiver les boutons
-            downloadBtn.textContent = 'Télécharger manuellement';
-            downloadBtn.disabled = false;
-            downloadBtn.onclick = () => {
-                // Fallback : ouvrir le lien manuel
-                const manualUrl = downloadBtn.dataset.downloadUrl;
-                if (manualUrl) {
-                    window.open(manualUrl, '_blank');
+    applyHotUpdate: async function () {
+        const manifest = this._manifest;
+        if (!manifest) return;
+        const apply = document.getElementById('update-apply-btn');
+        const skip = document.getElementById('update-skip-btn');
+        const closeX = document.getElementById('close-update-modal');
+        const prog = document.getElementById('update-progress');
+        const err = document.getElementById('update-error');
+        const self = this;
+
+        if (apply) apply.disabled = true;
+        if (skip) skip.disabled = true;
+        if (closeX) closeX.disabled = true;
+        if (err) { err.hidden = true; err.textContent = ''; }
+        if (prog) { prog.hidden = false; prog.textContent = this.tr('upd_progress_start', 'Préparation…'); }
+
+        let result;
+        let deadline = null;
+        try {
+            const work = AutoUpdater.applyUpdate(manifest, {
+                filesBaseUrl: this.FILES_BASE_URL,
+                onProgress: function (step, current, total, file) {
+                    if (!prog) return;
+                    prog.textContent = (step === 'download'
+                        ? self.tr('upd_progress_download', 'Téléchargement')
+                        : self.tr('upd_progress_install', 'Installation')) + ' ' + current + '/' + total + ' — ' + file;
                 }
-            };
-            skipBtn.disabled = false;
-        }
-    },
-
-    /**
-     * Télécharge la mise à jour (legacy - pour fallback)
-     */
-    downloadUpdate: function(downloadUrl) {
-        // Ouvrir le lien de téléchargement dans le navigateur
-        window.open(downloadUrl, '_blank');
-
-        // Fermer la modal
-        this.closeUpdateModal();
-    },
-
-    /**
-     * Initialise la vérification des mises à jour
-     * Appeler au démarrage du plugin
-     */
-    init: async function() {
-        // Ne pas vérifier si on a déjà ignoré pendant cette session
-        if (sessionStorage.getItem('ignored_update') === 'true') {
-            return;
+            });
+            // Garde-fou : quoi qu'il arrive au réseau, la modale rend la main.
+            const timeout = new Promise(function (resolve) {
+                deadline = setTimeout(function () { resolve({ success: false, error: 'délai dépassé' }); }, self.APPLY_DEADLINE_MS);
+            });
+            result = await Promise.race([work, timeout]);
+        } catch (e) {
+            result = { success: false, error: (e && e.message) || String(e) };
+        } finally {
+            if (deadline) clearTimeout(deadline);
         }
 
-        // Attendre 2 secondes après le chargement pour ne pas bloquer le démarrage
-        setTimeout(async () => {
-            const updateInfo = await this.checkForUpdates();
+        if (closeX) closeX.disabled = false;
 
-            if (updateInfo) {
-                this.showUpdateModal(updateInfo);
+        if (result.success) {
+            // Ne plus rien proposer : les fichiers sont ceux de la nouvelle version, seule
+            // la session Illustrator en cours a encore l'ancien hostscript.jsx en mémoire.
+            try { localStorage.setItem('update_applied', manifest.version); localStorage.removeItem('update_snooze'); } catch (e) {}
+            const body = document.getElementById('update-modal-body');
+            const done = document.getElementById('update-done');
+            if (body) body.hidden = true;
+            if (done) done.hidden = false;
+            if (skip) skip.hidden = true;
+            if (apply) { apply.disabled = false; apply.textContent = this.tr('upd_close', 'Fermer'); }
+            this._applyAction = function () { self.closeHotModal(false); };
+            if (typeof window !== 'undefined' && window.__logopackOnHotUpdateApplied) {
+                try { window.__logopackOnHotUpdateApplied(manifest.version); } catch (e) {}
             }
+        } else {
+            console.error('❌ Mise à jour à chaud échouée :', result.error);
+            if (prog) prog.hidden = true;
+            if (err) {
+                err.hidden = false;
+                err.textContent = this.tr('upd_error_prefix', 'La mise à jour n\'a pas pu être appliquée : ') + (result.error || '?')
+                    + ' ' + this.tr('upd_error_fallback', 'Vous pouvez télécharger l\'installeur à la place.');
+            }
+            if (skip) skip.disabled = false;
+            if (apply) {
+                apply.disabled = false;
+                apply.textContent = this.tr('upd_installer_download', 'Télécharger l\'installeur');
+            }
+            this._applyAction = function () { self.openReleasesPage(); self.closeHotModal(false); };
+        }
+    },
+
+    // ---- Câblage --------------------------------------------------------------------------
+
+    bindModals: function () {
+        const self = this;
+        const on = function (id, fn) { const el = document.getElementById(id); if (el) el.addEventListener('click', fn); };
+        on('update-apply-btn', function () { if (self._applyAction) self._applyAction(); });
+        on('update-skip-btn', function () { self.closeHotModal(true); });
+        on('close-update-modal', function () { self.closeHotModal(true); });
+        on('update-installer-download-btn', function () { self.openReleasesPage(); self.closeInstallerModal(false); });
+        on('update-installer-skip-btn', function () { self.closeInstallerModal(true); });
+        on('close-update-installer-modal', function () { self.closeInstallerModal(true); });
+        ['update-modal', 'update-installer-modal'].forEach(function (id) {
+            const m = document.getElementById(id);
+            if (m) m.addEventListener('click', function (e) {
+                if (e.target !== m) return;
+                if (id === 'update-modal') { const c = document.getElementById('close-update-modal'); if (c && c.disabled) return; self.closeHotModal(true); }
+                else self.closeInstallerModal(true);
+            });
+        });
+    },
+
+    init: function () {
+        this.bindModals();
+        const self = this;
+        setTimeout(async function () {
+            // Une mise à jour à chaud a déjà été appliquée et Illustrator n'a pas encore été
+            // relancé : ne pas la reproposer.
+            try {
+                const applied = localStorage.getItem('update_applied');
+                if (applied && self.compareVersions(applied, self.CURRENT_VERSION) > 0) return;
+                if (applied) localStorage.removeItem('update_applied');
+            } catch (e) {}
+            const found = await self.checkForUpdates();
+            if (!found) return;
+            if (found.mode === 'hot') self.showHotModal(found.manifest);
+            else self.showInstallerModal(found.manifest);
         }, 2000);
     }
 };
 
-// Au chargement du DOM
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        UpdateChecker.init();
-    });
+    document.addEventListener('DOMContentLoaded', function () { UpdateChecker.init(); });
 } else {
     UpdateChecker.init();
 }

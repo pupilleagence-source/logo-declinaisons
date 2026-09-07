@@ -33,45 +33,60 @@
 
 - `git checkout autre-branche`, `git stash`, `git reset --hard`, `git clean` **hot-swappent le panneau sous un Illustrator en cours d'exécution**.
 - Illustrator **met le panneau en cache** : après une modif de `js/` ou `jsx/`, il faut **fermer et rouvrir le panneau** (voire relancer Illustrator) pour la voir. Sinon on conclut « mon fix ne marche pas » et on va casser autre chose.
-- `js/auto-updater.js` écrit `.temp_update/` et des `.bak` dans ce même arbre au runtime.
+- `js/auto-updater.js` écrit `.temp_update/`, des `*.backup` et des `*.pending` dans ce même arbre au runtime (gitignorés). Depuis la 1.4.0 la **mise à jour à chaud est active** : sur ce poste, accepter la modale « Mettre à jour » **écraserait le working copy** avec les fichiers servis par le backend. Répondre « Plus tard ».
 
-### 2.2 Deux copies du front-end, toutes les deux « live »
+### 2.2 Deux copies du front-end : la racine, et `backend-trial/distribution/` **générée**
 
 | Copie | Rôle |
 |---|---|
-| `js/`, `index.html`, `css/`, `jsx/`, `CSXS/` (racine) | Ce que les utilisateurs exécutent, ce que les installeurs embarquent |
-| `backend-trial/distribution/**` (12 fichiers) | Ce que le serveur d'update sert (`backend-trial/api/updates/files.js:47` résout `process.cwd()/distribution`) |
+| `js/`, `index.html`, `css/`, `jsx/`, `CSXS/`, `lib/`, `media/` (racine) | Ce que les utilisateurs exécutent, ce que les installeurs embarquent |
+| `backend-trial/distribution/**` | Ce que la mise à jour à chaud sert (`api/updates/files.js` résout `process.cwd()/distribution`). **Générée par `npm run release`, jamais éditée à la main.** |
+| `backend-trial/updates/manifest.json` | Le manifeste **signé** qui décrit `distribution/` (`api/updates/manifest.js` le relit tel quel). Généré par `npm run release`. |
 
-**État actuel vérifié** : `distribution/` est en retard d'**exactement le commit `4a3a577`**. 4 fichiers sur 12 diffèrent : `index.html` (4 lignes), `css/styles.css` (22), `js/main.js` (71), `jsx/hostscript.jsx` (15). Les 8 autres sont byte-identiques. Rien dans `distribution/` n'existe qui manque à la racine.
+`scripts/release.js` vide `distribution/`, y recopie les fichiers de la racine **normalisés en LF** (leur SHA-256 est alors celui du blob git), et écrit le manifeste. Tant que la **1.4.0 n'est pas sortie**, `distribution/` est encore la vieille copie 1.1.0 à 12 fichiers et il n'y a pas de `manifest.json` : c'est attendu, la première release les régénère.
 
-Concrètement : `distribution/jsx/hostscript.jsx` n'a **pas** `clearStoredSelection(type)` (racine `:533`), alors que `js/main.js:1123` l'appelle → le bouton ✕ par slot planterait.
+### 2.3 La mise à jour à chaud (OTA) est **vivante** depuis la 1.4.0 — ce que ça impose
 
-> **Mais** : voir §2.3 — ça ne peut pas atteindre les utilisateurs aujourd'hui.
+Réécrite le 2026-09-07 (`js/updater.js`, `js/auto-updater.js`, `js/pending-updates.js`, `scripts/release.js`, `api/updates/manifest.js`). Les anciens `installUpdate()` / `performUpdate()` / le manifeste codé en dur avec 12 checksums n'existent plus.
 
-### 2.3 L'auto-updater in-place est du **code mort** — ne pas synchroniser `distribution/` sans décision
+**Comment ça marche.** 2 s après l'ouverture du panneau, `UpdateChecker` télécharge `/api/updates/manifest`, **vérifie sa signature RSA-SHA256** avec la clé publique embarquée dans `AutoUpdater.PUBLIC_KEY_PEM`, puis choisit :
 
-`UpdateChecker.installUpdate()` (`js/updater.js:127`) et `downloadUpdate()` (`:218`) ont **zéro appelant** dans tout le repo. Le vrai handler de `#update-download-btn` est `js/main.js:768-779`, commenté `// Ouvrir le lien de download dans le navigateur (pas d'auto-écrasement)` : il ouvre juste la page GitHub Releases.
+| Cas | Modale | Ce que fait le bouton |
+|---|---|---|
+| `manifest.version` ≤ `CURRENT_VERSION` | aucune | — |
+| `CURRENT_VERSION` < `manifest.hotUpdateFrom`, **ou** dossier de l'extension non modifiable (macOS installé par un `.pkg` ≤ 1.3.0, propriété de root) | `#update-installer-modal` | ouvre la page GitHub Releases ; l'utilisateur ferme Illustrator, relance l'installeur |
+| sinon | `#update-modal` | **Mettre à jour** : télécharge tout dans `.temp_update/`, vérifie chaque SHA-256, remplace (avec `.backup` + rollback), affiche « ✅ Mise à jour installée — relancez Illustrator » |
 
-Donc `AutoUpdater.performUpdate` ne tourne jamais. Les warnings sur la staleness de `distribution/`, sur les checksums et sur le CRLF sont **latents, pas actifs**.
+« Plus tard » reporte de **24 h** (`localStorage.update_snooze`), ce n'est plus définitif. Après une mise à jour appliquée, `localStorage.update_applied` empêche de la reproposer, un **bandeau jaune** « relancez Illustrator » s'affiche et le bouton d'action est désactivé (`appState.restartRequired`). Au démarrage, `checkHostscriptVersion()` (`js/main.js`) compare `getHostscriptVersion()` côté Illustrator avec `UpdateChecker.CURRENT_VERSION` : différent (ou fonction absente) → même bandeau. Un fichier verrouillé par Windows est déposé en `*.pending` et appliqué par `js/pending-updates.js`, **chargé en premier dans `<head>`**.
 
-**Le vrai danger** : « réparer » le bouton pour appeler `installUpdate()` est un changement d'une ligne qui **livrerait instantanément un downgrade à tous les utilisateurs**. Décider d'abord si la fonctionnalité revient.
+**Les clients 1.3.0 installés** ont l'ancien `updater.js` : ils lisent `/api/version/latest`, voient une modale « Télécharger » qui ouvre GitHub Releases. 1.3.0 → 1.4.0 passe donc forcément par l'installeur ; la mise à jour à chaud ne joue qu'à partir de 1.4.0 → 1.4.x.
 
-État vérifié par curl sur la prod : `/api/version/latest` → 200 `{"version":"1.1.0",...}` ; `/api/updates/files?file=js/main.js` → 200, 83 790 octets, byte-identique à `distribution/js/main.js`. Les **12 checksums de `manifest.js:43-54` matchent** le disque et le serveur. Le registre est cohérent — il sert juste du code en retard.
+**Règles à ne pas casser :**
 
-### 2.4 Huit chaînes de version, aucune synchronisée
+1. **Ne jamais lancer `vercel --prod` avec un `distribution/` désynchronisé de la racine.** Seul `npm run release` doit le régénérer. Un backend qui sert des octets ≠ manifeste fait échouer la mise à jour chez tout le monde (« empreinte incorrecte » → repli sur l'installeur). Idem pour un `git checkout` qui repasserait `distribution/` en CRLF : `.gitattributes` l'interdit (`text eol=lf`), ne pas retirer ces règles.
+2. **La clé privée `apple-cert/update-manifest.key` n'existe que sur cette machine** (gitignorée via `apple-cert/` et `*.key`). `release.js` refuse de sortir une version sans elle. La perdre = plus aucune mise à jour à chaud possible pour les installations existantes, jusqu'à ce qu'elles réinstallent une version portant une nouvelle clé publique. **À sauvegarder hors de ce disque.**
+3. **Ce que la mise à jour à chaud ne couvre pas** : `templates/` (IDML + 400 Mo de PSD), le binaire stub macOS, le `postinstall` du `.pkg`, `installer.iss`. `release.js` calcule une empreinte de `templates/template-1.idml` + `templates/mockups/*.psd` : si elle change, `hotUpdateFrom` = la nouvelle version et **tout le monde repasse par l'installeur**. Pour les autres cas (installeur, postinstall…), c'est à vous de passer `--require-installer`. Elle ne **supprime** pas non plus les fichiers retirés d'une version : un fichier orphelin dans `js/` est inoffensif tant qu'`index.html` ne le charge plus.
+4. **Chemins autorisés côté client** : `AutoUpdater.ALLOWED_PREFIXES` (`index.html`, `css/`, `js/`, `jsx/`, `CSXS/`, `lib/`, `media/`). Un manifeste, même signé, ne peut rien écrire ailleurs. Ajouter un dossier au panneau = l'ajouter **ici et** dans `HOT_FILES.roots` de `release.js` (et dans les deux installeurs).
+5. **`CSXS/manifest.xml` est mis à jour à chaud lui aussi** : Illustrator ne le relit qu'au relancement, d'où le bandeau.
+6. **Limites connues, acceptées le 2026-09-07** : (a) un manifeste signé n'expire pas — un serveur compromis ne peut pas forger une version, mais peut **resservir une release antérieure** ; le client refuse seulement ce qui est plus vieux que le plus récent manifeste qu'il a déjà vu (`localStorage.update_max_seen`). (b) Sur macOS, le `postinstall` fait un `chown -R` du dossier `/Library/…` vers l'utilisateur connecté : sur un **Mac partagé**, cet utilisateur peut modifier du code que les autres comptes exécutent. Choix assumé pour un plugin de poste individuel ; supprimer le bloc `chown` de `build-pkg.sh` pour revenir à « installeur seulement » sur Mac (le panneau détecte tout seul le dossier non modifiable).
 
-| Fichier | Ligne | Valeur | Qui la lit |
-|---|---|---|---|
-| `CSXS/manifest.xml` | 2 et 4 | 1.1.0 ✅ *aligné 2026-09-04* | **Illustrator** (la seule qui compte pour le chargement) |
-| `package.json` | 3, 16, 22 | 1.1.0 ✅ *aligné 2026-09-04* | rien |
-| `installer.iss` | 6 (fallback) | **1.0.0** | `iscc` sans `/DMyAppVersion` |
-| `js/updater.js` | 7 (`CURRENT_VERSION`) | 1.1.0 | la comparaison de version côté client |
-| `backend-trial/api/version/latest.js` | 34 | 1.1.0 | le client |
-| `backend-trial/api/updates/manifest.js` | 34 | 1.1.0 | l'updater |
-| `installers/mac/build-pkg.sh` | 10 (fallback) | 1.1.0 | build local |
-| `.github/workflows/build-installers.yml` | input default | 1.1.0 | CI |
+Tests : `tests/hot-update.test.js` (signature, allow-list, tout-ou-rien, rollback, `.pending`) et la moitié « manifeste » de `tests/release-script.test.js` (normalisation LF, `hotUpdateFrom`, concordance clé privée ↔ clé publique embarquée).
 
-Rien ne dérive de rien. `iscc installer.iss` en local produit silencieusement un installeur estampillé **1.0.0** contenant du code 1.1.0.
+### 2.4 Huit chaînes de version — toutes bumpées par `npm run release`, jamais à la main
+
+| Fichier | Anchor | Qui la lit |
+|---|---|---|
+| `CSXS/manifest.xml` | `ExtensionBundleVersion="…"` et `Version="…" />` | **Illustrator** (la seule qui compte pour le chargement) |
+| `package.json` | `"version"` ×3 | `release.js` (version courante) |
+| `js/updater.js` | `CURRENT_VERSION: '…'` | la comparaison de version côté client |
+| `jsx/hostscript.jsx` | `var HOSTSCRIPT_VERSION = '…';` | `checkHostscriptVersion()` : détecte un hostscript en mémoire plus vieux que le panneau |
+| `backend-trial/api/version/latest.js` | `version:` + `releaseDate:` + `changelog:` | les clients ≤ 1.3.0 |
+| `backend-trial/updates/manifest.json` | généré entier | les clients ≥ 1.4.0 |
+| `installer.iss` | `#define MyAppVersion "…"` (fallback) | `iscc` sans `/DMyAppVersion` |
+| `installers/mac/build-pkg.sh` | `VERSION="${VERSION:-…}"` (fallback) | build local |
+| `.github/workflows/build-installers.yml` | `default: '…'` | CI |
+
+`computeBumps()` exige que **chaque** anchor soit trouvé exactement le nombre de fois attendu avec la version courante ; un fichier désaligné (hotfix manuel) fait échouer la release **avant** toute écriture, en nommant le fichier.
 
 ### 2.5 Secrets committés dans un dépôt PUBLIC
 
@@ -104,7 +119,7 @@ Ces six fichiers restent **périmés sur le fond** — le bandeau prévient, il 
 
 ### 2.8 URL de production en dur dans 11 endroits
 
-`https://logotyps.vercel.app` est codé en dur dans `js/trial.js` (`:11, :65, :257, :426, :649`), `js/main.js` (`:899, :981`), `js/updater.js` (`:10, :13`), `js/auto-updater.js` (`:7`) et `backend-trial/api/updates/manifest.js:32`. **Aucun switch d'environnement, aucune URL de staging.** Si le domaine Vercel change, tous les clients installés sont définitivement cassés — y compris l'updater qui aurait pu les réparer.
+`https://logotyps.vercel.app` est codé en dur dans `js/trial.js` (`:11, :65, :257, :426, :649`), `js/main.js` (`:899, :981`) et `js/updater.js` (`BASE_URL`, `MANIFEST_URL`, `FILES_BASE_URL`). **Aucun switch d'environnement, aucune URL de staging.** Si le domaine Vercel change, tous les clients installés sont définitivement cassés — la mise à jour à chaud, qui passe par ce même domaine, ne pourrait pas les réparer.
 
 ### 2.9 Pas de tests, pas de lint, pas de validation CI
 
@@ -124,7 +139,8 @@ Aucun `*.test.js`, aucun `.eslintrc`, aucun `tsconfig`, aucun `.prettierrc`, auc
 │  js/i18n.js (764 l.)   ← fr/en/es/it, 148 clés (73 mortes)      │
 │  js/trial.js (683 l.)  ← machine à états trial/licence          │
 │  js/hwid.js (213 l.)   ← empreinte machine HWID-<sha256>        │
-│  js/updater.js (254 l.) + js/auto-updater.js (388 l.)  [DORMANT]│
+│  js/pending-updates.js + auto-updater.js + updater.js           │
+│  ← mise à jour à chaud + 2 modales (§2.3)                       │
 │  (debug-mode-enabler.js supprimé le 2026-09-06)                 │
 │  js/idml-generator.js (1981 l.) ← chirurgie XML sur .idml       │
 │  lib/CSInterface.js (vendored) + lib/jszip.min.js (3.10.1)      │
@@ -390,25 +406,32 @@ workflow_dispatch sur .github/workflows/build-installers.yml
 ### Sortir une version : `npm run release`
 
 ```
-npm run release -- 1.3.0 "Première ligne du changelog" "Deuxième ligne"
+npm run release -- 1.4.0 "Première ligne du changelog" "Deuxième ligne"
+npm run release -- 1.4.0 "…" --deploy              # attend la release GitHub puis vercel --prod
+npm run release -- 1.4.0 "…" --require-installer   # cette version ne peut PAS être appliquée à chaud
 ```
 
-Le script (`scripts/release.js`) refuse un arbre git sale ou une branche ≠ `master`, bumpe les 7 chaînes de version vivantes, écrit `version` / `releaseDate` / `changelog` dans `backend-trial/api/version/latest.js`, lance `npm test`, committe, pousse, et déclenche le workflow avec `publish=true`. Il affiche ensuite l'URL du run et la commande `vercel --prod` à lancer **une fois la release en ligne** pour que les installs existantes voient la modale de mise à jour. Compter 5 à 40 min de build (notarisation Apple).
+Le script (`scripts/release.js`) refuse un arbre git sale, une branche ≠ `master` ou l'absence de `apple-cert/update-manifest.key`. Il calcule **tout en mémoire d'abord** : bump des 8 anchors (§2.4), `latest.js`, empreinte des templates/PSD, manifeste de mise à jour à chaud construit sur les contenus **bumpés**, signature, auto-vérification avec la clé publique embarquée. Puis il écrit, régénère `backend-trial/distribution/` + `backend-trial/updates/manifest.json`, lance `npm test`, committe `Release vX.Y.Z`, pousse et déclenche le workflow avec `publish=true`. Compter 5 à 40 min de build (notarisation Apple).
 
-**Ce que « mettre à jour le plugin » veut dire pour l'utilisateur final** : la modale lui donne un bouton qui ouvre la page de la release ; il retélécharge l'installeur et le relance par-dessus (`.pkg` / `.exe`). Il n'y a **pas** de mise à jour en place — l'OTA est du code mort (§2.3) et, sur macOS, le `.pkg` installe dans `/Library`, propriété de root, où le panneau ne pourrait de toute façon pas écrire.
+**Le backend doit être déployé après la release GitHub** (les clients 1.3.0 sont envoyés sur la page de release ; les clients ≥ 1.4.0 téléchargent depuis le backend lui-même). `--deploy` le fait tout seul (`gh run watch` puis `vercel --prod --yes` dans `backend-trial/`) ; sinon `cd backend-trial && vercel --prod` à la main une fois la release en ligne. Depuis le 2026-09-06, `vercel` est connecté au compte `pupilleagence-source` sur cette machine.
+
+`hotUpdateFrom` : première release avec manifeste → `= version`. Ensuite, conservé tant que l'empreinte `templates/` ne change pas et que `--require-installer` n'est pas passé. Passer `--require-installer` dès qu'on touche `installer.iss`, `build-pkg.sh` (postinstall), le binaire stub, ou tout fichier hors `ALLOWED_PREFIXES` (§2.3).
+
+**Ce que « mettre à jour le plugin » veut dire pour l'utilisateur final** (deux modales, §2.3) : soit « Mettre à jour » dans le panneau puis relancer Illustrator, soit « Télécharger l'installeur » et relancer l'installeur par-dessus (`.pkg` / `.exe`). Le `.pkg` 1.4.0+ fait un `chown -R` du dossier d'extension vers l'utilisateur connecté dans son `postinstall` : sans ça, `/Library/Application Support/Adobe/CEP/extensions/…` appartient à root et le panneau ne pourrait pas se mettre à jour lui-même.
 
 ### Checklist de bump de version (ce que `npm run release` fait, si on doit le refaire à la main)
 
-1. `CSXS/manifest.xml` lignes 2 **et** 4 ← *la seule que lit Illustrator, jamais bumpée depuis 1.0.0*
-2. `package.json` lignes 3, 19, 25
-3. `js/updater.js:7` (`CURRENT_VERSION`)
-4. `backend-trial/api/version/latest.js:34` (+ `releaseDate` `:35` + changelog)
-5. `backend-trial/api/updates/manifest.js:34` (+ checksums si OTA réactivé)
-6. `installer.iss:6` (fallback seulement)
-7. `installers/mac/build-pkg.sh:10` (fallback seulement)
-8. Input du workflow au déclenchement
+1. `CSXS/manifest.xml` lignes 2 **et** 4 ← *la seule que lit Illustrator*
+2. `package.json` (`"version"` ×3)
+3. `js/updater.js` (`CURRENT_VERSION`)
+4. `jsx/hostscript.jsx` (`HOSTSCRIPT_VERSION`)
+5. `backend-trial/api/version/latest.js` (`version`, `releaseDate`, `changelog`)
+6. `backend-trial/distribution/` + `backend-trial/updates/manifest.json` — **impossible à la main** : signature RSA et SHA-256 sur les octets LF. Utiliser `node -e` avec les fonctions exportées par `scripts/release.js` (`buildManifest`, `signManifest`) si vraiment nécessaire.
+7. `installer.iss` (fallback seulement)
+8. `installers/mac/build-pkg.sh` (fallback seulement)
+9. Input du workflow au déclenchement
 
-Puis `cd backend-trial && vercel --prod` pour le backend.
+Puis `cd backend-trial && vercel --prod` pour le backend, **après** la release GitHub.
 
 ### Le truc du binaire stub macOS (commit `955b47c`)
 
@@ -482,7 +505,7 @@ Toutes les autres sont toujours présentes dans le code.
 | 7 | ✅ **CORRIGÉ 2026-09-04** (les deux moitiés : `getStatus()` purge maintenant le disque, et `canGenerate()` purge puis retombe sur le trial au lieu de bloquer en dur). **Le fix de la « licence fantôme » n'est fait qu'à moitié.** Le commit `7625954` a corrigé `getStatus()` pour purger une licence périmée, mais il ne supprime que les clés **localStorage** — jamais `_removeLicenseFromDisk()`. Comme `getStoredLicense()` retombe sur `~/.logotyps-license` et **réhydrate localStorage depuis le disque**, la licence ressuscite à l'appel suivant. Pire : `canGenerate()` a sa propre copie du test de grâce qui bloque en dur (`reason:'license_offline'`) sans rien purger → le badge repasse en trial mais la génération reste bloquée. **C'est exactement le symptôme que le commit prétendait corriger.** | `trial.js:143-162` (comparer avec la branche de révocation correcte `:118-120`) ; `trial.js:321-328` |
 | 8 | ✅ **CORRIGÉ 2026-09-04.** **La désactivation normale laisse le fichier disque.** `main.js:1021` ne fait que `localStorage.removeItem('_license')` → le panneau continue d'afficher « ✓ Licensed ». Le chemin `forceLicenseDeactivate()` est correct (`trial.js:641-642`). | `main.js:1021` |
 | 9 | **`cacheStatus()` jette silencieusement l'`expiry` reçu.** Les deux appelants passent `Date.now() + 24h` avec un commentaire `// 24h` ; la fonction reconstruit l'objet avec **7 jours**. Après une validation réussie, `getStatus()` renvoie « licensed » depuis le cache sans réseau pendant une semaine. | `trial.js:476-488` (appels `:84`, `:105`) |
-| 10 | ✅ **CORRIGÉ 2026-09-04.** **Le rollback de l'auto-updater ne peut jamais s'exécuter.** Le champ est déclaré `filesFailedé: []` (accent parasite) mais on pousse dans `results.filesFailed` → `TypeError` sur le premier échec, donc `rollbackAll()` est sauté. Dossier à moitié mis à jour, jonché de `.backup` orphelins. **À corriger impérativement avant de réactiver `installUpdate`.** | `auto-updater.js:264` vs `:322`, rollback `:325-327` |
+| 10 | ✅ **CORRIGÉ 2026-09-04.** **Le rollback de l'auto-updater ne peut jamais s'exécuter.** Le champ est déclaré `filesFailedé: []` (accent parasite) mais on pousse dans `results.filesFailed` → `TypeError` sur le premier échec, donc `rollbackAll()` est sauté. Dossier à moitié mis à jour, jonché de `.backup` orphelins. *(Sans objet depuis le 2026-09-07 : `auto-updater.js` a été entièrement réécrit, voir §2.3.)* | ancien `auto-updater.js` |
 | 11 | ✅ **CORRIGÉ 2026-09-04** — l'`@import` est maintenant en ligne 1, donc **la typo du panneau change visuellement** (Inter au lieu des polices système). Revert = redéplacer la ligne. **L'`@import` Google Fonts est mort.** Il est placé **après** le bloc de reset `*{}` (lignes 2-6) ; par spec, `@import` doit précéder toute autre règle → le parseur le jette. Tout le panneau rend en polices système. Le déplacer en ligne 1 changera visiblement toute la typo (mieux : auto-héberger, un panneau CEP peut être hors-ligne). | `css/styles.css:8` |
 | 12 | ✅ **CORRIGÉ 2026-09-04** (helper `syncRangeFill` générique sur tous les `input[type=range]`). **Les 3 sliders affichent toujours un remplissage à 0 %.** Le dégradé utilise `var(--value, 0%)` et **rien ne définit jamais `--value`** (zéro `setProperty` dans `js/`). | `css/styles.css:468` |
 | 13 | **Le texte de statut de sélection ment après un changement de langue.** Les spans portent `data-i18n="sel_not_selected"` ; `handleSelection` y écrit « Sélectionné ✓ » en dur sans retirer l'attribut → le `applyToDOM()` suivant les réécrit en « Not selected » alors que `appState.selections` est toujours vrai et que le texte reste vert. | `main.js:1091` + `i18n.js:741` |
@@ -509,7 +532,7 @@ Toutes les autres sont toujours présentes dans le code.
 ## 11. État du repo & hygiène
 
 - **`.git` fait 1,2 GB** pour 87 fichiers trackés — les 9 PSD (397 MiB) sont committés en blobs bruts, **sans LFS, sans `.gitattributes`**. Le commit `74965c9` (branche backup) les avait retirés en disant qu'ils dépassaient la limite GitHub ; `2c4d0d0` a supprimé les règles `.gitignore` et les a tous re-committés.
-- **`core.autocrlf=true` sans `.gitattributes`** : les 12 checksums de `manifest.js` ont été calculés sur les octets CRLF du working copy Windows et diffèrent **tous les 12** de leurs blobs git normalisés LF. Cohérent aujourd'hui parce que les déploiements partent du CLI Vercel sur cette machine. Passer à l'intégration Git de Vercel, ou déployer depuis macOS/Linux/CI, casserait l'OTA en bloc.
+- **`core.autocrlf=true`** : le working copy est en CRLF, les blobs git en LF. Depuis le 2026-09-07 ça n'a plus d'incidence sur la mise à jour à chaud : `release.js` écrit `backend-trial/distribution/` en LF et hache ces octets-là, et `.gitattributes` fige ce dossier en `eol=lf`. (Avant, les 12 checksums du manifeste codé en dur avaient été calculés sur des octets CRLF — c'est de l'histoire.)
 - **`dist/` contient 401 MB d'artefacts périmés 1.0.0**, *à l'intérieur du dossier d'extension live* : `LogoDeclinaisons-1.0.0.zxp` (286 MB, 2026-03-23, antérieur à i18n donc incapable de satisfaire `index.html:435`) et `LogoDeclinaisons-Setup-1.0.0.exe` (134 MB, issu de l'installeur mort). Ni l'un ni l'autre n'est reproductible depuis HEAD.
 - ✅ *2026-09-04 : `.claude/settings.local.json` a été détracké (`git rm --cached`) et ajouté à `.gitignore`.* Il pré-autorisait `Bash(curl:*)`, `Bash(npm install:*)`, `Bash(vercel --prod:*)`, `Bash(vercel env:*)` avec `deny` et `ask` vides — toute session d'agent clonant le repo héritait du droit de déployer en production sans confirmation. Le fichier local est conservé.
 - ✅ *2026-09-04 : les trois fichiers `nul` parasites (`./nul`, `./templates/nul` 812 KB, `./backend-trial/nul`) et le dossier vide `templates/temp_extract/` ont été supprimés.* C'étaient des accidents de redirection `> nul` sous Git Bash (où NUL n'est pas un device) ; ils étaient gitignorés mais **pas invisibles pour les packagers** et finissaient dans le ZXP livré. Si ça se reproduit : `rm ./nul` **depuis bash**, jamais depuis cmd.exe.
@@ -550,6 +573,13 @@ Toutes les autres sont toujours présentes dans le code.
 - **Bouton Reset = rechargement du panneau** après `clearStoredSelections()`. L'ancienne remise à zéro champ par champ (`resetSelections`, supprimée) oubliait croix ✕, lignes custom, couleurs, tailles, dossier de sortie, présentation, onglet actif. `clearStoredSelections()` supprime maintenant aussi les duplicatas masqués (ils s'accumulaient dans le document à chaque Reset). Survivent au Reset, comme à un redémarrage : langue, licence/trial, « Ne plus afficher ».
 - **Premiers tests du projet** : `npm test` — 7 fichiers, ~160 assertions, dont `tests/static-crosscheck.test.js` : cohérence HTML ↔ JS ↔ JSX ↔ i18n (chaque ID cherché existe, chaque fonction ExtendScript appelée existe, chaque clé i18n existe dans les 4 langues, `hostscript.jsx` reste ES3, ordre de chargement des scripts). **À lancer avant tout commit qui touche `index.html`, `js/` ou `jsx/`.** : helpers de dossier, chaîne de repli d'orientation, résolveur de styles de police, et une intégration sur le vrai template IDML. Le repo n'avait aucun filet ; celui-ci protège en particulier la suppression irréversible de `emptyFolderRecursive()`.
 
+### Fait le 2026-09-07 — mise à jour à chaud (non testée dans Illustrator)
+
+- **OTA réécrit de zéro** (§2.3, §8) : manifeste signé RSA-3072 généré par `npm run release`, vérification côté panneau, tout-ou-rien avec rollback, `*.pending` pour Windows, deux modales (à chaud / installeur), snooze 24 h, bandeau « relancez Illustrator », `HOSTSCRIPT_VERSION` + `getHostscriptVersion()` côté JSX, `chown` dans le `postinstall` macOS, `--deploy` et `--require-installer` sur le script de release.
+- Clé de signature générée dans `apple-cert/update-manifest.key` (hors git). **À sauvegarder ailleurs.**
+- +59 assertions (`tests/hot-update.test.js`) et +24 (`tests/release-script.test.js`).
+- Vérifié dans un navigateur (pas dans Illustrator) : les deux modales, les états progression / succès / échec, le bandeau, `decideMode`, le snooze. Vérifié en Node : le handler `/api/updates/manifest` (200 / 404 / 405), la signature avec la vraie clé.
+
 ### À faire, par ordre de priorité
 
 1. **Ouvrir le panneau dans Illustrator et vérifier les correctifs ci-dessus.** Aucun n'a tourné pour de vrai. Regarder en priorité : le compteur de plans de travail, la typo du panneau (elle doit changer visuellement), le remplissage des sliders.
@@ -559,17 +589,17 @@ Toutes les autres sont toujours présentes dans le code.
 5. **Décider de la taille d'export** (§10.1). Non corrigé volontairement — c'est une décision produit, pas un bug à trancher seul :
    - (a) rendre les libellés honnêtes (« Petit (600 px) ») — zéro risque, mais le produit paraît moins bon ;
    - (b) corriger la formule pour que 1000 donne vraiment 1000 px — correct, mais change la sortie de tous les utilisateurs existants et pousse l'échelle à 666 % pour le préréglage 4000.
-6. **Décider : l'OTA revient-il ?** (§2.3) Si oui → synchroniser `distribution/` + regénérer les 12 checksums (`filesFailed` est déjà corrigé). Si non → supprimer `js/auto-updater.js`, `installUpdate`, `distribution/`, `api/updates/*`.
+6. ~~Décider : l'OTA revient-il ?~~ **Fait le 2026-09-07** (§2.3). Reste : **tester une vraie mise à jour à chaud** 1.4.0 → 1.4.1 sur un poste Windows et un Mac installé par le `.pkg` 1.4.0, et **sauvegarder la clé privée** hors de ce disque.
 7. **Décider : le canal ZXP est-il mort ?** Si oui → supprimer les 4 scripts, `ZXPSignCmd.exe`, `certificate.p12`, `INSTRUCTIONS-ZXP.txt`, `GUIDE-DISTRIBUTION.md`.
 8. Corriger la taille custom W×H (§10.2), les IDs dupliqués des variations custom (§10.14), le désynchro du texte de sélection au changement de langue (§10.13).
 9. Réécrire ou supprimer les 6 guides périmés (§2.7) — ils sont annotés, pas corrigés.
-10. Passer les PSD en Git LFS. ⚠️ **Ne jamais elargir `.gitattributes` a `* text=auto`** : ça renormaliserait tout le repo en LF et casserait les 12 checksums de `manifest.js`, calculés sur les octets CRLF du working copy Windows (§11). Le `.gitattributes` ajouté le 2026-09-04 est volontairement limité aux `*.sh` / `*.command` et porte cet avertissement en commentaire.
+10. Passer les PSD en Git LFS. `.gitattributes` reste volontairement limité (`*.sh`, `*.command`, et `backend-trial/distribution/**` en LF pour la mise à jour à chaud, §11) ; un `* text=auto` n'est plus dangereux pour les checksums mais renormaliserait tout le repo — commit dédié si jamais.
 
 ## 13. Questions ouvertes (personne ne sait, décision utilisateur requise)
 
 - Le `git reset --hard` du 2026-04-17 était-il volontaire ? Rien ne l'explique.
-- `distribution/` est-il volontairement figé sur la 1.1.0 livrée, ou la synchro de `4a3a577` a-t-elle simplement été oubliée ? (Les fichiers `distribution/` sont horodatés 12:59 le jour même où `4a3a577` a été committé à 15:37 → ça ressemble à un oubli.)
-- L'auto-install in-panel a-t-il été abandonné délibérément ? Il a été **construit et désactivé dans le même commit** `f6b915c` (« Release v1.1.0 with auto-update for all users »).
+- ~~`distribution/` est-il volontairement figé sur la 1.1.0 livrée ?~~ Sans objet depuis le 2026-09-07 : `distribution/` est régénéré par chaque `npm run release` (§2.2).
+- ~~L'auto-install in-panel a-t-il été abandonné délibérément ?~~ Tranché le 2026-09-07 : l'utilisateur a demandé la mise à jour en place, réécrite de zéro (§2.3).
 - Le trial-reset debug devait-il être supprimé entièrement (sa docstring dit « à retirer en production ») ou le bouton restauré ?
 - `BLOB_READ_WRITE_TOKEN` existe dans `.env.local` mais rien sous `api/` ne référence Vercel Blob. Store externe ?
 - ~~Le trick du binaire stub a-t-il déjà produit un build notarisé vert ?~~ **Oui** : `gh run list` montre un run vert le 2026-06-03 (5 min 44) qui a publié `v1.1.0` notarisé. Le 2026-09-05, le même pipeline a de nouveau franchi `productsign` et n'a buté que sur l'accord Apple expiré (voir §8).

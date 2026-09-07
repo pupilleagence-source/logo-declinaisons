@@ -46,3 +46,9 @@ unins000.exe
 unins000.dat
 .rnd
 templates/temp_extract/
+
+# Traces d'une mise a jour a chaud (js/auto-updater.js) sur un poste de dev
+.temp_update/
+*.backup
+*.pending
+.write-probe-*

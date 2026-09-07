@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Logo Déclinaisons</title>
     <link rel="stylesheet" href="css/styles.css">
+    <!-- EN PREMIER : applique les fichiers *.pending d une mise a jour a chaud (voir js/pending-updates.js) -->
+    <script src="js/pending-updates.js"></script>
     <script src="lib/CSInterface.js"></script>
 </head>
 <body>
@@ -406,7 +408,12 @@
         </div>
     </div>
 
-    <!-- Update Modal -->
+    <!-- Bandeau : une mise a jour a chaud est appliquee, Illustrator doit etre relance -->
+    <div id="restart-banner" class="restart-banner" style="display: none;">
+        <span data-i18n="upd_restart_banner">🔄 Mise à jour installée : relancez Illustrator pour l'activer.</span>
+    </div>
+
+    <!-- Modale 1 : mise a jour A CHAUD (appliquee par js/auto-updater.js) -->
     <div id="update-modal" class="modal" style="display: none;">
         <div class="modal-content">
             <div class="modal-header">
@@ -414,37 +421,83 @@
                 <button class="modal-close" id="close-update-modal">&times;</button>
             </div>
             <div class="modal-body">
-                <div class="update-info-box">
-                    <p class="update-version-info">
-                        <strong data-i18n="upd_current_version">Version actuelle :</strong> <span id="update-current-version">-</span><br>
-                        <strong data-i18n="upd_new_version">Nouvelle version :</strong> <span id="update-new-version" style="color: #4CAF50;">-</span><br>
-                        <strong data-i18n="upd_release_date">Date de sortie :</strong> <span id="update-release-date">-</span>
-                    </p>
+                <div id="update-modal-body">
+                    <div class="update-info-box">
+                        <p class="update-version-info">
+                            <strong data-i18n="upd_current_version">Version actuelle :</strong> <span id="update-current-version">-</span><br>
+                            <strong data-i18n="upd_new_version">Nouvelle version :</strong> <span id="update-new-version" style="color: #4CAF50;">-</span><br>
+                            <strong data-i18n="upd_release_date">Date de sortie :</strong> <span id="update-release-date">-</span>
+                        </p>
 
-                    <div class="update-changelog">
-                        <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 14px;" data-i18n="upd_changelog">Nouveautés :</h3>
-                        <ul id="update-changelog" style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6;">
-                            <!-- Rempli dynamiquement -->
-                        </ul>
+                        <div class="update-changelog">
+                            <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 14px;" data-i18n="upd_changelog">Nouveautés :</h3>
+                            <ul id="update-changelog" style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6;">
+                                <!-- Rempli dynamiquement -->
+                            </ul>
+                        </div>
                     </div>
+
+                    <p class="update-note" style="margin-top: 20px;" data-i18n="upd_hot_notice">
+                        💡 La mise à jour s'installe directement dans le plugin. Pensez à relancer Illustrator une fois l'installation terminée.
+                    </p>
+                    <p id="update-progress" class="update-progress" hidden></p>
+                    <p id="update-error" class="update-error" hidden></p>
                 </div>
 
-                <p class="update-note" style="margin-top: 20px; font-size: 12px; color: #666;" data-i18n="upd_notice">
-                    💡 Le téléchargement ouvrira votre navigateur. Installez le nouveau .zxp avec ZXP Installer.
-                </p>
+                <div id="update-done" class="update-done" hidden>
+                    <p class="update-done-title" data-i18n="upd_done_title">✅ Mise à jour installée</p>
+                    <p data-i18n="upd_done_text">Fermez puis relancez Illustrator pour utiliser la nouvelle version.</p>
+                </div>
             </div>
             <div class="modal-footer">
                 <button id="update-skip-btn" class="btn btn-secondary" data-i18n="upd_skip">
                     Plus tard
                 </button>
-                <button id="update-download-btn" class="btn btn-primary" data-i18n="upd_download">
-                    Télécharger la mise à jour
+                <button id="update-apply-btn" class="btn btn-primary" data-i18n="upd_apply">
+                    Télécharger et installer
                 </button>
             </div>
         </div>
     </div>
 
-    <!-- Trial & Licensing System -->
+    <!-- Modale 2 : cette version exige de repasser par l INSTALLEUR -->
+    <div id="update-installer-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 data-i18n="upd_title">🎉 Mise à jour disponible</h2>
+                <button class="modal-close" id="close-update-installer-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="update-info-box">
+                    <p class="update-version-info">
+                        <strong data-i18n="upd_current_version">Version actuelle :</strong> <span id="update-installer-current-version">-</span><br>
+                        <strong data-i18n="upd_new_version">Nouvelle version :</strong> <span id="update-installer-new-version" style="color: #4CAF50;">-</span><br>
+                        <strong data-i18n="upd_release_date">Date de sortie :</strong> <span id="update-installer-release-date">-</span>
+                    </p>
+
+                    <div class="update-changelog">
+                        <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 14px;" data-i18n="upd_changelog">Nouveautés :</h3>
+                        <ul id="update-installer-changelog" style="margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6;">
+                            <!-- Rempli dynamiquement -->
+                        </ul>
+                    </div>
+                </div>
+
+                <p class="update-note" style="margin-top: 20px;" data-i18n="upd_installer_notice">
+                    📦 Cette version doit être installée avec l'installeur : fermez Illustrator, téléchargez puis lancez l'installeur, et relancez Illustrator.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button id="update-installer-skip-btn" class="btn btn-secondary" data-i18n="upd_skip">
+                    Plus tard
+                </button>
+                <button id="update-installer-download-btn" class="btn btn-primary" data-i18n="upd_installer_download">
+                    Télécharger l'installeur
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script src="js/i18n.js"></script>
     <script src="js/hwid.js"></script>
     <script src="js/trial.js"></script>

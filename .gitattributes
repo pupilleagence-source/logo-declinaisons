@@ -1,15 +1,22 @@
-# Portee volontairement MINIMALE : ce fichier ne doit matcher que des scripts shell.
+# Portee volontairement limitee.
 #
-# N'ajoutez PAS de regle large type "* text=auto". Cela renormaliserait tout le
-# depot en LF et invaliderait les 12 checksums SHA-256 de
-# backend-trial/api/updates/manifest.js : ils ont ete calcules sur les octets du
-# working copy Windows (CRLF, core.autocrlf=true), pas sur les blobs git (LF).
-# Exemple verifie : le blob de backend-trial/distribution/js/main.js fait 81 752
-# octets, la version servie en production 83 790 — l'ecart correspond aux \r.
-#
-# Les trois scripts shell ci-dessous sont deja stockes en LF dans git ; cette
-# regle ne fait que le garantir, pour qu'un commit depuis Windows ne puisse pas
-# les passer en CRLF et casser le build macOS (build-pkg.sh utilise 5 heredocs,
-# dont les delimiteurs ne matcheraient plus).
+# 1. Scripts shell : stockes et extraits en LF, pour qu'un commit depuis Windows ne
+#    puisse pas les passer en CRLF et casser le build macOS (build-pkg.sh utilise des
+#    heredocs dont les delimiteurs ne matcheraient plus).
 *.sh       text eol=lf
 *.command  text eol=lf
+
+# 2. Fichiers servis par la mise a jour a chaud : scripts/release.js les ecrit en LF
+#    et calcule leur SHA-256 sur ces octets (backend-trial/updates/manifest.json).
+#    Ils DOIVENT rester LF dans le working copy, sinon un `vercel --prod` servirait
+#    des octets CRLF qui ne correspondent plus au manifeste (le panneau refuserait la
+#    mise a jour). Ces regles garantissent qu'un checkout ne les reconvertit pas.
+backend-trial/distribution/**/*.js    text eol=lf
+backend-trial/distribution/**/*.jsx   text eol=lf
+backend-trial/distribution/**/*.html  text eol=lf
+backend-trial/distribution/**/*.css   text eol=lf
+backend-trial/distribution/**/*.xml   text eol=lf
+backend-trial/distribution/**/*.svg   text eol=lf
+backend-trial/distribution/**/*.json  text eol=lf
+backend-trial/distribution/*.html     text eol=lf
+backend-trial/updates/*.json          text eol=lf
