@@ -57,6 +57,25 @@ lockAspectRatio: true,
 initialAspectRatio: 1.0, // Stocker le ratio initial pour éviter la dérive
 faviconEnabled: false, // Export favicon 32x32 (uniquement pour icon)
 outputFolder: '',
+// Dossier parent optionnel cree DANS outputFolder. resolvedOutputFolder est le
+// chemin reellement utilise par l'export en cours, calcule au clic sur le bouton
+// d'action (cf. resolveOutputTarget) : outputFolder reste ce que l'UI affiche.
+parentFolder: { enabled: true, name: 'Logopack' },
+resolvedOutputFolder: '',
+// Substitutions de style de police faites par le generateur IDML lors de la derniere
+// presentation (ex. Medium -> Regular quand la police n'a pas de Medium).
+lastFontSubstitutions: [],
+// Resultat final de la derniere presentation (phase done / error / timeout + compteurs
+// de mockups), tel que remonte par le fichier de statut ecrit par Photoshop et InDesign.
+lastPresentationResult: null,
+// Demande d'annulation de l'action en cours (bouton Annuler). Lue a chaque point
+// d'attente de handleAction / handleGeneratePresentation / waitForPresentationCompletion.
+cancelRequested: false,
+// Une action (generation / export / attente Photoshop-InDesign) est en cours.
+actionInProgress: false,
+// Les fichiers du plugin ont ete mis a jour (a chaud) mais Illustrator n'a pas encore
+// ete relance : hostscript.jsx en memoire est l'ancien, on bloque l'action.
+restartRequired: false,
 documentSettings: {
   colorMode: 'RGB',  // RGB ou CMYK
   ppi: 72            // Résolution en PPI
@@ -79,11 +98,18 @@ async function init() {
                 langSel.value = I18N.currentLang;
                 langSel.addEventListener('change', function() {
                     I18N.setLang(this.value);
+                    // Le libellé du bouton d'action est dynamique (Générer/Exporter) et
+                    // n'a donc pas de data-i18n : applyToDOM() ne le traduit pas.
+                    updateUI();
                 });
             }
         }
 
         csInterface = new CSInterface();
+
+        // hostscript.jsx charge dans Illustrator == version du panneau ? Sinon (mise a
+        // jour a chaud pas encore suivie d'un relancement), bloquer l'action.
+        checkHostscriptVersion();
 
         // Initialiser le système de trial/licensing
         await initTrialSystem();
@@ -140,7 +166,7 @@ function updateTrialBadge(status) {
 
         const remaining = status.generationsRemaining;
 
-        if (remaining === 0) {
+        if (remaining <= 0) {
             // Trial épuisé
             badge.className = 'trial-badge expired';
             text.textContent = '🔒 Trial épuisé - Activez une license';
@@ -337,6 +363,14 @@ function setupEventListeners() {
         btn.addEventListener('click', handleSelection);
     });
 
+    // Boutons croix pour supprimer une sélection
+    document.querySelectorAll('.btn-clear-selection').forEach(btn => {
+        btn.addEventListener('click', function() {
+            var type = this.getAttribute('data-type');
+            handleClearSelection(type);
+        });
+    });
+
      // Bouton de génération variation horizontale
         const horizontalLayoutBtn = document.getElementById('generate-horizontal-layout');
     if (horizontalLayoutBtn) {
@@ -415,6 +449,20 @@ function setupEventListeners() {
             zoneMarginValue.textContent = e.target.value;
         });
     }
+
+    // Remplissage visuel des sliders. La piste CSS (css/styles.css) lit var(--value)
+    // mais rien ne la définissait : les trois sliders rendaient donc toujours une
+    // piste vide, quelle que soit la position du curseur.
+    const syncRangeFill = (input) => {
+        const min = parseFloat(input.min) || 0;
+        const max = parseFloat(input.max);
+        const pct = (max > min) ? ((parseFloat(input.value) - min) / (max - min)) * 100 : 0;
+        input.style.setProperty('--value', pct + '%');
+    };
+    document.querySelectorAll('input[type="range"]').forEach((input) => {
+        syncRangeFill(input);
+        input.addEventListener('input', () => syncRangeFill(input));
+    });
 
     // Initialiser l'affichage des marges au démarrage
     updateMarginsVisibility();
@@ -623,56 +671,75 @@ function setupEventListeners() {
         addVariationBtn.addEventListener('click', addCustomVariation);
     }
 
-    // Bouton générer (artboards seulement)
-    const generateBtn = document.getElementById('generate-btn');
-    if (generateBtn) {
-        generateBtn.addEventListener('click', handleGenerate);
+    // Dossier parent : la case active/desactive le champ de nom.
+    const parentEnable = document.getElementById('parent-folder-enable');
+    const parentName = document.getElementById('parent-folder-name');
+    if (parentEnable && parentName) {
+        const syncParentFolder = () => {
+            appState.parentFolder.enabled = parentEnable.checked;
+            appState.parentFolder.name = parentName.value;
+            parentName.disabled = !parentEnable.checked;
+            updateUI();
+        };
+        parentEnable.addEventListener('change', syncParentFolder);
+        parentName.addEventListener('input', syncParentFolder);
+        syncParentFolder();
     }
 
-    // Bouton exporter (artboards + fichiers)
-    const exportBtnEl = document.getElementById('export-btn');
-    if (exportBtnEl) {
-        exportBtnEl.addEventListener('click', handleExport);
+    const cancelBtn = document.getElementById('cancel-btn');
+    if (cancelBtn) {
+        cancelBtn.addEventListener('click', requestCancel);
     }
 
-    // Checkbox présentation InDesign : toggle options
+    // Bouton d'action unique : génère seul, ou génère puis exporte (cf. handleAction).
+    const actionBtn = document.getElementById('export-btn');
+    if (actionBtn) {
+        actionBtn.addEventListener('click', handleAction);
+    }
+
+    // Checkbox présentation InDesign : toggle options + popup info
     const presentationCheckbox = document.getElementById('presentation-enable');
     if (presentationCheckbox) {
         presentationCheckbox.addEventListener('change', function() {
             var opts = document.getElementById('presentation-options');
-            if (opts) opts.style.display = this.checked ? 'block' : 'none';
+            if (this.checked) {
+                if (opts) opts.style.display = 'block';
+                showPresentationInfoPopup();
+            } else {
+                if (opts) opts.style.display = 'none';
+            }
         });
     }
 
     // Bouton reset
     const resetBtn = document.getElementById('reset-btn');
     if (resetBtn) {
-        resetBtn.addEventListener('click', function() {
-            resetSelections();
-            // Réinitialiser aussi les inputs de présentation
-            var brandNameInput = document.getElementById('brand-name');
-            if (brandNameInput) brandNameInput.value = '';
-            var fontPrimary = document.getElementById('brand-font-primary');
-            if (fontPrimary) fontPrimary.value = '';
-            var fontSecondary = document.getElementById('brand-font-secondary');
-            if (fontSecondary) fontSecondary.value = '';
-            // Réinitialiser les sélections ExtendScript
-            evalExtendScript('clearStoredSelections').catch(function() {});
-            showStatus('Paramètres réinitialisés.', 'success');
+        resetBtn.addEventListener('click', async function() {
+            // Remise à zéro COMPLÈTE, par construction : on recharge le panneau, ce qui
+            // reconstruit le DOM depuis index.html (toutes les valeurs par défaut) et
+            // rejoue init(). L'ancienne remise à zéro champ par champ (resetSelections)
+            // oubliait toujours quelque chose : croix de sélection, lignes custom,
+            // couleurs, tailles, dossier de sortie, présentation, onglet actif...
+            // Ce qui survit volontairement, comme à un redémarrage du logiciel : la
+            // langue, la licence / le trial et « Ne plus afficher » (localStorage).
+            resetBtn.disabled = true;
+            try {
+                // Le moteur ExtendScript, lui, persiste à travers un rechargement du
+                // panneau : vider les slots ET supprimer les duplicatas masqués.
+                await evalExtendScript('clearStoredSelections');
+            } catch (e) {
+                console.warn('clearStoredSelections:', e);
+            }
+            window.location.reload();
         });
     }
 
-    // Bouton re-tester mockups (PS → InDesign) sans tout regénérer
-    const btnRerunMockups = document.getElementById('btn-rerun-mockups');
-    if (btnRerunMockups) {
-        btnRerunMockups.addEventListener('click', handleRerunMockups);
-    }
 
     // DEBUG: Bouton reset trial
     const resetTrialBtn = document.getElementById('reset-trial-btn');
     if (resetTrialBtn) {
         resetTrialBtn.addEventListener('click', async () => {
-            if (confirm('Réinitialiser le trial ?\n\nCela va remettre le compteur à 7/7 (local + serveur).')) {
+            if (confirm('Réinitialiser le trial ?\n\nCela va remettre le compteur à 3/3 (local + serveur).')) {
                 try {
                     // Afficher un message de chargement
                     showStatus('Réinitialisation en cours...', 'warning');
@@ -684,7 +751,7 @@ function setupEventListeners() {
                     const status = await Trial.init();
                     updateTrialBadge(status);
 
-                    showStatus('✓ Trial réinitialisé ! 7/7 générations disponibles', 'success');
+                    showStatus('✓ Trial réinitialisé ! 3/3 générations disponibles', 'success');
                 } catch (error) {
                     console.error('Erreur reset:', error);
                     showStatus('⚠️ Erreur lors de la réinitialisation', 'error');
@@ -734,45 +801,7 @@ function setupEventListeners() {
         });
     }
 
-    // === UPDATE MODAL ===
-    const updateModal = document.getElementById('update-modal');
-    const closeUpdateModal = document.getElementById('close-update-modal');
-    const updateSkipBtn = document.getElementById('update-skip-btn');
-    const updateDownloadBtn = document.getElementById('update-download-btn');
-
-    if (closeUpdateModal) {
-        closeUpdateModal.addEventListener('click', () => {
-            UpdateChecker.closeUpdateModal();
-        });
-    }
-
-    if (updateSkipBtn) {
-        updateSkipBtn.addEventListener('click', () => {
-            UpdateChecker.closeUpdateModal();
-        });
-    }
-
-    if (updateDownloadBtn) {
-        updateDownloadBtn.addEventListener('click', () => {
-            // Ouvrir le lien de download dans le navigateur (pas d'auto-écrasement)
-            var url = updateDownloadBtn.dataset.downloadUrl;
-            if (url) {
-                window.cep && window.cep.util
-                    ? window.cep.util.openURLInDefaultBrowser(url)
-                    : window.open(url, '_blank');
-            }
-            UpdateChecker.closeUpdateModal();
-        });
-    }
-
-    // Fermer la modal en cliquant en dehors
-    if (updateModal) {
-        updateModal.addEventListener('click', (e) => {
-            if (e.target === updateModal) {
-                UpdateChecker.closeUpdateModal();
-            }
-        });
-    }
+    // Les modales de mise a jour sont cablees dans js/updater.js (bindModals).
 
 }
 
@@ -1006,6 +1035,12 @@ async function handleLicenseDeactivation() {
         } else if (response.ok && data.success) {
             // Désactivation normale réussie
             localStorage.removeItem('_license');
+            localStorage.removeItem('_trial_cache');
+            // Supprimer aussi ~/.logotyps-license : sans ça getStoredLicense() le relit
+            // et réhydrate localStorage, donc le panneau réaffichait "✓ Licensed".
+            if (window.Trial && typeof Trial._removeLicenseFromDisk === 'function') {
+                Trial._removeLicenseFromDisk();
+            }
 
             // Afficher le succès
             successDiv.textContent = '✓ Licence désactivée avec succès.';
@@ -1082,6 +1117,10 @@ async function handleSelection(event) {
             // Ajouter la classe selected au bouton
             button.classList.add('selected');
 
+            // Afficher la croix de suppression
+            var clearBtn = button.parentElement.querySelector('.btn-clear-selection');
+            if (clearBtn) clearBtn.style.display = '';
+
             showStatus(`${getTypeName(type)} sélectionné`, 'success');
             updateUI();
         } else if (result && result.startsWith('ERROR:')) {
@@ -1099,6 +1138,31 @@ async function handleSelection(event) {
         // Réactiver les boutons de sélection
         allSelectButtons.forEach(btn => btn.disabled = false);
     }
+}
+
+function handleClearSelection(type) {
+    // Supprimer la sélection stockée côté ExtendScript
+    csInterface.evalScript('clearStoredSelection("' + type + '")');
+
+    // Reset l'état local
+    appState.selections[type] = null;
+
+    // Reset l'UI
+    var statusEl = document.getElementById('status-' + type);
+    if (statusEl) {
+        statusEl.textContent = typeof t === 'function' ? t('sel_not_selected') : 'Pas sélect';
+        statusEl.classList.remove('selected');
+    }
+
+    // Reset le bouton Valider
+    var selectBtn = document.querySelector('.btn-select[data-type="' + type + '"]');
+    if (selectBtn) selectBtn.classList.remove('selected');
+
+    // Masquer la croix
+    var clearBtn = document.querySelector('.btn-clear-selection[data-type="' + type + '"]');
+    if (clearBtn) clearBtn.style.display = 'none';
+
+    updateUI();
 }
 
 function updateArtboardTypes() {
@@ -1145,6 +1209,20 @@ function updateColorVariations() {
     updateUI();
 }
 
+// Le bouton d'action a deux modes. On ne bascule en mode "export" que si la sortie
+// est ENTIÈREMENT renseignée : un dossier + au moins un format + au moins une taille.
+// Sinon on reste en mode "génération" (plans de travail uniquement, aucun fichier écrit).
+function getExportReadiness() {
+  const hasFolder = !!(appState.outputFolder && appState.outputFolder !== '');
+  const hasFormat = !!(appState.exportFormats.png || appState.exportFormats.jpg ||
+                       appState.exportFormats.svg || appState.exportFormats.ai ||
+                       appState.exportFormats.pdf);
+  const hasSize   = Object.values(appState.exportSizes).filter(v => v).length > 0 ||
+                    !!appState.customSizeEnabled ||
+                    !!(appState.faviconEnabled && appState.selections.icon);
+  return { hasFolder, hasFormat, hasSize, ready: hasFolder && hasFormat && hasSize };
+}
+
 function updateUI() {
   // Afficher/masquer la section favicon selon si icon est sélectionné
   const faviconSection = document.getElementById('favicon-section');
@@ -1158,16 +1236,18 @@ function updateUI() {
     }
   }
 
-  // Calcul des tailles d'export
-  const fixedCount = Object.values(appState.exportSizes).filter(v => v).length;
-  const customCount = appState.customSizeEnabled ? 1 : 0;
-  const faviconCount = (appState.faviconEnabled && appState.selections.icon) ? 1 : 0;
-  const sizeCount  = fixedCount + customCount + faviconCount;
+  // Mode du bouton d'action : génération seule ou génération + export (cf. getExportReadiness).
+  const readiness = getExportReadiness();
 
   // Calcul des sélections, types et couleurs
   const selectedCount = Object.values(appState.selections).filter(v => v).length;
   const typeCount     = Object.values(appState.artboardTypes).filter(v => v).length;
-  const colorCount    = Object.values(appState.colorVariations).filter(v => v).length;
+  // Ne compter QUE les variantes activées. appState.colorVariations contient aussi
+  // monochromeColor / monochromeLightColor, qui sont des chaînes hex donc toujours
+  // truthy : les inclure gonflait le total affiché (colorCount = 3 avec seulement
+  // "original" coché) et rendait la garde "au moins une couleur" ci-dessous inopérante.
+  const colorFlags    = ['original', 'blackwhite', 'monochrome', 'monochromeLight', 'custom'];
+  const colorCount    = colorFlags.filter(k => appState.colorVariations[k]).length;
 
   // Calcul du total d'artboards (sélections × types × couleurs)
   // Si monochromeLight est activée, on double le nombre d'artboards
@@ -1212,15 +1292,32 @@ function updateUI() {
     summaryEl.style.display = 'none';
   }
 
-  // "Générer" : sélections + types + couleurs suffisent
-  document.getElementById('generate-btn').disabled = !(selectedCount > 0 && typeCount > 0 && colorCount > 0);
+  // Bouton d'action unique : actif dès qu'il y a de quoi générer (sélections + types
+  // + couleurs). La sortie n'est PAS une condition d'activation, seulement un choix
+  // de mode — c'est tout l'intérêt d'avoir fusionné les deux anciens boutons.
+  const actionBtn = document.getElementById('export-btn');
+  if (actionBtn) {
+    const label = (key, fr) => (typeof t === 'function' ? t(key) : fr);
 
-  // "Exporter" : il faut en plus un dossier, au moins un format et au moins une taille
-  const hasFolder = appState.outputFolder && appState.outputFolder !== '';
-  const hasFormat = appState.exportFormats.png || appState.exportFormats.jpg || appState.exportFormats.svg || appState.exportFormats.ai || appState.exportFormats.pdf;
-  const exportBtn = document.getElementById('export-btn');
-  if (exportBtn) {
-    exportBtn.disabled = !(selectedCount > 0 && typeCount > 0 && colorCount > 0 && sizeCount > 0 && hasFolder && hasFormat);
+    // Pendant une action, rester désactivé quoi qu'il arrive : updateUI() est appelée par
+    // une vingtaine de contrôles (langue, couleurs, cases…) et réactivait le bouton en
+    // plein export, permettant un second lancement qui écrasait l'annulation du premier.
+    actionBtn.disabled = appState.actionInProgress || appState.restartRequired || !(selectedCount > 0 && typeCount > 0 && colorCount > 0);
+    actionBtn.textContent = readiness.ready ? label('act_export', 'Exporter')
+                                            : label('act_generate', 'Générer');
+
+    if (readiness.ready) {
+      actionBtn.title = 'Génère les plans de travail, puis exporte les fichiers dans le dossier de sortie.';
+    } else {
+      // Expliquer pourquoi le bouton n'est pas en mode export : sans ça, l'utilisateur
+      // ne peut pas deviner ce qu'il manque.
+      const manque = [];
+      if (!readiness.hasFolder) manque.push('un dossier de sortie');
+      if (!readiness.hasFormat) manque.push('un format d\'export');
+      if (!readiness.hasSize)   manque.push('une taille');
+      actionBtn.title = 'Crée uniquement les plans de travail dans un nouveau document.\n' +
+                        'Renseignez ' + manque.join(', ') + ' dans l\'onglet Export pour exporter les fichiers.';
+    }
   }
 }
 
@@ -1239,15 +1336,317 @@ async function checkTrialAllowed() {
     return true;
 }
 
-// Générer les plans de travail SEULEMENT (pas d'export fichiers)
-async function handleGenerate() {
-    const generateBtn = document.getElementById('generate-btn');
+// ============================================================================
+//  Dossier de sortie : dossier parent, detection de conflit, popups de choix
+// ============================================================================
+
+// Presence de l'un de ces noms = un export du plugin a deja eu lieu dans le dossier.
+const EXPORT_MARKERS = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2',
+                        'custom3', 'favicon', 'mockups', '_temp',
+                        'logo-export-variation.ai', 'presentation-logo.idml'];
+
+// Nettoie un nom de dossier saisi par l'utilisateur. Sans ca, un "/" ou un ".."
+// dans le champ ferait ecrire l'export ailleurs que sous le dossier choisi.
+function sanitizeFolderName(name) {
+    const cleaned = String(name || '')
+        .replace(/[\\/:*?"<>|]/g, '-')
+        .replace(/^\.+/, '')
+        .replace(/\s+$/, '')
+        .trim();
+    return cleaned || 'Logopack';
+}
+
+// Le dossier contient-il deja un export du plugin ?
+function folderHasPreviousExport(dir) {
+    try {
+        const fs = require('fs');
+        const nodePath = require('path');
+        if (!fs.existsSync(dir)) return false;
+        for (let i = 0; i < EXPORT_MARKERS.length; i++) {
+            if (fs.existsSync(nodePath.join(dir, EXPORT_MARKERS[i]))) return true;
+        }
+        return false;
+    } catch (e) {
+        console.error('folderHasPreviousExport:', e);
+        return false;
+    }
+}
+
+// Suppression recursive du CONTENU d'un dossier (le dossier lui-meme est conserve).
+// Ecrit a la main plutot qu'avec fs.rmSync : le Node embarque dans CEP peut etre
+// anterieur a 14.14 et ne pas le fournir.
+function emptyFolderRecursive(dir) {
+    const fs = require('fs');
+    const nodePath = require('path');
+    const entries = fs.readdirSync(dir);
+    for (let i = 0; i < entries.length; i++) {
+        const full = nodePath.join(dir, entries[i]);
+        let st;
+        try {
+            st = fs.lstatSync(full);
+        } catch (e) {
+            continue;
+        }
+        if (st.isDirectory()) {
+            emptyFolderRecursive(full);
+            fs.rmdirSync(full);
+        } else {
+            fs.unlinkSync(full);
+        }
+    }
+}
+
+// Premier nom libre de la forme <base>-2, <base>-3, ...
+function nextAvailableFolder(parentDir, baseName) {
+    const fs = require('fs');
+    const nodePath = require('path');
+    for (let i = 2; i < 1000; i++) {
+        const candidate = nodePath.join(parentDir, baseName + '-' + i);
+        if (!fs.existsSync(candidate)) return candidate;
+    }
+    return nodePath.join(parentDir, baseName + '-' + Date.now());
+}
+
+// Echappement minimal pour le texte injecte dans le HTML des popups.
+function escapeHtml(str) {
+    return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Popup generique a choix multiples. Resout avec la `value` du bouton clique, ou
+// null si l'utilisateur ferme la popup (clic sur le fond, ou Echap).
+function showChoicePopup(opts) {
+    return new Promise((resolve) => {
+        let settled = false;
+        const overlay = document.createElement('div');
+        const onKey = (e) => { if (e.key === 'Escape') finish(null); };
+        function finish(value) {
+            if (settled) return;
+            settled = true;
+            document.removeEventListener('keydown', onKey);
+            overlay.remove();
+            resolve(value);
+        }
+
+        overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:10001;';
+
+        const popup = document.createElement('div');
+        popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 28px;text-align:left;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:320px;';
+
+        let html = '<p style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-color);">' + opts.title + '</p>';
+        html += '<div style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:16px;">' + opts.body + '</div>';
+        if (opts.rememberLabel) {
+            html += '<label class="checkbox-label" style="padding-left:0;margin-bottom:12px;">'
+                  + '<input type="checkbox" id="popup-remember"><span>' + opts.rememberLabel + '</span></label>';
+        }
+        html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+        for (let i = 0; i < opts.buttons.length; i++) {
+            const b = opts.buttons[i];
+            const style = b.danger
+                ? 'background:var(--error-color);color:#fff;border:none;'
+                : (b.primary ? 'background:var(--primary-color);color:#fff;border:none;'
+                             : 'background:transparent;color:var(--text-color);border:1px solid var(--border-color);');
+            html += '<button data-value="' + b.value + '" style="padding:9px 16px;border-radius:6px;cursor:pointer;'
+                 + 'font-weight:600;font-size:12px;font-family:inherit;' + style + '">' + b.label + '</button>';
+        }
+        html += '</div>';
+        popup.innerHTML = html;
+
+        const remember = popup.querySelector('#popup-remember');
+        const btns = popup.querySelectorAll('button[data-value]');
+        for (let i = 0; i < btns.length; i++) {
+            btns[i].addEventListener('click', function () {
+                if (remember && remember.checked && opts.rememberKey) {
+                    try { localStorage.setItem(opts.rememberKey, '1'); } catch (e) {}
+                }
+                finish(this.getAttribute('data-value'));
+            });
+        }
+
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
+        document.addEventListener('keydown', onKey);
+        overlay.appendChild(popup);
+        document.body.appendChild(overlay);
+    });
+}
+
+// Avertit que rien ne sera ecrit sur le disque. Retourne true si on continue.
+async function confirmNoExportConfigured() {
+    try {
+        if (localStorage.getItem('skip_no_export_warning') === '1') return true;
+    } catch (e) {}
+
+    const choice = await showChoicePopup({
+        title: 'Aucun export configuré',
+        body: 'Les déclinaisons seront créées dans un nouveau document Illustrator, mais '
+            + '<strong>aucun fichier ne sera écrit sur le disque</strong>.<br><br>'
+            + 'Pour exporter, renseignez un dossier de sortie et au moins un format dans '
+            + 'l&#39;onglet Export.',
+        rememberLabel: 'Ne plus afficher',
+        rememberKey: 'skip_no_export_warning',
+        buttons: [
+            { value: 'go', label: 'Continuer', primary: true },
+            { value: 'cancel', label: 'Annuler' }
+        ]
+    });
+    return choice === 'go';
+}
+
+// Calcule le dossier d'export definitif en gerant le dossier parent et les conflits.
+// Retourne le chemin a utiliser, ou null si l'utilisateur annule.
+async function resolveOutputTarget() {
+    const fs = require('fs');
+    const nodePath = require('path');
+    const base = appState.outputFolder;
+    if (!base) return null;
+
+    const useParent = !!appState.parentFolder.enabled;
+    const folderName = sanitizeFolderName(appState.parentFolder.name);
+    let target = useParent ? nodePath.join(base, folderName) : base;
+
+    // Conflit : avec dossier parent, c'est son existence. Sans dossier parent, c'est
+    // la presence d'un export precedent directement dans le chemin choisi.
+    const conflict = useParent ? fs.existsSync(target) : folderHasPreviousExport(base);
+
+    if (conflict) {
+        const where = useParent ? ('Le dossier « ' + escapeHtml(folderName) + ' »')
+                                : 'Le dossier de sortie';
+        // Un run précédent annulé ou en timeout sur CE dossier : Photoshop / InDesign
+        // y écrivent peut-être encore. Le dire avant que l'utilisateur ne le vide.
+        const prev = appState.lastPresentationResult;
+        const maybeStillRunning = !!(prev && (prev.phase === 'cancelled' || prev.phase === 'timeout')
+            && appState.resolvedOutputFolder && appState.resolvedOutputFolder === target.replace(/\\/g, '/'));
+        const stillRunningNote = maybeStillRunning
+            ? '<br><br><strong>⚠️ Un traitement Photoshop / InDesign lancé précédemment peut encore écrire dans ce dossier.</strong>'
+            : '';
+        const choice = await showChoicePopup({
+            title: 'Un export existe déjà',
+            body: where + ' contient déjà un export.<br><br>'
+                + '<strong style="color:var(--error-color);">Vider et remplacer supprimera '
+                + 'définitivement tout le contenu de ce dossier</strong>, y compris les fichiers '
+                + 'qui ne viennent pas du plugin. La suppression est irréversible : elle ne passe '
+                + 'pas par la corbeille.<br><br>'
+                + '<span style="font-size:11px;word-break:break-all;">' + escapeHtml(target) + '</span>'
+                + stillRunningNote,
+            buttons: [
+                { value: 'new', label: 'Créer un nouveau dossier', primary: true },
+                { value: 'replace', label: 'Vider et remplacer', danger: true },
+                { value: 'cancel', label: 'Annuler' }
+            ]
+        });
+
+        if (choice === null || choice === 'cancel') return null;
+
+        if (choice === 'replace') {
+            try {
+                if (fs.existsSync(target)) emptyFolderRecursive(target);
+            } catch (e) {
+                console.error('emptyFolderRecursive:', e);
+                showStatus('Impossible de vider le dossier : ' + (e.message || e), 'error');
+                return null;
+            }
+        } else {
+            // Dossier numerote a cote. Meme sans dossier parent on en cree un, pour ne
+            // pas melanger le nouvel export avec l'ancien dans le meme repertoire.
+            target = nextAvailableFolder(base, folderName);
+        }
+    }
 
     try {
-        if (!(await checkTrialAllowed())) return;
+        if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+    } catch (e) {
+        console.error('mkdir:', e);
+        showStatus('Impossible de créer le dossier : ' + (e.message || e), 'error');
+        return null;
+    }
 
-        if (generateBtn) generateBtn.disabled = true;
-        showStatus('Génération des plans de travail...', 'warning');
+    return target.replace(/\\/g, '/');
+}
+
+// Dossier reellement utilise par l'export en cours (resolu au clic), avec repli sur
+// ce que l'utilisateur a choisi dans l'UI.
+function getEffectiveOutputFolder() {
+    return appState.resolvedOutputFolder || appState.outputFolder;
+}
+
+// ---- Annulation --------------------------------------------------------------
+// Ce qui tourne dans Illustrator (evalScript synchrone) ne peut PAS etre interrompu :
+// l'annulation est donc un drapeau, lu a chaque point d'attente. Elle prend effet
+// immediatement pendant les phases JS (popups, trial, attente Photoshop / InDesign)
+// et au retour d'Illustrator sinon.
+function setActionInProgress(on) {
+    appState.actionInProgress = !!on;
+    appState.cancelRequested = false;
+    if (on) appState.lastPresentationResult = null;
+    const cancelBtn = document.getElementById('cancel-btn');
+    if (cancelBtn) {
+        cancelBtn.style.display = on ? '' : 'none';
+        cancelBtn.disabled = false;
+    }
+}
+
+function requestCancel() {
+    if (appState.cancelRequested) return;
+    appState.cancelRequested = true;
+    const cancelBtn = document.getElementById('cancel-btn');
+    if (cancelBtn) cancelBtn.disabled = true;
+    showStatus('Annulation demandée. Ce qu\'Illustrator a déjà commencé ira jusqu\'au bout ; '
+             + 'l\'annulation prend effet dès la prochaine étape.', 'warning');
+}
+
+// Bouton d'action UNIQUE (#export-btn). Deux modes, choisis par getExportReadiness() :
+//   - sortie incomplete -> genere uniquement les plans de travail (ex-bouton "Generer") ;
+//   - sortie complete    -> genere PUIS exporte les fichiers, et la presentation InDesign
+//                           si elle est cochee (ex-bouton "Exporter").
+//
+// Les deux boutons distincts ont ete fusionnes parce que leur enchainement etait casse
+// par construction : generateArtboards() prend app.activeDocument comme document source
+// (jsx/hostscript.jsx:1413) et laisse volontairement le document genere actif a la fin
+// ("decision 1.A", ~ligne 1990). Cliquer "Generer" puis "Exporter" relancait donc la
+// generation en prenant le document GENERE comme source, alors que storedSelections
+// reference des PageItems du document d'origine.
+async function handleAction() {
+    if (appState.actionInProgress) return; // réentrée : un run est déjà en cours
+    const actionBtn = document.getElementById('export-btn');
+    const readiness = getExportReadiness();
+    const isExport  = readiness.ready;
+
+    try {
+        // Desactiver AVANT le await : checkTrialAllowed() fait un aller-retour reseau
+        // (~5 s) pendant lequel un second clic franchissait la meme garde, offrant une
+        // generation gratuite et lancant deux generateArtboards concurrents dans le
+        // moteur ExtendScript mono-thread. Le finally reactive dans tous les cas.
+        if (actionBtn) actionBtn.disabled = true;
+        setActionInProgress(true);
+
+        // Mode generation seule : prevenir que rien ne sera ecrit sur le disque.
+        // Avant le controle trial, pour ne rien consommer si l'utilisateur annule.
+        if (!isExport && !(await confirmNoExportConfigured())) {
+            showStatus('Génération annulée.', 'warning');
+            return;
+        }
+
+        // Mode export : resoudre le dossier definitif (dossier parent, conflits).
+        // Egalement avant le controle trial, pour la meme raison.
+        let targetFolder = '';
+        if (isExport) {
+            targetFolder = await resolveOutputTarget();
+            if (!targetFolder) {
+                showStatus('Export annulé.', 'warning');
+                return;
+            }
+        }
+        appState.resolvedOutputFolder = targetFolder;
+
+        if (appState.cancelRequested) { showStatus('Annulé.', 'warning'); return; }
+        if (!(await checkTrialAllowed())) return;
+        if (appState.cancelRequested) { showStatus('Annulé.', 'warning'); return; }
+
+        if (isExport) {
+            showStatus('Exportation en cours...', 'warning');
+            document.body.classList.add('exporting');
+        } else {
+            showStatus('Génération des plans de travail...', 'warning');
+        }
 
         const params = {
             selections: appState.selections,
@@ -1255,27 +1654,96 @@ async function handleGenerate() {
             artboardMargins: appState.artboardMargins,
             colorVariations: appState.colorVariations,
             customColors: appState.customColors,
-            exportFormats: { png: false, jpg: false, svg: false, ai: false, pdf: false },
-            exportSizes: {},
-            customSizeEnabled: false,
+            // En mode generation seule, on neutralise explicitement toute sortie fichier
+            // cote ExtendScript : outputFolder vide => generateArtboards n'ecrit rien et
+            // ne fait pas le saveAs de logo-export-variation.ai.
+            exportFormats: isExport ? appState.exportFormats
+                                    : { png: false, jpg: false, svg: false, ai: false, pdf: false },
+            exportSizes: isExport ? appState.exportSizes : {},
+            customSizeEnabled: isExport ? appState.customSizeEnabled : false,
             customSize: appState.customSize,
             faviconEnabled: appState.faviconEnabled,
-            outputFolder: '',
+            outputFolder: isExport ? targetFolder : '',
             documentSettings: appState.documentSettings
         };
 
-        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 120000);
+        const result = await evalExtendScript(
+            'generateArtboards',
+            [JSON.stringify(params)],
+            isExport ? 300000 : 120000
+        );
+
+        // Illustrator a fini : retirer l'overlay plein ecran maintenant, pour que la
+        // progression Photoshop / InDesign reste lisible dans la barre de statut.
+        // Le bouton d'action, lui, reste desactive jusqu'au finally.
+        document.body.classList.remove('exporting');
 
         if (result && result.startsWith('SUCCESS')) {
             const count = result.split(':')[1];
-            showStatus(`${count} plans de travail créés !`, 'success');
 
             try {
                 await Trial.incrementGeneration();
-                const newStatus = await Trial.getStatus();
-                updateTrialBadge(newStatus);
             } catch (e) {
                 console.error('Erreur incrémentation trial:', e);
+            }
+            // Rafraîchir le badge dans tous les cas : si le serveur a refusé l'incrément
+            // (limite atteinte), c'est justement là que l'utilisateur doit le voir.
+            try {
+                updateTrialBadge(await Trial.getStatus());
+            } catch (e) {}
+
+            const presentationChecked = document.getElementById('presentation-enable');
+            const wantsPresentation = !!(presentationChecked && presentationChecked.checked);
+
+            // Annulation demandee pendant qu'Illustrator travaillait : les plans de travail
+            // (et l'export fichiers, qui se fait dans le meme appel) sont deja faits — on
+            // s'arrete la, sans lancer la presentation.
+            if (appState.cancelRequested && isExport && wantsPresentation) {
+                showStatus(`Annulé après l'export : ${count} plans de travail exportés dans ${targetFolder}, présentation InDesign non lancée.`, 'warning');
+                return;
+            }
+            // Sinon il ne restait rien à annuler : l'export / la génération est complète,
+            // on affiche le bilan normal.
+
+            if (isExport) {
+                if (wantsPresentation) {
+                    showStatus('Génération de la présentation InDesign...', 'warning');
+                    try {
+                        await handleGeneratePresentation();
+                    } catch (presErr) {
+                        console.error('Erreur présentation:', presErr);
+                        showStatus(`Export OK (${count} artboards) mais erreur présentation: ${presErr.message}`, 'warning');
+                    }
+                }
+                // Nommer le dossier reellement utilise : avec le repli "-2" ou apres un
+                // remplacement, l'utilisateur doit savoir ou son export a atterri.
+                // Bilan final. On n'arrive ici qu'apres la fin reelle de Photoshop et
+                // InDesign (handleGeneratePresentation attend le fichier de statut).
+                var finalLines = [`${count} plans de travail exportés dans ${targetFolder}`];
+                var finalLevel = 'success';
+                var popupSubtitle = '';
+                if (wantsPresentation) {
+                    var pres = describePresentationOutcome(appState.lastPresentationResult);
+                    finalLines.push(pres.text);
+                    popupSubtitle = pres.text;
+                    if (pres.level !== 'success') finalLevel = 'warning';
+                    if (appState.lastFontSubstitutions && appState.lastFontSubstitutions.length) {
+                        // Dire ce qui a ete adapte : sinon l'utilisateur decouvre une charte un
+                        // peu differente en l'ouvrant, sans savoir pourquoi.
+                        finalLines.push('<strong>Styles de police adaptés</strong> — ' + formatFontSubstitutions(appState.lastFontSubstitutions));
+                        finalLevel = 'warning';
+                    }
+                }
+                showStatus('Exportation terminée ! ' + finalLines.join('<br>'), finalLevel);
+                showExportDonePopup(popupSubtitle, finalLevel);
+            } else if (wantsPresentation) {
+                // La presentation lit les fichiers deja exportes sur disque : sans dossier
+                // de sortie ni format elle ne peut rien produire. Le dire explicitement
+                // plutot que d'echouer en silence.
+                showStatus(`${count} plans de travail créés. La présentation InDesign n'a pas été générée : ` +
+                           `elle nécessite un dossier de sortie et un format d'export.`, 'warning');
+            } else {
+                showStatus(`${count} plans de travail créés !`, 'success');
             }
         } else if (result && result.startsWith('ERROR')) {
             showStatus(result.substring(6).trim() || 'Erreur inconnue', 'error');
@@ -1283,82 +1751,225 @@ async function handleGenerate() {
             showStatus('Erreur: Réponse invalide', 'error');
         }
     } catch (error) {
-        console.error('Generate error:', error);
+        console.error('Action error:', error);
         showStatus(`Erreur: ${error.message || 'Erreur inconnue'}`, 'error');
     } finally {
-        if (generateBtn) generateBtn.disabled = false;
+        setActionInProgress(false);
+        if (actionBtn) actionBtn.disabled = false;
+        document.body.classList.remove('exporting');
         updateUI();
     }
 }
 
-// Exporter les fichiers (génère artboards + exporte dans le dossier)
-async function handleExport() {
-    const exportBtnEl = document.getElementById('export-btn');
+// ============================================================================
+//  Styles de police disponibles (pour la presentation InDesign)
+// ============================================================================
 
-    try {
-        if (!(await checkTrialAllowed())) return;
+// Demande a Illustrator la liste BRUTE des styles de chaque famille installee.
+// Resout avec { "Montserrat": ["Regular","Medium","Bold",...], "Bebas Neue": [""] , ... }.
+// Une chaine vide est un style legitime : police a style unique sans nom de style.
+// Separateurs = caracteres de controle (29/30/31) : aucun nom de police n'en contient.
+function fetchFontStylesFromIllustrator() {
+    return new Promise(function (resolve) {
+        var script =
+            'var f=app.textFonts,m={},i,fam,sty;' +
+            'for(i=0;i<f.length;i++){' +
+              'try{fam=f[i].family;sty=f[i].style;}catch(e){continue;}' +
+              'if(fam===undefined||fam===null||fam==="")continue;' +
+              'if(sty===undefined||sty===null)sty="";' +
+              'if(!m[fam])m[fam]=[];m[fam].push(sty);' +
+            '}' +
+            'var out=[];for(var k in m){out.push(k+String.fromCharCode(31)+m[k].join(String.fromCharCode(30)));}' +
+            'out.join(String.fromCharCode(29))';
+        try {
+            csInterface.evalScript(script, function (result) {
+                var map = {};
+                if (!result || result === 'EvalScript error.' || result === 'undefined') {
+                    console.warn('Styles de police : Illustrator n\'a pas répondu, aucune adaptation possible');
+                    resolve(map);
+                    return;
+                }
+                var records = result.split(String.fromCharCode(29));
+                for (var i = 0; i < records.length; i++) {
+                    var parts = records[i].split(String.fromCharCode(31));
+                    if (parts.length < 2) continue;
+                    map[parts[0]] = parts[1].split(String.fromCharCode(30));
+                }
+                resolve(map);
+            });
+        } catch (e) {
+            console.warn('Styles de police :', e);
+            resolve({});
+        }
+    });
+}
 
-        if (exportBtnEl) exportBtnEl.disabled = true;
-        showStatus('Exportation en cours...', 'warning');
-        document.body.classList.add('exporting');
+// Styles d'une famille, par nom exact puis insensible a la casse. null si inconnue
+// (police saisie a la main et non installee) : le generateur ne touchera alors pas
+// aux FontStyle, comme avant.
+function lookupFontStyles(map, family) {
+    if (!family) return null;
+    if (map[family]) return map[family];
+    var want = String(family).toLowerCase().trim();
+    for (var k in map) {
+        if (k.toLowerCase().trim() === want) return map[k];
+    }
+    console.warn('Styles de police : famille introuvable dans Illustrator : "' + family + '"');
+    return null;
+}
 
-        const params = {
-            selections: appState.selections,
-            artboardTypes: appState.artboardTypes,
-            artboardMargins: appState.artboardMargins,
-            colorVariations: appState.colorVariations,
-            customColors: appState.customColors,
-            exportFormats: appState.exportFormats,
-            exportSizes: appState.exportSizes,
-            customSizeEnabled: appState.customSizeEnabled,
-            customSize: appState.customSize,
-            faviconEnabled: appState.faviconEnabled,
-            outputFolder: appState.outputFolder,
-            documentSettings: appState.documentSettings
-        };
+// "Montserrat : Medium → Regular, Italic → Regular · Lato : Light → Regular"
+function formatFontSubstitutions(list) {
+    var byFamily = {};
+    var order = [];
+    for (var i = 0; i < list.length; i++) {
+        var it = list[i];
+        if (!byFamily[it.family]) { byFamily[it.family] = []; order.push(it.family); }
+        var used = it.used === '' ? '(style unique)' : it.used;
+        byFamily[it.family].push(it.requested + ' → ' + used);
+    }
+    var parts = [];
+    for (var j = 0; j < order.length; j++) {
+        parts.push(order[j] + ' : ' + byFamily[order[j]].join(', '));
+    }
+    return parts.join(' · ');
+}
 
-        const result = await evalExtendScript('generateArtboards', [JSON.stringify(params)], 300000);
+// ============================================================================
+//  Suivi de la presentation : Photoshop et InDesign ont-ils VRAIMENT fini ?
+// ============================================================================
+// BridgeTalk est fire-and-forget : le retour de processPhotoshopThenInDesign() signifie
+// "message envoye", jamais "presentation prete". Les scripts generes ecrivent donc un
+// fichier de statut a la racine du dossier de sortie (cf. PRESENTATION_STATUS_FILE dans
+// jsx/hostscript.jsx), que l'on lit en boucle ici. Sans ca, "Exportation terminee"
+// s'affichait alors que Photoshop n'avait pas encore ouvert le premier PSD.
 
-        if (result && result.startsWith('SUCCESS')) {
-            const count = result.split(':')[1];
+const PRESENTATION_STATUS_FILE = '.logopack-status.json';
+const PRESENTATION_TIMEOUT_WITH_MOCKUPS = 15 * 60 * 1000; // 9 PSD de 8 a 65 Mo : ca peut etre long
+const PRESENTATION_TIMEOUT_NO_MOCKUPS   =  3 * 60 * 1000;
+const PRESENTATION_POLL_INTERVAL        = 1000;
 
-            try {
-                await Trial.incrementGeneration();
-                const newStatus = await Trial.getStatus();
-                updateTrialBadge(newStatus);
-            } catch (e) {
-                console.error('Erreur incrémentation trial:', e);
-            }
-
-            // Si la présentation InDesign est cochée, la générer maintenant
-            var presentationChecked = document.getElementById('presentation-enable');
-            if (presentationChecked && presentationChecked.checked) {
-                showStatus('Génération de la présentation InDesign...', 'warning');
+// evalScript dont le retour est un JSON {success, ...}. Ne rejette jamais.
+function evalScriptJson(script) {
+    return new Promise(function (resolve) {
+        try {
+            csInterface.evalScript(script, function (res) {
                 try {
-                    await handleGeneratePresentation();
-                } catch (presErr) {
-                    console.error('Erreur présentation:', presErr);
-                    showStatus(`Export OK (${count} artboards) mais erreur présentation: ${presErr.message}`, 'warning');
+                    resolve(JSON.parse(res));
+                } catch (e) {
+                    resolve({ success: false, error: 'Réponse ExtendScript invalide : ' + res });
+                }
+            });
+        } catch (e) {
+            resolve({ success: false, error: e.message || String(e) });
+        }
+    });
+}
+
+// null si absent ou en cours d'ecriture (JSON tronque) : on reessaiera au tick suivant.
+function readPresentationStatus(outputFolder) {
+    try {
+        const fs = require('fs');
+        const nodePath = require('path');
+        const p = nodePath.join(outputFolder, PRESENTATION_STATUS_FILE);
+        if (!fs.existsSync(p)) return null;
+        return JSON.parse(fs.readFileSync(p, 'utf8'));
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearPresentationStatus(outputFolder) {
+    try {
+        const fs = require('fs');
+        const nodePath = require('path');
+        const p = nodePath.join(outputFolder, PRESENTATION_STATUS_FILE);
+        if (fs.existsSync(p)) fs.unlinkSync(p);
+    } catch (e) {}
+}
+
+// Resout { phase: 'done' | 'error' | 'timeout', ...champs du statut }. Ne rejette jamais.
+// Un statut dont ts est anterieur au lancement est un residu d'un run precedent : ignore.
+function waitForPresentationCompletion(outputFolder, opts) {
+    opts = opts || {};
+    const startedAt = opts.startedAt || Date.now();
+    const timeoutMs = opts.timeoutMs || PRESENTATION_TIMEOUT_WITH_MOCKUPS;
+    const interval  = opts.intervalMs || PRESENTATION_POLL_INTERVAL;
+    return new Promise(function (resolve) {
+        let lastKey = '';
+        function tick() {
+            const st = readPresentationStatus(outputFolder);
+            if (st && typeof st.ts === 'number' && st.ts >= startedAt - 5000) {
+                const key = JSON.stringify(st);
+                if (key !== lastKey) {
+                    lastKey = key;
+                    if (opts.onProgress) { try { opts.onProgress(st); } catch (e) {} }
+                }
+                if (st.phase === 'done' || st.phase === 'error') {
+                    resolve(st);
+                    return;
                 }
             }
-
-            showStatus(`Exportation terminée ! ${count} plans de travail exportés.`, 'success');
-
-            // Popup de confirmation
-            showExportDonePopup();
-        } else if (result && result.startsWith('ERROR')) {
-            showStatus(result.substring(6).trim() || 'Erreur inconnue', 'error');
-        } else {
-            showStatus('Erreur: Réponse invalide', 'error');
+            if (opts.shouldCancel && opts.shouldCancel()) {
+                resolve({ phase: 'cancelled', last: st || null });
+                return;
+            }
+            if (Date.now() - startedAt > timeoutMs) {
+                resolve({ phase: 'timeout', last: st || null });
+                return;
+            }
+            setTimeout(tick, interval);
         }
-    } catch (error) {
-        console.error('Export error:', error);
-        showStatus(`Erreur: ${error.message || 'Erreur inconnue'}`, 'error');
-    } finally {
-        if (exportBtnEl) exportBtnEl.disabled = false;
-        document.body.classList.remove('exporting');
-        updateUI();
+        tick();
+    });
+}
+
+// Ligne de progression pendant l'attente.
+function describePresentationPhase(st) {
+    if (!st) return '';
+    if (st.phase === 'photoshop') {
+        if (typeof st.mockupsTotal === 'number' && st.mockupsTotal > 0) {
+            return 'Photoshop : mockup ' + (st.mockupsDone || 0) + '/' + st.mockupsTotal + '…';
+        }
+        return 'Photoshop : traitement des mockups…';
     }
+    if (st.phase === 'indesign') return 'InDesign : mise en page de la présentation…';
+    if (st.phase === 'done') return 'Présentation InDesign prête.';
+    if (st.phase === 'error') return 'Erreur présentation : ' + (st.message || 'inconnue');
+    if (st.phase === 'timeout') return 'Photoshop / InDesign n\'ont pas signalé la fin dans le délai imparti.';
+    if (st.phase === 'cancelled') return 'Attente annulée.';
+    return '';
+}
+
+// Bilan final, pour le statut et la popup. { text, level: 'success' | 'warning' }
+function describePresentationOutcome(pr) {
+    if (!pr) return { text: 'Présentation InDesign : aucun retour.', level: 'warning' };
+    if (pr.phase === 'done') {
+        let t = 'Présentation InDesign prête';
+        if (typeof pr.mockupsOk === 'number') {
+            const failed = pr.mockupsFailed || 0;
+            t += ' · ' + pr.mockupsOk + '/' + (pr.mockupsOk + failed) + ' mockups';
+            if (failed) return { text: t + ' (' + failed + ' en échec)', level: 'warning' };
+        }
+        return { text: t + '.', level: 'success' };
+    }
+    if (pr.phase === 'cancelled') {
+        return {
+            text: pr.beforeDispatch
+                ? 'Présentation InDesign non lancée (annulée).'
+                : 'Attente annulée : Photoshop et InDesign continuent en arrière-plan, le document '
+                  + 's\'ouvrira dans InDesign quand ils auront terminé.',
+            level: 'warning'
+        };
+    }
+    if (pr.phase === 'timeout') {
+        return {
+            text: 'Photoshop / InDesign n\'ont pas signalé la fin dans le délai imparti. '
+                + 'Les fichiers Illustrator sont bien exportés ; vérifiez les deux applications.',
+            level: 'warning'
+        };
+    }
+    return { text: 'Présentation InDesign : ' + (pr.message || 'erreur inconnue'), level: 'warning' };
 }
 
 async function handleGeneratePresentation() {
@@ -1375,7 +1986,7 @@ async function handleGeneratePresentation() {
                 var colorBlacklist = { '#000000': 1, '#ffffff': 1, '#fff': 1, '#000': 1, 'none': 1, 'transparent': 1 };
                 var logoTypes = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
                 for (var lt = 0; lt < logoTypes.length; lt++) {
-                    var svgDir = nodePath.join(appState.outputFolder, logoTypes[lt], 'original', 'SVG');
+                    var svgDir = nodePath.join(getEffectiveOutputFolder(), logoTypes[lt], 'original', 'SVG');
                     if (!fs.existsSync(svgDir)) continue;
                     var svgFiles = fs.readdirSync(svgDir).filter(function(f) { return f.toLowerCase().endsWith('.svg'); });
                     for (var sf = 0; sf < svgFiles.length && Object.keys(extractedColors).length < 10; sf++) {
@@ -1411,14 +2022,30 @@ async function handleGeneratePresentation() {
         var extensionPath = csInterface.getSystemPath(SystemPath.EXTENSION);
         var nodePath = require('path');
 
+        var fontPrimaryValue = (document.getElementById('brand-font-primary') && document.getElementById('brand-font-primary').value) || '';
+        var fontSecondaryValue = (document.getElementById('brand-font-secondary') && document.getElementById('brand-font-secondary').value) || '';
+
+        // Styles reellement disponibles pour les polices choisies, demandes a Illustrator
+        // au moment de l'export (et non au chargement du panneau : une police peut avoir
+        // ete installee entre-temps). Voir resolveFontStyle() dans idml-generator.js.
+        appState.lastFontSubstitutions = [];
+        var fontStylesMap = {};
+        try {
+            fontStylesMap = await fetchFontStylesFromIllustrator();
+        } catch (fontErr) {
+            console.warn('Styles de police indisponibles :', fontErr);
+        }
+
         const config = {
             templatePath: nodePath.join(extensionPath, 'templates', templateName + '.idml'),
-            outputFolder: appState.outputFolder,
+            outputFolder: getEffectiveOutputFolder(),
             extensionPath: extensionPath,
             colors: appState.customColors && appState.customColors.mapping ? appState.customColors.mapping : [],
             brandName: (document.getElementById('brand-name') && document.getElementById('brand-name').value) || 'Logo',
-            fontPrimary: (document.getElementById('brand-font-primary') && document.getElementById('brand-font-primary').value) || '',
-            fontSecondary: (document.getElementById('brand-font-secondary') && document.getElementById('brand-font-secondary').value) || '',
+            fontPrimary: fontPrimaryValue,
+            fontSecondary: fontSecondaryValue,
+            fontStylesPrimary: lookupFontStyles(fontStylesMap, fontPrimaryValue),
+            fontStylesSecondary: lookupFontStyles(fontStylesMap, fontSecondaryValue),
             monochromeColor: appState.colorVariations.monochromeColor || '#000000',
             monochromeLightColor: appState.colorVariations.monochromeLightColor || '#ffffff',
             protectionZoneMargin: parseInt(document.getElementById('zone-margin').value, 10) || 15
@@ -1426,23 +2053,33 @@ async function handleGeneratePresentation() {
 
         if (!config.outputFolder) {
             showStatus('Veuillez d\'abord générer les logos (dossier de sortie requis).', 'error');
+            appState.lastPresentationResult = { phase: 'error', message: 'dossier de sortie requis' };
             return;
         }
 
         const result = await IDMLGenerator.generate(config);
 
         if (result.success) {
+            appState.lastFontSubstitutions = result.fontSubstitutions || [];
+            if (appState.lastFontSubstitutions.length) {
+                console.log('[IDML] Styles de police adaptés : ' + formatFontSubstitutions(appState.lastFontSubstitutions));
+            }
             var hasMockups = result.mockupData && result.mockupData.count > 0;
+
+            // Signal de fin : purger un statut residuel d'un run precedent, puis dater le
+            // lancement pour n'accepter que les statuts ecrits apres (cf. helpers ci-dessus).
+            clearPresentationStatus(config.outputFolder);
+            var startedAt = Date.now();
+            var dispatch = null;
+            var dispatchHasMockups = false;
+
+            if (appState.cancelRequested) {
+                appState.lastPresentationResult = { phase: 'cancelled', beforeDispatch: true };
+                return;
+            }
             // Toujours normaliser en forward slashes (évite les problèmes d'échappement Windows)
             var safePath = result.path.replace(/\\/g, '/');
 
-            // Stocker pour le bouton "Re-tester mockups"
-            window._lastIdmlPath = safePath;
-            window._lastOutputFolder = config.outputFolder.replace(/\\/g, '/');
-            if (hasMockups) {
-                var btnRerun = document.getElementById('btn-rerun-mockups');
-                if (btnRerun) btnRerun.style.display = 'block';
-            }
 
             // DEBUG: écrire un fichier debug.txt dans le dossier _temp/
             var debugLines = [];
@@ -1529,103 +2166,56 @@ async function handleGeneratePresentation() {
                     // Seules les apostrophes doivent être échappées pour le wrapper de l'evalScript
                     var mockupDataStr = JSON.stringify(mockupData).replace(/'/g, "\\'");
 
-                    csInterface.evalScript("processPhotoshopThenInDesign('" + safePath + "', '" + mockupDataStr + "')", function (res) {
-                        try {
-                            var r = JSON.parse(res);
-                            if (r.success) {
-                                showStatus('Présentation avec mockups ouverte dans InDesign : ' + result.filename, 'success');
-                            } else {
-                                showStatus('Présentation générée : ' + result.filename + ' (erreur mockups : ' + r.error + ')', 'success');
-                            }
-                        } catch (e) {
-                            showStatus('Présentation générée : ' + result.filename, 'success');
-                        }
-                    });
+                    dispatch = await evalScriptJson("processPhotoshopThenInDesign('" + safePath + "', '" + mockupDataStr + "')");
+                    dispatchHasMockups = true;
                 } else {
                     // No horizontal logo found → skip mockups, open InDesign directly
                     writeDebug('→ NO logoPath, skipping Photoshop, opening InDesign directly');
                     showStatus('Présentation InDesign générée, ouverture dans InDesign...', 'info');
-                    csInterface.evalScript('openInInDesignAndProcess("' + safePath + '")', function (res) {
-                        try {
-                            var r = JSON.parse(res);
-                            if (r.success) {
-                                showStatus('Présentation ouverte dans InDesign : ' + result.filename, 'success');
-                            } else {
-                                showStatus('Présentation générée : ' + result.filename, 'success');
-                            }
-                        } catch (e) {
-                            showStatus('Présentation générée : ' + result.filename, 'success');
-                        }
-                    });
+                    dispatch = await evalScriptJson('openInInDesignAndProcess("' + safePath + '")');
                 }
             } else {
                 // No mockups → direct InDesign opening (existing flow)
                 writeDebug('→ hasMockups=false, opening InDesign directly (no mockup processing)');
                 showStatus('Présentation InDesign générée, ouverture dans InDesign...', 'info');
-                csInterface.evalScript('openInInDesignAndProcess("' + safePath + '")', function (res) {
-                    try {
-                        var r = JSON.parse(res);
-                        if (r.success) {
-                            showStatus('Présentation ouverte dans InDesign : ' + result.filename, 'success');
-                        } else {
-                            showStatus('Présentation générée : ' + result.filename + ' (ouverture InDesign échouée : ' + r.error + ')', 'success');
-                        }
-                    } catch (e) {
-                        showStatus('Présentation générée : ' + result.filename, 'success');
-                    }
-                });
+                dispatch = await evalScriptJson('openInInDesignAndProcess("' + safePath + '")');
             }
+
+            // ---- Attendre la fin REELLE de Photoshop puis InDesign -------------------
+            // dispatch.success = "message BridgeTalk envoye", rien de plus. Le seul retour
+            // possible est le fichier de statut que les scripts generes mettent a jour.
+            if (!dispatch || !dispatch.success) {
+                var dispatchErr = (dispatch && dispatch.error) || 'réponse invalide';
+                appState.lastPresentationResult = { phase: 'error', message: 'envoi vers Photoshop/InDesign échoué : ' + dispatchErr };
+                showStatus('Présentation générée : ' + result.filename + ' (' + appState.lastPresentationResult.message + ')', 'warning');
+                return;
+            }
+
+            showStatus(dispatchHasMockups ? 'Photoshop : préparation des mockups…'
+                                          : 'InDesign : ouverture de la présentation…', 'info');
+            var finalStatus = await waitForPresentationCompletion(config.outputFolder, {
+                startedAt: startedAt,
+                timeoutMs: dispatchHasMockups ? PRESENTATION_TIMEOUT_WITH_MOCKUPS : PRESENTATION_TIMEOUT_NO_MOCKUPS,
+                onProgress: function (st) { showStatus(describePresentationPhase(st), 'info'); },
+                shouldCancel: function () { return appState.cancelRequested; }
+            });
+            // Purger dans tous les cas. Après une annulation, Photoshop / InDesign continuent
+            // et recréeront le fichier (open('w')) jusqu'à "done" : sans conséquence, il ne
+            // sera relu que par un run ultérieur visant le MÊME dossier, qui le purge au
+            // départ et n'accepte que les statuts postérieurs à son propre lancement.
+            clearPresentationStatus(config.outputFolder);
+            appState.lastPresentationResult = finalStatus;
+            var outcome = describePresentationOutcome(finalStatus);
+            showStatus(outcome.text, outcome.level);
         } else {
             showStatus('Erreur présentation : ' + result.error, 'error');
+            appState.lastPresentationResult = { phase: 'error', message: result.error || 'génération IDML échouée' };
         }
     } catch (err) {
         console.error('Presentation generation error:', err);
         showStatus('Erreur lors de la génération de la présentation : ' + (err.message || err), 'error');
+        appState.lastPresentationResult = { phase: 'error', message: err.message || String(err) };
     }
-}
-
-function handleRerunMockups() {
-    var outputFolder = window._lastOutputFolder;
-    var idmlPath = window._lastIdmlPath;
-    if (!outputFolder || !idmlPath) {
-        showStatus('Aucune génération précédente trouvée. Générez d\'abord la présentation.', 'error');
-        return;
-    }
-    showStatus('Re-lancement mockups PS → InDesign...', 'info');
-    csInterface.evalScript("rerunMockupsFromDisk('" + outputFolder + "', '" + idmlPath + "')", function (res) {
-        try {
-            var r = JSON.parse(res);
-            if (r.success) {
-                showStatus('Mockups relancés. Photoshop traite les PSD puis InDesign ouvrira.', 'success');
-            } else {
-                showStatus('Erreur re-run mockups : ' + r.error, 'error');
-            }
-        } catch (e) {
-            showStatus('Re-run mockups envoyé.', 'success');
-        }
-    });
-}
-
-function resetSelections() {
-  appState.selections = {
-    horizontal: null,
-    vertical: null,
-    icon: null,
-    text: null,
-    custom1: null,
-    custom2: null,
-    custom3: null
-  };
-  ['horizontal','vertical','icon','text','custom1','custom2','custom3'].forEach(type => {
-    const statusEl = document.getElementById(`status-${type}`);
-    if (statusEl) {
-      statusEl.textContent = 'Pas sélect';
-      statusEl.classList.remove('selected');
-    }
-    const btnEl = document.querySelector(`.btn-select[data-type="${type}"]`);
-    if (btnEl) btnEl.classList.remove('selected');
-  });
-  updateUI();
 }
 
 function getTypeName(type) {
@@ -1648,17 +2238,104 @@ function getTypeName(type) {
   return names[type] || type;
 }
 
-function showExportDonePopup() {
+// subtitle : ligne optionnelle sous le titre (bilan de la presentation InDesign).
+// level    : 'success' (coche verte) ou 'warning' (triangle) selon ce bilan.
+function showExportDonePopup(subtitle, level) {
     // Overlay popup simple
     var overlay = document.createElement('div');
     overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
     var popup = document.createElement('div');
-    popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 32px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:280px;';
-    popup.innerHTML = '<div style="font-size:32px;margin-bottom:12px;">&#10003;</div><p style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--text-color);">Exportation terminée !</p><button style="padding:8px 24px;background:var(--primary-color);border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">OK</button>';
+    popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 32px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:300px;';
+    var isWarning = level === 'warning';
+    var icon = isWarning ? '&#9888;' : '&#10003;';
+    var iconColor = isWarning ? 'var(--warning-color)' : 'var(--success-color)';
+    var sub = subtitle
+        ? '<p style="font-size:12px;color:var(--text-muted);line-height:1.5;margin:-8px 0 16px 0;">' + subtitle + '</p>'
+        : '';
+    popup.innerHTML = '<div style="font-size:32px;margin-bottom:12px;color:' + iconColor + ';">' + icon + '</div>'
+        + '<p style="font-size:14px;font-weight:600;margin-bottom:16px;color:var(--text-color);">Exportation terminée !</p>'
+        + sub
+        + '<button style="padding:8px 24px;background:var(--primary-color);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:13px;">OK</button>';
     popup.querySelector('button').addEventListener('click', function() { overlay.remove(); });
     overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
     overlay.appendChild(popup);
     document.body.appendChild(overlay);
+}
+
+function showPresentationInfoPopup() {
+    var overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:9999;';
+    var popup = document.createElement('div');
+    popup.style.cssText = 'background:var(--bg-color);border-radius:12px;padding:24px 28px;text-align:left;box-shadow:0 8px 32px rgba(0,0,0,0.3);max-width:300px;';
+    popup.innerHTML = ''
+        + '<div style="text-align:center;margin-bottom:12px;">'
+        + '<span style="font-size:11px;background:var(--primary-color);color:#fff;padding:2px 8px;border-radius:999px;font-weight:600;letter-spacing:0.5px;">BETA</span>'
+        + '</div>'
+        + '<p style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--text-color);">Presentation InDesign</p>'
+        + '<p style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:8px;">'
+        + '<strong>Photoshop</strong> et <strong>InDesign</strong> doivent être installés sur votre machine pour utiliser cette fonctionnalité.'
+        + '</p>'
+        + '<p style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:16px;">'
+        + 'Il est conseillé d\'avoir au moins <strong>3 déclinaisons</strong> du logo (ex: horizontal, vertical, icône) pour un résultat optimal.'
+        + '</p>'
+        + '<div style="text-align:center;">'
+        + '<button style="padding:8px 24px;background:var(--primary-color);color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:12px;">Compris</button>'
+        + '</div>';
+    popup.querySelector('button').addEventListener('click', function() { overlay.remove(); });
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) overlay.remove(); });
+    overlay.appendChild(popup);
+    document.body.appendChild(overlay);
+}
+
+/**
+ * Compare la version de hostscript.jsx chargee dans Illustrator avec celle du panneau.
+ * Apres une mise a jour a chaud, les fichiers sur disque sont neufs mais Illustrator
+ * garde l'ancien hostscript.jsx en memoire jusqu'a son relancement ; les nouveaux
+ * appels JS -> JSX pourraient alors viser des fonctions absentes. Un hostscript trop
+ * vieux pour repondre (< 1.4.0, pas de getHostscriptVersion) est traite pareil.
+ */
+function checkHostscriptVersion() {
+    if (!csInterface || typeof UpdateChecker === 'undefined') return;
+    const expected = UpdateChecker.CURRENT_VERSION;
+    let attempts = 0;
+    // 'EvalScript error.' ou réponse vide = on ne SAIT PAS (JSX pas encore évalué au
+    // tout premier evalScript, dialogue modal ouvert dans Illustrator…). On réessaie
+    // quelques fois, et si ça n'aboutit pas on ne bloque rien : un faux bandeau
+    // désactiverait le bouton d'action à tort pour toute la session.
+    const attempt = function () {
+        attempts++;
+        let done = false;
+        try {
+            csInterface.evalScript('getHostscriptVersion()', function (result) {
+                if (done) return;
+                done = true;
+                const v = (result || '').toString().trim();
+                if (/^\d+\.\d+\.\d+$/.test(v)) {
+                    if (v === expected) return;
+                    console.warn('⚠️ hostscript.jsx chargé en ' + v + ', panneau en ' + expected + ' : relancer Illustrator');
+                    markRestartRequired();
+                    return;
+                }
+                if (attempts < 4) setTimeout(attempt, 1500);
+                else console.warn('⚠️ Version de hostscript.jsx indéterminée (' + v + ') : contrôle abandonné');
+            });
+        } catch (e) {
+            // Pas de CEP (navigateur) : rien à contrôler.
+        }
+    };
+    attempt();
+}
+
+// Appele par js/updater.js quand une mise a jour a chaud vient d'etre appliquee.
+window.__logopackOnHotUpdateApplied = function () { markRestartRequired(); };
+
+function markRestartRequired() {
+    appState.restartRequired = true;
+    const banner = document.getElementById('restart-banner');
+    if (banner) banner.style.display = 'block';
+    // Le bandeau est fixé en bas : décaler la barre d'action pour qu'il ne la couvre pas.
+    document.body.classList.add('restart-required');
+    updateUI();
 }
 
 function showStatus(message, type = '') {
@@ -2025,6 +2702,9 @@ async function browseFolder() {
     const folder = await evalExtendScript('selectExportFolder', [], 0);
     if (folder) {
       appState.outputFolder = folder;
+      // Nouveau chemin choisi : la resolution precedente (dossier parent, "-2"...)
+      // ne vaut plus rien.
+      appState.resolvedOutputFolder = '';
       document.getElementById('output-folder').value = folder;
       showStatus(`Dossier de sortie : ${folder}`, 'success');
       updateUI();

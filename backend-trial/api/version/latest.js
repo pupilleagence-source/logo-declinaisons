@@ -31,16 +31,14 @@ export default async function handler(req, res) {
         // Configuration de la dernière version
         // TODO: Vous pourrez mettre à jour ces valeurs à chaque nouvelle release
         const latestVersion = {
-            version: '1.3.0',
-            releaseDate: '2026-09-06',
+            version: '1.4.0',
+            releaseDate: '2026-09-07',
             downloadUrl: 'https://github.com/pupilleagence-source/logo-declinaisons-releases/releases/latest',
             changelog: [
-            "🎯 Un seul bouton Générer / Exporter, et l'export fonctionne après une génération",
-            "⏹️ Bouton Annuler pendant une action",
-            "📁 Dossier parent « Logopack » et gestion des exports déjà présents",
-            "⏳ La fin réelle de Photoshop et InDesign est attendue avant de conclure l'export",
-            "🔤 Styles de police adaptés à la police choisie dans la charte : plus de polices manquantes",
-            "🎁 Essai gratuit : 3 générations"
+            "🔄 Mise à jour à chaud : les prochaines versions s'installent directement depuis le panneau, sans réinstaller",
+            "📦 Deux modales de mise à jour : installation directe, ou passage par l'installeur quand c'est nécessaire",
+            "🍎 macOS : le dossier du plugin appartient désormais à l'utilisateur (nécessaire à la mise à jour à chaud)",
+            "🔔 Rappel de relancer Illustrator après une mise à jour"
         ]
         };
 

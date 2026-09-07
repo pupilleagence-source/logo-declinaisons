@@ -1,11 +1,15 @@
+/* Cette règle @import DOIT rester la toute première du fichier. Placée après le
+   bloc de reset, elle était invalide au sens de la spec CSS et silencieusement
+   ignorée par le parseur : tout le panneau rendait en polices système au lieu
+   d'Inter, malgré les font-family: 'Inter' partout ci-dessous. */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 /* Reset et variables — DA Logotyps */
 * {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
-
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 :root {
     /* Couleurs principales — DA site */
@@ -593,6 +597,28 @@ input[type="range"]:disabled::-moz-range-thumb {
     border-color: var(--primary-color);
 }
 
+.btn-clear-selection {
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 18px;
+    text-align: center;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+}
+
+.btn-clear-selection:hover {
+    background: var(--error-color);
+    color: #FFFFFF;
+    border-color: var(--error-color);
+}
+
 .btn-primary {
     padding: var(--space-sm) var(--space-lg);
     background-color: var(--primary-color);
@@ -733,6 +759,25 @@ input[type="range"]:disabled::-moz-range-thumb {
 .btn-generate:hover:not(:disabled) {
     background: var(--primary-hover);
     box-shadow: 0 4px 12px rgba(255, 107, 53, 0.3);
+}
+
+.btn-cancel {
+    background: transparent;
+    color: #FFFFFF;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.btn-cancel:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.25);
+    border-color: var(--error-color);
+}
+
+/* Pendant un export, body.exporting::after couvre tout l'ecran (z-index 9998) : sans
+   ceci, chaque clic sur Annuler atterrissait sur l'overlay pendant toute la phase
+   Illustrator. */
+body.exporting #cancel-btn {
+    position: relative;
+    z-index: 10000;
 }
 
 .btn-export {
@@ -1022,6 +1067,25 @@ input[type="range"]:disabled::-moz-range-thumb {
     width: 15px;
     height: 15px;
     cursor: pointer;
+}
+
+/* Dossier parent optionnel, sous le selecteur de chemin de sortie */
+.export-parent-folder {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-xs);
+    margin-top: calc(var(--space-lg) * -1 + var(--space-sm));
+    margin-bottom: var(--space-lg);
+}
+
+.export-parent-folder input[type="text"] {
+    margin-left: 26px; /* aligne sous le libelle de la checkbox custom */
+    width: calc(100% - 26px);
+}
+
+.export-parent-folder input[type="text"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
 }
 
 .export-path {
@@ -1456,6 +1520,56 @@ input[type="range"]:disabled::-moz-range-thumb {
     border-radius: var(--radius-sm);
     color: var(--text-color);
     font-size: 11px;
+}
+
+.update-progress {
+    margin-top: var(--space-md);
+    font-size: 12px;
+    color: var(--text-color);
+    opacity: 0.85;
+}
+
+.update-error {
+    margin-top: var(--space-md);
+    padding: var(--space-md);
+    border-radius: var(--radius-sm);
+    background: rgba(231, 76, 60, 0.1);
+    border: 1px solid rgba(231, 76, 60, 0.35);
+    color: var(--text-color);
+    font-size: 12px;
+}
+
+.update-done {
+    padding: var(--space-lg);
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-color);
+}
+
+.update-done-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0 0 var(--space-md) 0;
+}
+
+/* Bandeau "relancez Illustrator" apres une mise a jour a chaud. Fixe en bas ; le
+   conteneur recoit un padding equivalent pour que la barre d'action reste cliquable. */
+body.restart-required .container {
+    padding-bottom: 60px;
+}
+
+.restart-banner {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 9999;
+    padding: var(--space-md);
+    background: #f1c40f;
+    color: #1a1a1a;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
 }
 
 /* ─── Presentation InDesign ─── */

@@ -3,6 +3,90 @@
  * Code côté Illustrator
  */
 
+// ============================================================================
+//  Polyfill JSON — le moteur ExtendScript d'Illustrator n'a PAS d'objet JSON
+// ============================================================================
+// Constaté en production le 2026-09-04 : "Error 2: JSON n'est pas défini" sur un
+// `return JSON.stringify(...)`. Toutes les fonctions qui renvoyaient du JSON au
+// panneau (openInInDesignAndProcess, processPhotoshopThenInDesign, ...) levaient
+// donc une exception à leur `return` depuis toujours — masquée côté JS par un
+// try/catch qui affichait un faux succès. safeParseJSON() était déjà protégé par
+// un repli sur eval ; ce polyfill règle le sens stringify (et fournit parse).
+//
+// ES3 strict : pas de Array.isArray, pas de map/forEach, pas de toJSON sur Date.
+// Couvert par tests/json-polyfill.test.js, comparé au JSON natif de Node.
+if (typeof JSON === 'undefined') {
+    JSON = {};
+}
+if (typeof JSON.stringify !== 'function') {
+    JSON.stringify = function (value) {
+        var ESC = { '"': '\\"', '\\': '\\\\', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+        function quote(str) {
+            var out = '';
+            for (var i = 0; i < str.length; i++) {
+                var c = str.charAt(i);
+                var code = str.charCodeAt(i);
+                if (ESC[c]) {
+                    out += ESC[c];
+                } else if (code < 32) {
+                    out += '\\u' + ('0000' + code.toString(16)).slice(-4);
+                } else {
+                    out += c;
+                }
+            }
+            return '"' + out + '"';
+        }
+        function isArray(v) {
+            return Object.prototype.toString.call(v) === '[object Array]';
+        }
+        function ser(v) {
+            if (v === null) return 'null';
+            var t = typeof v;
+            if (t === 'string') return quote(v);
+            if (t === 'number') return isFinite(v) ? String(v) : 'null';
+            if (t === 'boolean') return v ? 'true' : 'false';
+            if (t === 'undefined' || t === 'function') return undefined;
+            if (isArray(v)) {
+                var items = [];
+                for (var i = 0; i < v.length; i++) {
+                    var e = ser(v[i]);
+                    items.push(e === undefined ? 'null' : e);
+                }
+                return '[' + items.join(',') + ']';
+            }
+            if (t === 'object') {
+                var props = [];
+                for (var k in v) {
+                    if (!Object.prototype.hasOwnProperty.call(v, k)) continue;
+                    var sv = ser(v[k]);
+                    if (sv !== undefined) props.push(quote(k) + ':' + sv);
+                }
+                return '{' + props.join(',') + '}';
+            }
+            return undefined;
+        }
+        return ser(value);
+    };
+}
+if (typeof JSON.parse !== 'function') {
+    JSON.parse = function (text) {
+        // Entrées de confiance uniquement (nos propres données). Même garde
+        // minimale que safeParseJSON() contre du code arbitraire.
+        var t = String(text).replace(/^\s+|\s+$/g, '');
+        if (!/^[\[{]/.test(t)) throw new Error('JSON invalide');
+        return eval('(' + t + ')');
+    };
+}
+
+// Version de CE fichier tel que charge par Illustrator. Le panneau (js/main.js) la
+// compare a UpdateChecker.CURRENT_VERSION : apres une mise a jour a chaud, les
+// fichiers sur disque sont neufs mais Illustrator garde l'ancien hostscript en
+// memoire jusqu'a son relancement. Bumpee par scripts/release.js.
+var HOSTSCRIPT_VERSION = '1.4.0';
+function getHostscriptVersion() {
+    return HOSTSCRIPT_VERSION;
+}
+
 var storedSelections = {
     horizontal: null,
     vertical: null,
@@ -12,6 +96,86 @@ var storedSelections = {
     custom2: null,
     custom3: null
 };
+
+/**
+ * Document Illustrator auquel appartiennent les éléments de storedSelections.
+ *
+ * Indispensable : generateArtboards() laisse volontairement le document GÉNÉRÉ actif
+ * en fin d'exécution ("décision 1.A"). Sans mémoriser le document d'origine, un second
+ * appel prenait app.activeDocument — donc le document généré — comme document source,
+ * alors que storedSelections référence des PageItems du document d'origine. Résultat :
+ * app.copy() copiait la sélection (vide) du mauvais document et TOUS les transferts
+ * échouaient avec "Impossible de transférer certains éléments".
+ */
+var storedSelectionsDoc = null;
+
+/**
+ * Le document est-il toujours ouvert ? Accéder à une propriété d'un Document fermé
+ * lève une erreur, d'où le try/catch. La comparaison par référence est doublée d'une
+ * comparaison par nom, ExtendScript ne garantissant pas l'identité des objets Document.
+ */
+function isDocumentOpen(doc) {
+    if (!doc) return false;
+    try {
+        var probeName = doc.name;
+        var i;
+        for (i = 0; i < app.documents.length; i++) {
+            if (app.documents[i] === doc) return true;
+        }
+        for (i = 0; i < app.documents.length; i++) {
+            if (app.documents[i].name === probeName) return true;
+        }
+        return false;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
+ * Document à utiliser comme source d'une génération : celui qui possède réellement les
+ * éléments stockés, et seulement à défaut le document actif.
+ */
+function resolveSourceDocument() {
+    if (storedSelectionsDoc && isDocumentOpen(storedSelectionsDoc)) {
+        return storedSelectionsDoc;
+    }
+    if (app.documents.length === 0) return null;
+    return app.activeDocument;
+}
+
+/**
+ * Y a-t-il au moins une sélection stockée ?
+ */
+function hasAnyStoredSelection() {
+    for (var k in storedSelections) {
+        if (storedSelections[k]) return true;
+    }
+    return false;
+}
+
+/**
+ * Y a-t-il une sélection stockée dans un AUTRE slot que celui-ci ?
+ */
+function hasStoredSelectionOtherThan(type) {
+    for (var k in storedSelections) {
+        if (k !== type && storedSelections[k]) return true;
+    }
+    return false;
+}
+
+/**
+ * Deux références pointent-elles vers le même document ? La comparaison par référence
+ * n'étant pas fiable en ExtendScript, on double par le nom.
+ */
+function isSameDocument(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    try {
+        return a.name === b.name;
+    } catch (e) {
+        return false;
+    }
+}
 
 /**
  * Constantes pour les limites d'Illustrator
@@ -266,7 +430,8 @@ function openColorPickerDialog(initialColorHex) {
  */
 function safeParseJSON(jsonString) {
     try {
-        // ExtendScript CC 2014+ supporte JSON nativement
+        // JSON vient du polyfill en tête de fichier : ExtendScript n'en a PAS nativement
+        // (constaté en prod : "JSON n'est pas défini"). Le repli eval ci-dessous reste utile.
         if (typeof JSON !== 'undefined' && JSON.parse) {
             return JSON.parse(jsonString);
         }
@@ -460,7 +625,17 @@ function getSelectionInfo() {
 
 // Réinitialiser toutes les sélections stockées
 function clearStoredSelections() {
+    // Supprimer aussi les duplicatas masqués créés par storeSelection() : sans ça ils
+    // s'accumulaient dans le document de l'utilisateur à chaque Reset. La version par
+    // slot, clearStoredSelection(type), le faisait déjà ; celle-ci se contentait de
+    // remettre les slots à null.
+    for (var k in storedSelections) {
+        if (storedSelections[k]) {
+            try { storedSelections[k].remove(); } catch (e) {}
+        }
+    }
     storedSelections = { icon: null, text: null, horizontal: null, vertical: null, custom1: null, custom2: null, custom3: null };
+    storedSelectionsDoc = null;
     return "OK";
 }
 
@@ -474,6 +649,16 @@ function storeSelection(type) {
         var doc = app.activeDocument;
         if (!doc.selection || doc.selection.length === 0) {
             return "NO_SELECTION";
+        }
+
+        // Toutes les sélections doivent provenir du MÊME document : generateArtboards()
+        // les transfère ensemble depuis un unique document source. Après une génération
+        // c'est le document GÉNÉRÉ qui est actif — sélectionner dedans par mégarde
+        // produirait un mélange incohérent qui n'échouerait qu'au moment du transfert.
+        if (storedSelectionsDoc && isDocumentOpen(storedSelectionsDoc) &&
+            !isSameDocument(storedSelectionsDoc, doc) && hasStoredSelectionOtherThan(type)) {
+            return "ERROR: Vos sélections précédentes proviennent du document « " + storedSelectionsDoc.name +
+                   " ». Cliquez sur Réinitialiser avant de sélectionner depuis ce document.";
         }
 
         var selection = doc.selection[0];
@@ -519,8 +704,26 @@ function storeSelection(type) {
         }
 
         storedSelections[type] = elementToStore;
+        // Mémoriser le document propriétaire : c'est lui, et non app.activeDocument,
+        // qui servira de source à generateArtboards() (voir storedSelectionsDoc).
+        storedSelectionsDoc = doc;
         $.writeln("✓ Sélection '" + type + "' stockée avec succès");
 
+        // Désélectionner tout dans Illustrator
+        doc.selection = null;
+
+        return "OK";
+    } catch (e) {
+        return "ERROR: " + e.toString();
+    }
+}
+
+function clearStoredSelection(type) {
+    try {
+        if (storedSelections[type]) {
+            try { storedSelections[type].remove(); } catch (e) {}
+            storedSelections[type] = null;
+        }
         return "OK";
     } catch (e) {
         return "ERROR: " + e.toString();
@@ -1395,7 +1598,14 @@ function generateArtboards(paramsJSON) {
         // 🆕 NOUVEAU : Créer un document dédié pour l'exportation
         $.writeln("🚀 Début de la génération des plans de travail...");
 
-        sourceDoc = app.activeDocument;
+        // ⚠️ NE PAS utiliser app.activeDocument ici. Après une première génération c'est
+        // le document généré qui est actif, alors que storedSelections référence des
+        // PageItems restés dans le document d'origine (voir storedSelectionsDoc).
+        if (hasAnyStoredSelection() && storedSelectionsDoc && !isDocumentOpen(storedSelectionsDoc)) {
+            return "ERROR: Le document contenant vos sélections a été fermé. Rouvrez-le, puis re-sélectionnez vos logos avant de relancer.";
+        }
+
+        sourceDoc = resolveSourceDocument();
         if (!sourceDoc) {
             return "ERROR: Aucun document source actif";
         }
@@ -1524,7 +1734,30 @@ function generateArtboards(paramsJSON) {
         if (transferErrors.length > 0) {
             var errorMsg = "Impossible de transférer certains éléments : " + transferErrors.join(", ");
             $.writeln("❌ " + errorMsg);
-            // Garder le nouveau document ouvert pour debug (selon 5.B)
+
+            // Compter ce qui a réellement été transféré.
+            var transferredCount = 0;
+            for (var tk in transferredSelections) {
+                if (transferredSelections[tk]) transferredCount++;
+            }
+
+            if (transferredCount === 0) {
+                // Rien n'a été transféré : le document généré est vide (un seul plan de
+                // travail 50×50). Le "conserver pour vérification" n'apporte rien et laisse
+                // un document vide encombrant à l'écran — on le referme.
+                try {
+                    targetDoc.close(SaveOptions.DONOTSAVECHANGES);
+                    $.writeln("🧹 Document d'exportation vide refermé");
+                } catch (closeErr) {
+                    $.writeln("⚠️ Impossible de refermer le document vide: " + closeErr.toString());
+                }
+                try {
+                    app.activeDocument = sourceDoc;
+                } catch (e) {}
+                return "ERROR: " + errorMsg + ". Vos sélections ne sont plus valides : re-sélectionnez vos logos dans le document d'origine.";
+            }
+
+            // Transfert partiel : garder le document ouvert pour vérification (décision 5.B).
             return "ERROR: " + errorMsg + ". Le nouveau document a été conservé pour vérification.";
         }
 
@@ -2327,7 +2560,17 @@ function exportArtboard(doc, artboardName, folderPath, format, exportSize) {
 function generateVerticalVersion() {
     try {
         if (app.documents.length === 0) return "NO_DOCUMENT";
-        var doc = app.activeDocument;
+
+        // Même piège que dans generateArtboards : storedSelections appartient au document
+        // d'origine, qui n'est plus l'actif après une génération. On travaille donc dans le
+        // document propriétaire, et on l'active pour que safeDuplicate() et doc.selection
+        // opèrent au bon endroit.
+        if (storedSelectionsDoc && !isDocumentOpen(storedSelectionsDoc)) {
+            return "ERROR: Le document contenant vos sélections a été fermé. Rouvrez-le, puis re-sélectionnez vos logos.";
+        }
+        var doc = resolveSourceDocument();
+        if (!doc) return "NO_DOCUMENT";
+        try { app.activeDocument = doc; } catch (e) {}
 
         if (!storedSelections.icon || !storedSelections.text) {
             return "ERROR: Vous devez d'abord sélectionner l'icône ET la typographie dans l'onglet Sélection.";
@@ -2465,7 +2708,17 @@ function generateVerticalVersion() {
 function generateHorizontalVersion() {
     try {
         if (app.documents.length === 0) return "NO_DOCUMENT";
-        var doc = app.activeDocument;
+
+        // Même piège que dans generateArtboards : storedSelections appartient au document
+        // d'origine, qui n'est plus l'actif après une génération. On travaille donc dans le
+        // document propriétaire, et on l'active pour que safeDuplicate() et doc.selection
+        // opèrent au bon endroit.
+        if (storedSelectionsDoc && !isDocumentOpen(storedSelectionsDoc)) {
+            return "ERROR: Le document contenant vos sélections a été fermé. Rouvrez-le, puis re-sélectionnez vos logos.";
+        }
+        var doc = resolveSourceDocument();
+        if (!doc) return "NO_DOCUMENT";
+        try { app.activeDocument = doc; } catch (e) {}
 
         if (!storedSelections.icon || !storedSelections.text) {
             return "ERROR: Vous devez d'abord sélectionner l'icône ET la typographie dans l'onglet Sélection.";
@@ -2713,6 +2966,64 @@ function getInstalledFonts() {
     }
 }
 
+// ============================================================================
+//  Fichier de statut de la présentation : le SEUL canal de retour vers le panneau
+// ============================================================================
+// BridgeTalk est "fire-and-forget" : les callbacks onResult ne se déclenchent jamais
+// depuis Illustrator (le contexte appelant est terminé). Le panneau ne peut donc savoir
+// où en sont Photoshop et InDesign qu'en lisant un fichier que les scripts générés
+// mettent à jour. Il vit HORS de _temp/, que le script InDesign supprime en dernier.
+//
+// Protocole : {"phase":"photoshop"|"indesign"|"done"|"error","ts":<ms>,...}
+//   photoshop : ,"mockupsDone":N,"mockupsTotal":M   (mis à jour à chaque PSD)
+//   indesign  : ,"mockupsOk":N,"mockupsFailed":M    (écrit par PS avant de passer la main)
+//   done      : reprend mockupsOk/Failed             (écrit par InDesign en toute fin)
+//   error     : ,"message":"…"
+// Le panneau n'accepte que les statuts dont ts est postérieur au lancement.
+var PRESENTATION_STATUS_FILE = '.logopack-status.json';
+
+function writePresentationStatus(outputFolder, phase, extraJson) {
+    try {
+        var f = new File(outputFolder + '/' + PRESENTATION_STATUS_FILE);
+        f.encoding = 'UTF-8';
+        f.open('w');
+        f.write('{"phase":"' + phase + '","ts":' + (new Date().getTime()) + (extraJson || '') + '}');
+        f.close();
+    } catch (e) {
+        $.writeln('⚠️ Statut présentation non écrit: ' + e.toString());
+    }
+}
+
+// Même logique, sous forme de TEXTE à injecter en tête des scripts Photoshop / InDesign
+// générés : ils tournent dans un autre moteur et n'ont pas accès aux fonctions d'ici.
+// Signature générée : _lpStatus(phase, extraJson, message)
+function presentationStatusSnippet(outputFolder) {
+    return "function _lpStatus(phase, extra, msg) {"
+        + " try {"
+        + " var f = new File('" + outputFolder + "/" + PRESENTATION_STATUS_FILE + "');"
+        + " f.encoding = 'UTF-8'; f.open('w');"
+        + " var body = '{\"phase\":\"' + phase + '\",\"ts\":' + (new Date().getTime()) + (extra || '');"
+        + " if (msg) { body += ',\"message\":\"' + String(msg).replace(/[\"\\\\]/g, ' ') + '\"'; }"
+        + " f.write(body + '}'); f.close();"
+        + " } catch (e) {}"
+        + " }\n";
+}
+
+// Passage en "done" par le script InDesign, en conservant les compteurs que Photoshop a
+// écrits (extraction par regex : pas de JSON garanti dans l'ExtendScript d'InDesign).
+function presentationDoneSnippet(outputFolder) {
+    return "try {"
+        + " var _sf = new File('" + outputFolder + "/" + PRESENTATION_STATUS_FILE + "');"
+        + " var _extra = '';"
+        + " if (_sf.exists) { _sf.open('r'); var _txt = _sf.read(); _sf.close();"
+        + " var _ok = _txt.match(/\"mockupsOk\":(\\d+)/); var _ko = _txt.match(/\"mockupsFailed\":(\\d+)/);"
+        + " if (_ok) { _extra += ',\"mockupsOk\":' + _ok[1]; } if (_ko) { _extra += ',\"mockupsFailed\":' + _ko[1]; } }"
+        + " _sf.encoding = 'UTF-8'; _sf.open('w');"
+        + " _sf.write('{\"phase\":\"done\",\"ts\":' + (new Date().getTime()) + _extra + '}');"
+        + " _sf.close();"
+        + " } catch (_se) {}\n";
+}
+
 /**
  * Ouvre un fichier IDML dans InDesign via BridgeTalk et exécute
  * le post-traitement des frames PROHIB (resize à 50% + centrage).
@@ -2721,9 +3032,16 @@ function getInstalledFonts() {
  */
 function openInInDesignAndProcess(idmlPath) {
     try {
+        // Dossier de sortie = parent de l'IDML (presentation-logo.idml est écrit à sa racine)
+        var outputFolder = '';
+        try { outputFolder = new File(idmlPath).parent.fsName.replace(/\\/g, '/'); } catch (ofErr) {}
+        if (outputFolder) writePresentationStatus(outputFolder, 'indesign', '');
+
         // Script qui sera exécuté dans InDesign
         var inddScript =
+            presentationStatusSnippet(outputFolder) +
             'var f = new File("' + idmlPath.replace(/\\/g, '/') + '");' +
+            "if (!f.exists) { _lpStatus('error', '', 'IDML introuvable'); }" +
             'if (f.exists) {' +
             '    var doc = app.open(f);' +
             '    var count = 0;' +
@@ -2756,7 +3074,8 @@ function openInInDesignAndProcess(idmlPath) {
             '            count++;' +
             '        }' +
             '    }' +
-            '}';
+            '}' +
+            presentationDoneSnippet(outputFolder);
 
         var bt = new BridgeTalk();
         bt.target = 'indesign';
@@ -2806,6 +3125,10 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
         if (!tempFolderObj.exists) {
             tempFolderObj.create();
         }
+
+        // Premier statut, avant même que Photoshop ne démarre : le panneau voit tout de
+        // suite "0/N" au lieu d'attendre dans le vide le lancement de PS.
+        writePresentationStatus(outputFolder, 'photoshop', ',"mockupsDone":0,"mockupsTotal":' + mockups.length);
 
         // Pré-convertir les logos vectoriels en PNG haute résolution
         // PS gère mal les SVG dans les smart objects
@@ -2900,6 +3223,10 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
 
         psContent += "var mockupsDir = new Folder(outputFolder + '/mockups');" + nl;
         psContent += "if (!mockupsDir.exists) { mockupsDir.create(); }" + nl;
+
+        // Statut pour le panneau (cf. writePresentationStatus / PRESENTATION_STATUS_FILE)
+        psContent += presentationStatusSnippet(outputFolder);
+        psContent += "_lpStatus('photoshop', ',\"mockupsDone\":0,\"mockupsTotal\":' + mockups.length);" + nl;
 
         // Log de démarrage (pas de JSON → pas de problème d'échappement)
         psContent += "try { var lf=new File(outputFolder+'/_temp/mockups-log.txt'); lf.open('w'); lf.write('PS_STARTED: '+mockups.length+' mockups'); lf.close(); } catch(le) {}" + nl;
@@ -3164,6 +3491,7 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
         psContent += "        if (doc) { try { doc.close(SaveOptions.DONOTSAVECHANGES); } catch(e2){} }" + nl;
         psContent += "        results.push({name:mockup.name,success:false,error:e.toString()});" + nl;
         psContent += "    }" + nl;
+        psContent += "    _lpStatus('photoshop', ',\"mockupsDone\":' + (i+1) + ',\"mockupsTotal\":' + mockups.length);" + nl;
         psContent += "}" + nl;
 
         // Log final (texte simple)
@@ -3175,12 +3503,15 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
 
         // À la fin du script PS : envoyer BridgeTalk à InDesign directement depuis PS
         // (les callbacks btPS.onResult dans Illustrator ne fonctionnent pas car le contexte est terminé)
+        // Bilan pour le panneau, puis passage de main à InDesign
+        psContent += "var _okCount=0,_koCount=0; for (var _r=0;_r<results.length;_r++) { if (results[_r].success) _okCount++; else _koCount++; }" + nl;
+        psContent += "_lpStatus('indesign', ',\"mockupsOk\":' + _okCount + ',\"mockupsFailed\":' + _koCount);" + nl;
         psContent += "try {" + nl;
         psContent += "    var btID = new BridgeTalk();" + nl;
         psContent += "    btID.target = 'indesign';" + nl;
         psContent += "    btID.body = '$.evalFile(new File(\"" + outputFolder + "/_temp/mockups-id-script.jsx\"))';" + nl;
         psContent += "    btID.send();" + nl;
-        psContent += "} catch(btErr) {}" + nl;
+        psContent += "} catch(btErr) { _lpStatus('error', '', 'Impossible de contacter InDesign : ' + btErr); }" + nl;
 
         // Fermer PS si il n'était pas ouvert avant (variable injectée par Illustrator)
         psContent += "if (typeof _shouldClosePS !== 'undefined' && _shouldClosePS) {" + nl;
@@ -3219,9 +3550,10 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
         var idScriptFile = new File(outputFolder + '/_temp/mockups-id-script.jsx');
         idScriptFile.open('w');
         idScriptFile.write('(function() {\n');
+        idScriptFile.write(presentationStatusSnippet(outputFolder));
         idScriptFile.write('var f = new File("' + safeIdmlPath + '");\n');
-        idScriptFile.write('if (!f.exists) return;\n');
-        idScriptFile.write('var doc = app.open(f);\n');
+        idScriptFile.write("if (!f.exists) { _lpStatus('error', '', 'IDML introuvable'); return; }\n");
+        idScriptFile.write("var doc; try { doc = app.open(f); } catch (openErr) { _lpStatus('error', '', 'InDesign : ouverture impossible : ' + openErr); return; }\n");
         idScriptFile.write('var count = 0;\n');
         idScriptFile.write('for (var p = 0; p < doc.pages.length; p++) {\n');
         idScriptFile.write('    var items = doc.pages[p].allPageItems;\n');
@@ -3265,6 +3597,8 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
         idScriptFile.write('        tmpDir.remove();\n');
         idScriptFile.write('    }\n');
         idScriptFile.write('} catch(cleanErr) {}\n');
+        // Tout dernier acte : signaler la fin au panneau (après la suppression de _temp/).
+        idScriptFile.write(presentationDoneSnippet(outputFolder));
         idScriptFile.write('})();\n');
         idScriptFile.close();
 
@@ -3286,126 +3620,6 @@ function processPhotoshopThenInDesign(idmlPath, mockupDataJson) {
             errFile.write('ERROR: ' + e.toString() + '\nLine: ' + (e.line || 'unknown') + '\nFile: ' + (e.fileName || 'unknown'));
             errFile.close();
         } catch (logErr) {}
-        return JSON.stringify({ success: false, error: e.toString() });
-    }
-}
-
-/**
- * Re-exécute le script PS mockups déjà sur disque + ouvre InDesign
- * Utilise les fichiers générés lors du dernier export (mockups-ps-script.jsx, IDML)
- */
-function rerunMockupsFromDisk(outputFolder, idmlPath) {
-    try {
-        outputFolder = outputFolder.replace(/\\/g, '/');
-        idmlPath = idmlPath.replace(/\\/g, '/');
-
-        var psScriptFile = new File(outputFolder + '/_temp/mockups-ps-script.jsx');
-        if (!psScriptFile.exists) {
-            return JSON.stringify({ success: false, error: 'mockups-ps-script.jsx introuvable dans ' + outputFolder });
-        }
-
-        // Pré-convertir le logo si nécessaire (le temp-logo.png existe peut-être déjà)
-        var tempLogo = new File(outputFolder + '/_temp/temp-logo.png');
-        if (!tempLogo.exists) {
-            // Chercher le logo original pour reconvertir
-            try {
-                var horizOrig = new Folder(outputFolder + '/horizontal/original');
-                if (horizOrig.exists) {
-                    var svgFiles = horizOrig.getFiles('*.svg');
-                    if (svgFiles.length === 0) {
-                        var subDirs = horizOrig.getFiles(function(f) { return f instanceof Folder; });
-                        for (var sd = 0; sd < subDirs.length && svgFiles.length === 0; sd++) {
-                            svgFiles = subDirs[sd].getFiles('*.svg');
-                        }
-                    }
-                    if (svgFiles.length > 0) {
-                        var svgDoc = app.open(svgFiles[0]);
-                        var pngDest = new File(outputFolder + '/_temp/temp-logo.png');
-                        var pngOpts = new ExportOptionsPNG24();
-                        pngOpts.transparency = true;
-                        pngOpts.antiAliasing = true;
-                        var maxDim = Math.max(svgDoc.width, svgDoc.height);
-                        var scaleFactor = (2000 / maxDim) * 100;
-                        pngOpts.horizontalScale = scaleFactor;
-                        pngOpts.verticalScale = scaleFactor;
-                        svgDoc.exportFile(pngDest, ExportType.PNG24, pngOpts);
-                        svgDoc.close(SaveOptions.DONOTSAVECHANGES);
-                    }
-                }
-            } catch (convErr) {}
-        }
-
-        // Réécrire le script InDesign (le chemin IDML peut avoir changé)
-        var idScriptFile = new File(outputFolder + '/_temp/mockups-id-script.jsx');
-        idScriptFile.open('w');
-        idScriptFile.write('(function() {\n');
-        idScriptFile.write('var f = new File("' + idmlPath + '");\n');
-        idScriptFile.write('if (!f.exists) return;\n');
-        idScriptFile.write('var doc = app.open(f);\n');
-        idScriptFile.write('for (var p = 0; p < doc.pages.length; p++) {\n');
-        idScriptFile.write('    var items = doc.pages[p].allPageItems;\n');
-        idScriptFile.write('    for (var i = 0; i < items.length; i++) {\n');
-        idScriptFile.write('        var frame = items[i];\n');
-        idScriptFile.write('        var n = frame.name || "";\n');
-        idScriptFile.write('        if (n.indexOf("PROHIB_SHADOW") === 0 || n.indexOf("PROHIB_COLOR") === 0) {\n');
-        idScriptFile.write('            if (!frame.allGraphics || frame.allGraphics.length === 0) continue;\n');
-        idScriptFile.write('            var image = frame.allGraphics[0];\n');
-        idScriptFile.write('            var fb = frame.geometricBounds;\n');
-        idScriptFile.write('            var frameW = fb[3] - fb[1]; var frameH = fb[2] - fb[0];\n');
-        idScriptFile.write('            var ib = image.geometricBounds;\n');
-        idScriptFile.write('            var imgW = ib[3] - ib[1]; var imgH = ib[2] - ib[0];\n');
-        idScriptFile.write('            var ratio = imgW / imgH;\n');
-        idScriptFile.write('            var newW, newH;\n');
-        idScriptFile.write('            if (frameW / frameH <= ratio) { newW = frameW * 0.75; newH = newW / ratio; }\n');
-        idScriptFile.write('            else { newH = frameH * 0.75; newW = newH * ratio; }\n');
-        idScriptFile.write('            var offsetX = fb[1] + (frameW - newW) / 2;\n');
-        idScriptFile.write('            var offsetY = fb[0] + (frameH - newH) / 2;\n');
-        idScriptFile.write('            image.geometricBounds = [offsetY, offsetX, offsetY + newH, offsetX + newW];\n');
-        idScriptFile.write('        }\n');
-        idScriptFile.write('        if (n.indexOf("MOCKUP_") === 0) {\n');
-        idScriptFile.write('            if (!frame.allGraphics || frame.allGraphics.length === 0) continue;\n');
-        idScriptFile.write('            try { frame.fit(FitOptions.PROPORTIONALLY); frame.fit(FitOptions.CENTER_CONTENT); } catch(e) {}\n');
-        idScriptFile.write('        }\n');
-        idScriptFile.write('    }\n');
-        idScriptFile.write('}\n');
-        // Nettoyer le dossier _temp/ (tous les fichiers intermediaires)
-        idScriptFile.write('try {\n');
-        idScriptFile.write('    var tmpDir = new Folder("' + outputFolder + '/_temp");\n');
-        idScriptFile.write('    if (tmpDir.exists) {\n');
-        idScriptFile.write('        var tmpFiles = tmpDir.getFiles();\n');
-        idScriptFile.write('        for (var t = 0; t < tmpFiles.length; t++) { tmpFiles[t].remove(); }\n');
-        idScriptFile.write('        tmpDir.remove();\n');
-        idScriptFile.write('    }\n');
-        idScriptFile.write('} catch(cleanErr) {}\n');
-        idScriptFile.write('})();\n');
-        idScriptFile.close();
-
-        // Le PS script contient déjà le BridgeTalk vers InDesign
-        // Réécrire _shouldClosePS selon l'état actuel de PS
-        var psWasRunning = BridgeTalk.isRunning('photoshop');
-        var psScriptContent = '';
-        if (!psWasRunning) {
-            psScriptContent = 'var _shouldClosePS = true;\n';
-        }
-        // Relire le script PS existant (sans le préfixe _shouldClosePS)
-        psScriptFile.open('r');
-        var existingContent = psScriptFile.read();
-        psScriptFile.close();
-        // Supprimer l'ancienne ligne _shouldClosePS si elle existe
-        existingContent = existingContent.replace(/^var _shouldClosePS\s*=\s*(?:true|false);\n?/m, '');
-        psScriptFile.open('w');
-        psScriptFile.write(psScriptContent + existingContent);
-        psScriptFile.close();
-
-        var psScript = '$.evalFile(new File("' + outputFolder + '/_temp/mockups-ps-script.jsx"));';
-
-        var btPS = new BridgeTalk();
-        btPS.target = 'photoshop';
-        btPS.body = psScript;
-        btPS.send();
-
-        return JSON.stringify({ success: true, status: 'rerunning' });
-    } catch (e) {
         return JSON.stringify({ success: false, error: e.toString() });
     }
 }
