@@ -1,12 +1,15 @@
 /**
  * API Endpoint: /api/trial/reset
- * DÉVELOPPEMENT SEULEMENT - Réinitialise le compteur pour un HWID
+ * Réinitialise le compteur d'essai d'un HWID. RÉSERVÉ à l'auteur : exige l'en-tête
+ * X-Admin-Secret égal à TRIAL_RESET_SECRET (variable Vercel ; valeur locale dans
+ * apple-cert/trial-reset-secret.txt). Sans secret configuré, l'endpoint refuse tout.
  *
  * POST Body: { hwid: "HWID-xxx..." }
  * Response: { success: boolean, message: string }
  */
 
 import { createClient } from 'redis';
+import crypto from 'crypto';
 
 // Configuration
 const FREE_GENERATIONS_LIMIT = 3;
@@ -41,6 +44,14 @@ export default async function handler(req, res) {
             error: 'Method not allowed',
             message: 'Utilisez POST pour cet endpoint'
         });
+    }
+
+    // Garde : cet endpoint remet un essai à zéro, il ne doit pas être public.
+    const expected = process.env.TRIAL_RESET_SECRET;
+    const given = req.headers['x-admin-secret'];
+    if (!expected || typeof given !== 'string' || given.length !== expected.length
+        || !crypto.timingSafeEqual(Buffer.from(given), Buffer.from(expected))) {
+        return res.status(403).json({ error: 'Forbidden', message: 'Endpoint réservé' });
     }
 
     try {
