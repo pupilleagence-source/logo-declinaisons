@@ -13,12 +13,15 @@
  */
 
 const UpdateChecker = {
-    CURRENT_VERSION: '1.4.0',
+    CURRENT_VERSION: '1.4.1',
 
     BASE_URL: 'https://logotyps.vercel.app',
     MANIFEST_URL: 'https://logotyps.vercel.app/api/updates/manifest',
     FILES_BASE_URL: 'https://logotyps.vercel.app/api/updates/files?file=',
-    RELEASES_URL: 'https://github.com/pupilleagence-source/logo-declinaisons-releases/releases/latest',
+    // Téléchargement direct de l'installeur (redirection 302 vers le fichier de la
+    // dernière version) : l'utilisateur ne voit jamais GitHub.
+    DOWNLOAD_URL: 'https://logotyps.vercel.app/api/download?platform=',
+    UPDATE_PAGE_URL: 'https://logotyps.fr/update',
 
     SNOOZE_MS: 24 * 60 * 60 * 1000,
     // Au-delà, une mise à jour à chaud est considérée en échec (750 Ko à télécharger :
@@ -185,12 +188,22 @@ const UpdateChecker = {
         if (snooze && this._manifest) this.snooze(this._manifest.version);
     },
 
-    openReleasesPage: function () {
-        const url = this.RELEASES_URL;
+    // 'mac' | 'windows' d'après le navigateur du panneau (CEF).
+    detectPlatform: function () {
+        const s = ((navigator && (navigator.platform || '')) + ' ' + (navigator && (navigator.userAgent || ''))).toLowerCase();
+        return /mac|darwin/.test(s) ? 'mac' : 'windows';
+    },
+
+    openInBrowser: function (url) {
         try {
             if (window.cep && window.cep.util) window.cep.util.openURLInDefaultBrowser(url);
             else window.open(url, '_blank');
         } catch (e) { window.open(url, '_blank'); }
+    },
+
+    // Lance le téléchargement de l'installeur pour cette plateforme dans le navigateur.
+    openInstallerDownload: function () {
+        this.openInBrowser(this.DOWNLOAD_URL + this.detectPlatform());
     },
 
     // ---- Application de la mise à jour à chaud -----------------------------------------
@@ -263,7 +276,7 @@ const UpdateChecker = {
                 apply.disabled = false;
                 apply.textContent = this.tr('upd_installer_download', 'Télécharger l\'installeur');
             }
-            this._applyAction = function () { self.openReleasesPage(); self.closeHotModal(false); };
+            this._applyAction = function () { self.openInstallerDownload(); self.closeHotModal(false); };
         }
     },
 
@@ -275,7 +288,7 @@ const UpdateChecker = {
         on('update-apply-btn', function () { if (self._applyAction) self._applyAction(); });
         on('update-skip-btn', function () { self.closeHotModal(true); });
         on('close-update-modal', function () { self.closeHotModal(true); });
-        on('update-installer-download-btn', function () { self.openReleasesPage(); self.closeInstallerModal(false); });
+        on('update-installer-download-btn', function () { self.openInstallerDownload(); self.closeInstallerModal(false); });
         on('update-installer-skip-btn', function () { self.closeInstallerModal(true); });
         on('close-update-installer-modal', function () { self.closeInstallerModal(true); });
         ['update-modal', 'update-installer-modal'].forEach(function (id) {

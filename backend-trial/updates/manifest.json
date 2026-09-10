@@ -1,11 +1,10 @@
 {
-  "version": "1.4.0",
-  "releaseDate": "2026-09-07",
+  "version": "1.4.1",
+  "releaseDate": "2026-09-10",
   "changelog": [
-    "🔄 Mise à jour à chaud : les prochaines versions s'installent directement depuis le panneau, sans réinstaller",
-    "📦 Deux modales de mise à jour : installation directe, ou passage par l'installeur quand c'est nécessaire",
-    "🍎 macOS : le dossier du plugin appartient désormais à l'utilisateur (nécessaire à la mise à jour à chaud)",
-    "🔔 Rappel de relancer Illustrator après une mise à jour"
+    "⬇️ Téléchargement direct de l'installeur depuis le panneau, sans passer par GitHub",
+    "🔑 Changement de poste après une mise à jour d'Illustrator : l'ancienne activation est libérée automatiquement",
+    "🌐 Page de téléchargement : logotyps.fr/update"
   ],
   "hotUpdateFrom": "1.4.0",
   "assetsFingerprint": "2866e7f7a01e199c6602eeb41a8fe69faf21a6842f235a9a4fb53d96ae8f6a45",
@@ -13,7 +12,7 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "404db0c3e0025eb263514de486a62e5ba5c9ab3ea6164a430c52fc5a96084e6f",
+      "sha256": "ee8853112f576212d665d3ec3729cdb4cbf61ea3c40fe879360cf4a696c6e449",
       "size": 2063
     },
     {
@@ -23,8 +22,8 @@
     },
     {
       "path": "index.html",
-      "sha256": "0ceaf228bfcac74c87c1e302f56b9eede3fb9e11fab4729174fbb3ee7498d33a",
-      "size": 30064
+      "sha256": "012ea8580810ce17cf9ef25007dad6da2ba8dc8976c74910a09a3e256693e584",
+      "size": 30128
     },
     {
       "path": "js/auto-updater.js",
@@ -38,8 +37,8 @@
     },
     {
       "path": "js/i18n.js",
-      "sha256": "6651dcc4815918e6b7012d808ce273cda9ac4db04eea7a7461ccdb2b1c4b3181",
-      "size": 46194
+      "sha256": "9abd7652bc116f365e4d33f559cf224ab037dd3ec8997fa248b313a8d50318de",
+      "size": 46424
     },
     {
       "path": "js/idml-generator.js",
@@ -48,8 +47,8 @@
     },
     {
       "path": "js/main.js",
-      "sha256": "bd32964c09179027bb993ce57d34bca09dfdbb15a0d636e9ba381306d69bd987",
-      "size": 117667
+      "sha256": "9d669ec47f5386465be6c5f5d00d139e8219738247a30fa3dbcf71e32b179fe7",
+      "size": 117760
     },
     {
       "path": "js/pending-updates.js",
@@ -58,17 +57,17 @@
     },
     {
       "path": "js/trial.js",
-      "sha256": "490bac160adade6b735deb7d575fa06f802c81869bdeafb936fc7c92510b657f",
-      "size": 27648
+      "sha256": "31cdea0bb75a5af4fb095638e33b3803d2dcc2ad0ab7d06482e5c0cb1ade6df1",
+      "size": 28014
     },
     {
       "path": "js/updater.js",
-      "sha256": "2261616c28430048f7a5cfb60c65e9b2de7908bdd5faf3cbd3d829ad2ca47bf9",
-      "size": 15256
+      "sha256": "0e724b898d596d66aa00bcb3c45825e7f327855d2b933cc0f36f53d279c34b03",
+      "size": 15901
     },
     {
       "path": "jsx/hostscript.jsx",
-      "sha256": "81cdc0486c650780feef2c0c1a51c2ae8bf3511596c0e8d9b75b625791e7f5b8",
+      "sha256": "cb0b157771cd5a3524e3335e3e42638e058aff894f81af1b66bd9924b181c39a",
       "size": 162780
     },
     {
@@ -87,5 +86,5 @@
       "size": 53002
     }
   ],
-  "signature": "LCRF3mCYnDz5WpQCKkddfuj6rq6DHtnNsneXdejPkbB9sXKe5kh49PPFa1onxsKnwtneMAASOyTlykCIfelV5wJ0GXJphJYwnCP1nRGOVOqR5/5X00BV3jOs7Nn/jKbmjfs//LS5KA7GOD2K0hYu8UAbRVPQHcuGf6Hcj4sbbYyMWyCwLgTZRwQGjgnyLiE0qAH+Rtb8+7vz1ALBRoo7CN5KxR5SovJbULZ2RPQp5wsWtUEbcKfTwHi3BVLDRyAUVXvRxY8mChsRSMp4YU/18uSGfZCNkdIR2zlX7/KrdvOYTlBer0trUTdCJZaPvcyRREKJraQt2ZHJj6wDfJVM54j1WusY/6xVgDfAmOZzCArmDbQrYjd6EyXg2AdqjDXS2SU7Vgqti8sfbDcA9kVY3Lt5S/PWmCwNyZGkbNQMrvTQRsTgBQzjoHktSIoUeVAqlCoq7AJcEjnVoNkwKZinyGwMisfLTQiAEUyWSQsUpPxGaX1ILlqgC/sK4ngicp06"
+  "signature": "BE6gG2yGPuUXrDGfmBhdhUldBQWIdYDRrQcI7Hcjgtb7J+q1upalL8NXen0qoo8BSK7w47Czg/KLC+oLFpbNH3PnmVvdPX9MaEHXHlwDcq8BQEtlMWMH3PNJIpHNrIRsosWc9spX/sDcDGEWX6p9nfwAHe8vFcNlElW1aFCgsiFtqU1DkxVnGlZuc4f8pvdE7sWYpeAuwqm+vlxG+ND03wP6bSKGMfazCa+nMjf1ijYDNDO3dTBFXN4kenZeu1n5QkPYTwcuKCcBNe13QP9ag3Fc1MCfqXIZ4X0iy1+bxhg7EfOcluM1OpHpJdtuErcSUxzoNOLODbrCEb1OJBJoMTZkseuj4tUtBvjDrcf5WFDZviqupaMWqnyfT/b07bcHM654TBjvz9jaLXcBpSQWxpHQNw1rYYkQL9TZypxiTDAxAt6Tpm7NsvC1FmYI2zluk7wBbt5VIKd6FYGl/cj3HJGiHxC5xtgkF7SXalEWW6oWoWP0YXKlEmVI6Dkcuz4H"
 }

@@ -18,14 +18,13 @@ import { handleDownload } from '../../lib/download.js';
 // changelog) ; lue aussi par lib/download.js pour construire l'URL de l'installeur.
 // downloadUrl : page de téléchargement du site, montrée par les clients ≤ 1.3.0.
 export const LATEST = {
-            version: '1.4.0',
-            releaseDate: '2026-09-07',
+            version: '1.4.1',
+            releaseDate: '2026-09-10',
             downloadUrl: 'https://logotyps.fr/update',
             changelog: [
-            "🔄 Mise à jour à chaud : les prochaines versions s'installent directement depuis le panneau, sans réinstaller",
-            "📦 Deux modales de mise à jour : installation directe, ou passage par l'installeur quand c'est nécessaire",
-            "🍎 macOS : le dossier du plugin appartient désormais à l'utilisateur (nécessaire à la mise à jour à chaud)",
-            "🔔 Rappel de relancer Illustrator après une mise à jour"
+            "⬇️ Téléchargement direct de l'installeur depuis le panneau, sans passer par GitHub",
+            "🔑 Changement de poste après une mise à jour d'Illustrator : l'ancienne activation est libérée automatiquement",
+            "🌐 Page de téléchargement : logotyps.fr/update"
         ]
 };
 
