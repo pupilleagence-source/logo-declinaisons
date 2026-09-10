@@ -22,7 +22,7 @@ function fakeRes() {
     const latest = await import(pathToFileURL(path.join(__dirname, '..', 'backend-trial', 'api', 'version', 'latest.js')).href);
     const v = latest.LATEST.version;
     check('latest.js exporte LATEST.version au format x.y.z', /^\d+\.\d+\.\d+$/.test(v), true);
-    check('latest.js : downloadUrl = page du site (plus GitHub)', latest.LATEST.downloadUrl, 'https://logotyps.fr/update');
+    check('latest.js : downloadUrl = page du site (plus GitHub)', latest.LATEST.downloadUrl, 'https://logotyps.fr/download');
 
     // Comme en prod : la requête passe par le handler de latest.js avec ?download=1 (route vercel.json).
     const call = async (query, ua, method = 'GET') => { const r = fakeRes(); await latest.default({ method, query: Object.assign({ download: '1' }, query), headers: { 'user-agent': ua } }, r); return r; };
