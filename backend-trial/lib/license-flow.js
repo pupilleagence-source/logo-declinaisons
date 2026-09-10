@@ -13,12 +13,16 @@
 import crypto from 'crypto';
 import { humanizeLemonError, isInstanceError, isKeyDead } from './lemonsqueezy.js';
 
-// IDs des variantes Lemon Squeezy (communs aux modes test et réel)
-export const VARIANT_IDS = { LIFETIME: 1077127, MONTHLY: 1077121 };
+// IDs des variantes Lemon Squeezy (communs aux modes test et réel). Depuis le
+// 2026-09-10 : LIFETIME = licence à vie 59 €, ANNUAL = licence annuelle 39 €/an
+// (ex-abonnement mensuel, même variante re-tarifée). Une variante Studio (149 €,
+// 10 postes) est à créer : ajouter son id ici, sinon elle est acceptée en 'unknown'.
+export const VARIANT_IDS = { LIFETIME: 1077127, ANNUAL: 1077121, STUDIO: 0 };
 
 export function licenseTypeFor(variantId) {
     if (variantId === VARIANT_IDS.LIFETIME) return 'lifetime';
-    if (variantId === VARIANT_IDS.MONTHLY) return 'monthly';
+    if (variantId === VARIANT_IDS.ANNUAL) return 'annual';
+    if (VARIANT_IDS.STUDIO && variantId === VARIANT_IDS.STUDIO) return 'studio';
     return 'unknown';
 }
 
