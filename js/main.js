@@ -933,6 +933,7 @@ async function handleLicenseActivation() {
                 key: licenseKey,
                 email: 'user@license.local',
                 type: data.licenseType || 'lifetime',
+                hwid: hwid, // pour libérer cette instance si le HWID change (previousHwid)
                 activatedAt: Date.now()
             });
 

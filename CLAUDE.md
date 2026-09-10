@@ -18,7 +18,8 @@
 - **Auteur unique** : Pupille Studio (`pupille.agence@gmail.com`)
 - **Repo** : `github.com/pupilleagence-source/logo-declinaisons` — ⚠️ **PUBLIC** (vérifié le 2026-09-04 : `isPrivate: false`). Tout l'historique est lisible par n'importe qui. 34 commits sur `master`, oct. 2025 → sept. 2026
 - **Releases** : publiées dans un **repo séparé public** `pupilleagence-source/logo-declinaisons-releases`
-- **Backend** : Vercel, projet `logotyps` → `https://logotyps.vercel.app` (12 endpoints, Redis Cloud)
+- **Backend** : Vercel, projet `logotyps` → `https://logotyps.vercel.app` (12 fonctions, Redis Cloud). ⚠️ **Plan Hobby = 12 fonctions max par déploiement, et les 12 sont prises** : ajouter un fichier sous `api/` fait échouer `vercel --prod` (« No more than 12 Serverless Functions »). Une nouvelle URL se greffe sur une fonction existante via une route `vercel.json` (ex. `/api/download` → `/api/version/latest.js?download=1`).
+- **Site vitrine** : `logotyps.fr`, dépôt `pupilleagence-source/logotyps-site` (Next.js 15, clone local dans `Desktop\Plugin illustrator\logotyps-site`), hébergé chez **Hostinger Node.js** avec **déploiement automatique à chaque push sur `master`** (hPanel : « Connecté avec GitHub », « Déploiement automatique »). Page de téléchargement : `logotyps.fr/update` (`src/app/update/page.tsx` + `src/components/UpdateDownload.tsx`, textes dans `src/lib/translations.ts` → `update`).
 - **Stack** : zéro framework, zéro build step, zéro lint. HTML/CSS/JS vanilla + ExtendScript ES3. Quelques tests depuis le 2026-09-04 : `npm test` (helpers de dossier, repli d'orientation IDML, styles de police).
 - **Langue** : tout ce qui est visible et tous les commentaires sont en **français**, les identifiants sont en anglais.
 - **~13 450 lignes** de code applicatif réparties sur 4 sous-systèmes.
@@ -54,12 +55,12 @@ Réécrite le 2026-09-07 (`js/updater.js`, `js/auto-updater.js`, `js/pending-upd
 | Cas | Modale | Ce que fait le bouton |
 |---|---|---|
 | `manifest.version` ≤ `CURRENT_VERSION` | aucune | — |
-| `CURRENT_VERSION` < `manifest.hotUpdateFrom`, **ou** dossier de l'extension non modifiable (macOS installé par un `.pkg` ≤ 1.3.0, propriété de root) | `#update-installer-modal` | ouvre la page GitHub Releases ; l'utilisateur ferme Illustrator, relance l'installeur |
+| `CURRENT_VERSION` < `manifest.hotUpdateFrom`, **ou** dossier de l'extension non modifiable (macOS installé par un `.pkg` ≤ 1.3.0, propriété de root) | `#update-installer-modal` | **lance le téléchargement de l'installeur** pour la plateforme détectée (`/api/download?platform=mac\|windows`, 302 vers le fichier — jamais GitHub à l'écran, depuis 1.4.1) ; l'utilisateur ferme Illustrator, relance l'installeur |
 | sinon | `#update-modal` | **Mettre à jour** : télécharge tout dans `.temp_update/`, vérifie chaque SHA-256, remplace (avec `.backup` + rollback), affiche « ✅ Mise à jour installée — relancez Illustrator » |
 
 « Plus tard » reporte de **24 h** (`localStorage.update_snooze`), ce n'est plus définitif. Après une mise à jour appliquée, `localStorage.update_applied` empêche de la reproposer, un **bandeau jaune** « relancez Illustrator » s'affiche et le bouton d'action est désactivé (`appState.restartRequired`). Au démarrage, `checkHostscriptVersion()` (`js/main.js`) compare `getHostscriptVersion()` côté Illustrator avec `UpdateChecker.CURRENT_VERSION` : différent (ou fonction absente) → même bandeau. Un fichier verrouillé par Windows est déposé en `*.pending` et appliqué par `js/pending-updates.js`, **chargé en premier dans `<head>`**.
 
-**Les clients 1.3.0 installés** ont l'ancien `updater.js` : ils lisent `/api/version/latest`, voient une modale « Télécharger » qui ouvre GitHub Releases. 1.3.0 → 1.4.0 passe donc forcément par l'installeur ; la mise à jour à chaud ne joue qu'à partir de 1.4.0 → 1.4.x.
+**Les clients 1.3.0 installés** ont l'ancien `updater.js` : ils lisent `/api/version/latest`, voient une modale « Télécharger » qui ouvre `downloadUrl` — depuis le 2026-09-10, `https://logotyps.fr/update` (avant : GitHub Releases). 1.3.0 → 1.4.0 passe donc forcément par l'installeur ; la mise à jour à chaud ne joue qu'à partir de 1.4.0 → 1.4.x.
 
 **Règles à ne pas casser :**
 
@@ -120,7 +121,7 @@ Ces six fichiers restent **périmés sur le fond** — le bandeau prévient, il 
 
 ### 2.8 URL de production en dur dans 11 endroits
 
-`https://logotyps.vercel.app` est codé en dur dans `js/trial.js` (`:11, :65, :257, :426, :649`), `js/main.js` (`:899, :981`) et `js/updater.js` (`BASE_URL`, `MANIFEST_URL`, `FILES_BASE_URL`). **Aucun switch d'environnement, aucune URL de staging.** Si le domaine Vercel change, tous les clients installés sont définitivement cassés — la mise à jour à chaud, qui passe par ce même domaine, ne pourrait pas les réparer.
+`https://logotyps.vercel.app` est codé en dur dans `js/trial.js` (`:11, :65, :257, :426, :649`), `js/main.js` (`:899, :981`) et `js/updater.js` (`BASE_URL`, `MANIFEST_URL`, `FILES_BASE_URL`, `DOWNLOAD_URL`) ; `js/updater.js` porte aussi `UPDATE_PAGE_URL` = `https://logotyps.fr/update`, comme `downloadUrl` dans `backend-trial/api/version/latest.js` et la page du site elle-même (`UpdateDownload.tsx` appelle le backend). **Aucun switch d'environnement, aucune URL de staging.** Si le domaine Vercel change, tous les clients installés sont définitivement cassés — la mise à jour à chaud, qui passe par ce même domaine, ne pourrait pas les réparer.
 
 ### 2.9 Pas de tests, pas de lint, pas de validation CI
 
@@ -328,7 +329,7 @@ Les snippets ExtendScript injectés dans les scripts générés (`presentationSt
 
 Le backend est un **proxy fin devant Lemon Squeezy** + cache Redis. Clés : `trial:<hwid>` (compteur, **sans TTL**), `license:<hwid>` (blob JSON, **sans TTL**), `_keepalive`.
 
-**Réécrit le 2026-09-08** (`backend-trial/lib/{lemonsqueezy,license-flow,redis}.js`, handlers `api/license/*` devenus de simples branchements ; `tests/backend-license.test.js`, 73 assertions sur un faux Lemon Squeezy). Règle centrale : **une instance Lemon Squeezy par poste (HWID), jamais deux**. `activate` n'est appelé que si aucune instance valide n'existe pour ce poste — ni dans Redis, ni chez Lemon Squeezy (recherche par nom d'instance = HWID via l'API principale, avec la clé API). Avant, chaque clic sur « Activer » créait une instance et consommait un slot : `validate` était appelé avec `instance_name` (paramètre inexistant, l'API attend `instance_id`) puis testé sur un champ `activated` qui n'existe pas dans cette réponse. La validation périodique passe maintenant par `instance_id`, donc une désactivation faite depuis le dashboard est vue par le panneau. `previousHwid` (optionnel, à envoyer par le client en 1.4.1) libère l'ancienne instance quand le HWID change après une mise à jour d'Illustrator. La License API (`validate`/`activate`/`deactivate`) ne demande **pas** de clé API ; seule la recherche d'instances en a besoin, et se rabat sur `activate` sans elle.
+**Réécrit le 2026-09-08** (`backend-trial/lib/{lemonsqueezy,license-flow,redis}.js`, handlers `api/license/*` devenus de simples branchements ; `tests/backend-license.test.js`, 73 assertions sur un faux Lemon Squeezy). Règle centrale : **une instance Lemon Squeezy par poste (HWID), jamais deux**. `activate` n'est appelé que si aucune instance valide n'existe pour ce poste — ni dans Redis, ni chez Lemon Squeezy (recherche par nom d'instance = HWID via l'API principale, avec la clé API). Avant, chaque clic sur « Activer » créait une instance et consommait un slot : `validate` était appelé avec `instance_name` (paramètre inexistant, l'API attend `instance_id`) puis testé sur un champ `activated` qui n'existe pas dans cette réponse. La validation périodique passe maintenant par `instance_id`, donc une désactivation faite depuis le dashboard est vue par le panneau. `previousHwid` (envoyé par le client depuis 1.4.1 : `storeLicense` mémorise le `hwid` d'activation, `_tryReactivate` le transmet) libère l'ancienne instance quand le HWID change après une mise à jour d'Illustrator. La License API (`validate`/`activate`/`deactivate`) ne demande **pas** de clé API ; seule la recherche d'instances en a besoin, et se rabat sur `activate` sans elle.
 
 **Le webhook est signé depuis le 2026-09-08** : `bodyParser: false`, corps brut, HMAC-SHA256 comparé à `X-Signature` avec `LEMONSQUEEZY_WEBHOOK_SECRET` ; sans signature valide → 401. ⚠️ Le secret dans Vercel date de nov. 2025 (mode test) : **à vérifier / recréer dans Settings → Webhooks à chaque changement de mode**, sinon toutes les révocations sont rejetées (visible dans `vercel logs` : « Webhook rejeté »).
 
@@ -424,7 +425,9 @@ Le script (`scripts/release.js`) refuse un arbre git sale, une branche ≠ `mast
 
 `hotUpdateFrom` : première release avec manifeste → `= version`. Ensuite, conservé tant que l'empreinte `templates/` ne change pas et que `--require-installer` n'est pas passé. Passer `--require-installer` dès qu'on touche `installer.iss`, `build-pkg.sh` (postinstall), le binaire stub, ou tout fichier hors `ALLOWED_PREFIXES` (§2.3).
 
-**Ce que « mettre à jour le plugin » veut dire pour l'utilisateur final** (deux modales, §2.3) : soit « Mettre à jour » dans le panneau puis relancer Illustrator, soit « Télécharger l'installeur » et relancer l'installeur par-dessus (`.pkg` / `.exe`). Le `.pkg` 1.4.0+ fait un `chown -R` du dossier d'extension vers l'utilisateur connecté dans son `postinstall` : sans ça, `/Library/Application Support/Adobe/CEP/extensions/…` appartient à root et le panneau ne pourrait pas se mettre à jour lui-même.
+**Ce que « mettre à jour le plugin » veut dire pour l'utilisateur final** (deux modales, §2.3) : soit « Télécharger et installer » dans le panneau puis relancer Illustrator, soit « Télécharger l'installeur » (téléchargement direct pour sa plateforme) et relancer l'installeur par-dessus (`.pkg` / `.exe`).
+
+**Téléchargement sans GitHub (2026-09-10).** `GET https://logotyps.vercel.app/api/download?platform=mac|windows` répond **302** vers `…/logo-declinaisons-releases/releases/download/v<version>/LogoDeclinaisons-<version>-{mac.pkg|windows.exe}`, `<version>` étant celle de `LATEST` dans `latest.js` (donc bumpée par `npm run release`) ; sans `platform`, le User-Agent décide ; `&info=1` renvoie le JSON. Le nom des assets doit rester **exactement** celui produit par le workflow. Le code est dans `backend-trial/lib/download.js`, appelé par `latest.js` (route `vercel.json`, plafond de 12 fonctions — §1). GitHub Releases reste le stockage (279 Mo servis gratuitement), invisible pour l'utilisateur. La page `logotyps.fr/update` et les modales du panneau pointent dessus. ⚠️ **Déployer le backend seulement après la release GitHub** : entre les deux, `/api/download` renverrait vers un fichier qui n'existe pas encore (`--deploy` respecte cet ordre). Le `.pkg` 1.4.0+ fait un `chown -R` du dossier d'extension vers l'utilisateur connecté dans son `postinstall` : sans ça, `/Library/Application Support/Adobe/CEP/extensions/…` appartient à root et le panneau ne pourrait pas se mettre à jour lui-même.
 
 ### Checklist de bump de version (ce que `npm run release` fait, si on doit le refaire à la main)
 
@@ -595,6 +598,14 @@ Toutes les autres sont toujours présentes dans le code.
 - Clé API Lemon Squeezy régénérée par l'utilisateur et remplacée dans Vercel ; `TRIAL_RESET_SECRET` ajouté.
 - Vérifié en prod : fausse clé → 400 « introuvable », webhook sans/mauvaise signature → 401, reset sans secret → 403, avec secret → 200.
 - **Reste à faire par l'utilisateur** : achat en mode test (carte 4242…) puis activer / quitter / rouvrir / désactiver / réactiver dans le panneau ; vérifier le secret du webhook ; fixer la limite d'activations du produit (2 ou 3).
+
+### Fait le 2026-09-10 — téléchargement direct, page du site, 1.4.1
+
+- Test réel de la licence en mode test le 2026-09-08 (achat 4242…, activer / quitter / rouvrir / désactiver / réactiver) : **une seule instance** chez Lemon Squeezy à chaque étape, webhooks `license_key_updated` **acceptés** (le secret Vercel est le bon).
+- `/api/download` (302 vers l'installeur, plateforme auto), `latest.js` exporte `LATEST` et `downloadUrl` → `logotyps.fr/update` ; `vercel.json` route sans fonction supplémentaire (plafond Hobby découvert à cette occasion, §1).
+- Site : page `logotyps.fr/update` (EN/FR, version + nouveautés lues sur le backend, boutons macOS/Windows, 3 étapes), `package-lock.json` régénéré (il manquait Three.js → `npm ci` cassé). Le bouton « Télécharger maintenant » de la page d'accueil affiche toujours le message « plugin en test » : le pointer vers `/update` quand la vente ouvre (`usePluginTestingNotice` dans `HeroSection`, `page.tsx`, `FinalCTASection`).
+- Panneau 1.4.1 : modale installeur → téléchargement direct ; `previousHwid` envoyé à la réactivation ; libellé « Télécharger et installer ».
+- `tests/backend-download.test.js` (20 assertions).
 
 ### À faire, par ordre de priorité
 

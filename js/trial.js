@@ -96,7 +96,7 @@ const Trial = {
                         // Tenter une ré-activation automatique avec la clé stockée
                         if (license.key) {
                             console.log('⚠️ HWID non reconnu, tentative de ré-activation automatique...');
-                            const reactivated = await this._tryReactivate(license.key, hwid);
+                            const reactivated = await this._tryReactivate(license.key, hwid, license.hwid);
                             if (reactivated) {
                                 console.log('✓ Licence ré-activée automatiquement après changement de HWID');
                                 this.cacheStatus({
@@ -288,7 +288,7 @@ const Trial = {
                         // HWID inconnu → tenter ré-activation automatique
                         if (license.key) {
                             console.log('⚠️ HWID non reconnu (canGenerate), tentative de ré-activation...');
-                            const reactivated = await this._tryReactivate(license.key, hwid);
+                            const reactivated = await this._tryReactivate(license.key, hwid, license.hwid);
                             if (reactivated) {
                                 console.log('✓ Licence ré-activée, génération autorisée');
                                 return { allowed: true, reason: 'licensed' };
@@ -433,7 +433,7 @@ const Trial = {
      * Tente de ré-activer une licence avec un nouveau HWID
      * (après MAJ Illustrator qui a changé le HWID)
      */
-    _tryReactivate: async function(licenseKey, newHwid) {
+    _tryReactivate: async function(licenseKey, newHwid, previousHwid) {
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -444,7 +444,10 @@ const Trial = {
                 body: JSON.stringify({
                     licenseKey: licenseKey,
                     email: 'user@license.local',
-                    hwid: newHwid
+                    hwid: newHwid,
+                    // Ancien poste connu (HWID d'avant la mise à jour d'Illustrator) :
+                    // le serveur libère son instance Lemon Squeezy au lieu d'en empiler.
+                    previousHwid: (previousHwid && previousHwid !== newHwid) ? previousHwid : undefined
                 }),
                 signal: controller.signal
             });
@@ -460,6 +463,7 @@ const Trial = {
                         key: licenseKey,
                         email: 'user@license.local',
                         type: data.licenseType || 'lifetime',
+                        hwid: newHwid,
                         activatedAt: Date.now()
                     });
                     return true;
