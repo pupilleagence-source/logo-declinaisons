@@ -2,7 +2,7 @@
  * Checkout Lemon Squeezy avec le bon plan présélectionné ET les autres plans
  * commutables sur la page de paiement.
  *
- * Servi par /api/checkout?plan=annual|lifetime|studio[&code=PROMO], qui est une
+ * Servi par /api/checkout?plan=annual|lifetime|studio[&code=PROMO][&lang=fr|en], qui est une
  * route vercel.json vers /api/version/latest.js?checkout=1 (plafond de 12 fonctions
  * du plan Hobby, toutes prises).
  *
@@ -33,6 +33,29 @@ const DOWNLOAD_PAGE = 'https://logotyps.fr/download';
 // de confirmation de Lemon Squeezy et le client ne voit jamais sa clé.
 const THANK_YOU_URL = DOWNLOAD_PAGE + '?achat=1&key=[license_key]&email=[email]&order=[order_id]';
 
+// Textes du checkout selon la langue du site (?lang=). Lemon Squeezy n'a qu'une seule
+// description par produit ; l'API permet de la remplacer checkout par checkout, ainsi
+// que le nom et les textes du reçu. Les noms et descriptions des VARIANTES, eux, ne
+// sont pas remplaçables : ils doivent rester bilingues dans le dashboard.
+export const TEXTS = {
+    fr: {
+        name: 'Logotyps — plugin Illustrator',
+        description: 'Toutes les déclinaisons de votre logo, exportées et rangées, plus la charte graphique InDesign avec 9 mockups : un clic dans Illustrator. Licence à vie (3 postes), annuelle (3 postes) ou Studio (15 postes). Clé de licence envoyée par e-mail et affichée juste après le paiement. Satisfait ou remboursé 14 jours.',
+        receiptButton: 'Télécharger le plugin',
+        thankYou: 'Merci ! Installez le plugin depuis logotyps.fr/download, puis collez votre clé de licence dans le panneau Logotyps d\'Illustrator. Vos clés restent consultables sur app.lemonsqueezy.com/my-orders ; abonnement annuel gérable ou annulable à tout moment sur logotyps.lemonsqueezy.com/billing.'
+    },
+    en: {
+        name: 'Logotyps — Illustrator plugin',
+        description: 'Every variation of your logo, exported and organized, plus the InDesign brand guide with 9 mockups: one click in Illustrator. Lifetime (3 computers), annual (3 computers) or Studio (15 computers) license. License key sent by email and shown right after payment. 14-day money-back guarantee.',
+        receiptButton: 'Download the plugin',
+        thankYou: 'Thank you! Install the plugin from logotyps.fr/download, then paste your license key in the Logotyps panel inside Illustrator. Your keys stay available on app.lemonsqueezy.com/my-orders; the annual plan can be managed or cancelled at any time on logotyps.lemonsqueezy.com/billing.'
+    }
+};
+
+export function normalizeLang(value) {
+    return String(value || '').toLowerCase().slice(0, 2) === 'en' ? 'en' : 'fr';
+}
+
 export function normalizePlan(value) {
     const p = String(value || '').toLowerCase();
     if (p === 'annual' || p === 'annuel' || p === 'year' || p === 'yearly') return 'annual';
@@ -46,14 +69,17 @@ export function fallbackUrl(plan, code) {
     return code ? u + '&checkout[discount_code]=' + encodeURIComponent(code) : u;
 }
 
-export function buildCheckoutBody(plan, code) {
+export function buildCheckoutBody(plan, code, lang) {
+    const t = TEXTS[normalizeLang(lang)];
     const attributes = {
         product_options: {
+            name: t.name,
+            description: t.description,
             enabled_variants: Object.values(PLANS),
             redirect_url: THANK_YOU_URL,
-            receipt_button_text: 'Télécharger le plugin',
+            receipt_button_text: t.receiptButton,
             receipt_link_url: THANK_YOU_URL,
-            receipt_thank_you_note: 'Merci ! Installez le plugin depuis logotyps.fr/download, puis collez votre clé de licence dans le panneau Logotyps d\'Illustrator. Vos clés restent consultables sur app.lemonsqueezy.com/my-orders ; abonnement annuel gérable ou annulable à tout moment sur logotyps.lemonsqueezy.com/billing.'
+            receipt_thank_you_note: t.thankYou
         },
         checkout_options: { embed: false, logo: true, media: true, desc: true, discount: true, button_color: '#FF6B35' },
         expires_at: null,
@@ -73,7 +99,7 @@ export function buildCheckoutBody(plan, code) {
 }
 
 // Crée le checkout ; renvoie son URL, ou null si l'API refuse / ne répond pas.
-export async function createCheckoutUrl(plan, code, { fetchImpl, apiKey, timeoutMs = 6000 } = {}) {
+export async function createCheckoutUrl(plan, code, { fetchImpl, apiKey, timeoutMs = 6000, lang } = {}) {
     const key = apiKey === undefined ? process.env.LEMONSQUEEZY_API_KEY : apiKey;
     const doFetch = fetchImpl || ((...a) => fetch(...a));
     if (!key) return null;
@@ -83,7 +109,7 @@ export async function createCheckoutUrl(plan, code, { fetchImpl, apiKey, timeout
         const res = await doFetch(API, {
             method: 'POST',
             headers: { 'Accept': 'application/vnd.api+json', 'Content-Type': 'application/vnd.api+json', 'Authorization': 'Bearer ' + key },
-            body: JSON.stringify(buildCheckoutBody(plan, code)),
+            body: JSON.stringify(buildCheckoutBody(plan, code, lang)),
             signal: controller.signal
         });
         const data = await res.json().catch(() => ({}));
@@ -109,7 +135,7 @@ export async function handleCheckout(req, res, deps) {
     const plan = query.plan ? normalizePlan(query.plan) : DEFAULT_PLAN;
     if (!plan) return res.status(400).json({ error: 'Unknown plan', message: 'Précisez ?plan=annual, lifetime ou studio' });
     const code = cleanCode(query.code);
-    const url = (await createCheckoutUrl(plan, code, deps)) || fallbackUrl(plan, code);
+    const url = (await createCheckoutUrl(plan, code, Object.assign({}, deps, { lang: normalizeLang(query.lang) }))) || fallbackUrl(plan, code);
     res.setHeader('Location', url);
     return res.status(302).end();
 }

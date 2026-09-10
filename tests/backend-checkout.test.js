@@ -30,6 +30,11 @@ function fakeRes() {
     check('le bouton du reçu mène au même endroit', body.data.attributes.product_options.receipt_link_url, body.data.attributes.product_options.redirect_url);
     check('pas de checkout_data sans code', mod.buildCheckoutBody('lifetime').data.attributes.checkout_data, undefined);
     check('store', body.data.relationships.store.data.id, '240133');
+    check('français par défaut : nom et description remplacés', [body.data.attributes.product_options.name, /charte graphique/.test(body.data.attributes.product_options.description)], ['Logotyps — plugin Illustrator', true]);
+    const en = mod.buildCheckoutBody('annual', '', 'en');
+    check('lang=en : description, bouton et mot du reçu en anglais', [en.data.attributes.product_options.name, /brand guide/.test(en.data.attributes.product_options.description), en.data.attributes.product_options.receipt_button_text, /Thank you/.test(en.data.attributes.product_options.receipt_thank_you_note)], ['Logotyps — Illustrator plugin', true, 'Download the plugin', true]);
+    check('lang inconnue → français', mod.normalizeLang('de'), 'fr');
+    check('lang en-US → anglais', mod.normalizeLang('en-US'), 'en');
 
     console.log('\n--- createCheckoutUrl avec un faux Lemon Squeezy ---');
     const calls = [];
@@ -53,6 +58,8 @@ function fakeRes() {
     check('sans clé API → repli public studio', r.headers.location, 'https://logotyps.lemonsqueezy.com/checkout/buy/31470257-06a8-4239-9d09-a3e119eed69e?enabled=1077131');
     r = await call({}, { fetchImpl: okFetch, apiKey: 'K' });
     check('sans plan → lifetime par défaut', JSON.parse(calls[calls.length - 1].init.body).data.relationships.variant.data.id, '1077127');
+    r = await call({ plan: 'annual', lang: 'en' }, { fetchImpl: okFetch, apiKey: 'K' });
+    check('?lang=en transmis au checkout créé', JSON.parse(calls[calls.length - 1].init.body).data.attributes.product_options.receipt_button_text, 'Download the plugin');
     r = await call({ plan: 'gold' }, { fetchImpl: okFetch, apiKey: 'K' });
     check('plan inconnu → 400', r.code, 400);
     r = await call({ plan: 'annual', code: 'x"; DROP' }, { fetchImpl: okFetch, apiKey: 'K' });
