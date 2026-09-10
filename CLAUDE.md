@@ -615,6 +615,8 @@ Toutes les autres sont toujours présentes dans le code.
 - `tests/backend-download.test.js` (20 assertions).
 - **Release `v1.4.1` publiée le 2026-09-10 (16 h 37, Paris)** via `npm run release -- 1.4.1 … --deploy` (run `34489809147`), backend déployé dans la foulée. Vérifié en prod : `latest.js` 1.4.1 avec `downloadUrl` → `logotyps.fr/download` ; manifeste signé 1.4.1, `hotUpdateFrom` 1.4.0 → **un client 1.4.0 voit la modale « Télécharger et installer » (mode à chaud)** ; `js/updater.js` servi = octets du manifeste ; `/api/download` → 302 vers les assets 1.4.1, téléchargeables. **Première mise à jour à chaud réelle à observer sur les postes de test 1.4.0** (Windows et Mac).
 
+- **Release `v1.4.2` publiée le 2026-09-10 (18 h 23, Paris)**, backend déployé dans la foulée : lien « Clé perdue ? » (→ app.lemonsqueezy.com/my-orders) dans la modale de licence, libellés annuel / Studio. Manifeste 1.4.2 signé, `hotUpdateFrom` 1.4.0 : **mise à jour à chaud proposée aux postes en 1.4.0 et 1.4.1**. Même jour : `/api/checkout` (plan présélectionné, autres commutables), page `/download` avec la clé après achat, tarifs 39 / 59 / 149 € sur le site.
+
 ### À faire, par ordre de priorité
 
 1. **Ouvrir le panneau dans Illustrator et vérifier les correctifs ci-dessus.** Aucun n'a tourné pour de vrai. Regarder en priorité : le compteur de plans de travail, la typo du panneau (elle doit changer visuellement), le remplissage des sliders.
