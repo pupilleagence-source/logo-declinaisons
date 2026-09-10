@@ -1,9 +1,8 @@
 {
-  "version": "1.4.2",
+  "version": "1.4.3",
   "releaseDate": "2026-09-10",
   "changelog": [
-    "🔑 Lien « Clé perdue ? » dans la fenêtre de licence : retrouvez vos achats Lemon Squeezy avec votre e-mail",
-    "🏷️ Libellés des licences annuelle et Studio"
+    "💳 Licence annuelle : lien « Gérer ou annuler mon abonnement » dans la fenêtre de licence"
   ],
   "hotUpdateFrom": "1.4.0",
   "assetsFingerprint": "2866e7f7a01e199c6602eeb41a8fe69faf21a6842f235a9a4fb53d96ae8f6a45",
@@ -11,7 +10,7 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "99a79dec44e3c6fd9bbf49795cc3faf22f1754aa49b1ff5821974932322bb475",
+      "sha256": "385362d334cda745788bffbd6f8ec7e08488cf0d265f72fb3cc20f7357ac6139",
       "size": 2063
     },
     {
@@ -21,8 +20,8 @@
     },
     {
       "path": "index.html",
-      "sha256": "71154a69b928e64fdf0b65623bb194816186092e5e111f16105e9a8a4d30be46",
-      "size": 30359
+      "sha256": "f49285ba4422023387f894e38ddc220e4a53b54d956d781f44cefd1956094213",
+      "size": 30644
     },
     {
       "path": "js/auto-updater.js",
@@ -36,8 +35,8 @@
     },
     {
       "path": "js/i18n.js",
-      "sha256": "397cac716da695b5b7b24a0037d68d96c09d34d636c5025c8c51e885bebbfbd8",
-      "size": 47088
+      "sha256": "4d3e0a1005ed1dab81190ac273ceed213a4cc8eeb2adf52648a7c58c1df7bf6b",
+      "size": 47484
     },
     {
       "path": "js/idml-generator.js",
@@ -46,8 +45,8 @@
     },
     {
       "path": "js/main.js",
-      "sha256": "739ff1473f91b60450a5552fa225da90c6b92d20335acc0b21f16fb45a557cdb",
-      "size": 118716
+      "sha256": "a3eb0ced638521f6dfc61065681c7980382fb03235ea67625328cb9a44c0da68",
+      "size": 119732
     },
     {
       "path": "js/pending-updates.js",
@@ -61,12 +60,12 @@
     },
     {
       "path": "js/updater.js",
-      "sha256": "1a0f5e531ba55420d391c27b938f098ac6d9ea5c8642fc5d14a449f6f333ce7a",
+      "sha256": "38dc4edaa6c3c20dde11e7329147c11d7023251f651c712253bd86f43ad42d80",
       "size": 15903
     },
     {
       "path": "jsx/hostscript.jsx",
-      "sha256": "605ec1fbaa556f413b8848d6ee423213c1b80939b04b2990daed7b26d3b4f702",
+      "sha256": "ada61a5664b21fe77783cb6fde65d5220c08c281febd240a030230b53873a1dd",
       "size": 162780
     },
     {
@@ -85,5 +84,5 @@
       "size": 53002
     }
   ],
-  "signature": "tNGNWiCW3Q9B5YEdVYsoHGlpu4z3GxzfE5JEvlCjvi/dxcxIVKnncWmBVzsJGnZZwPDQANWZLI6F5hO9NmupbhhkKBtGDSVsM7TPq/PPserSf8F1qpAgQm80/B5bCqhdhbhWL/h0ei/E2ZGRXYdiJnAf9jElxhva/1UJd50Scvp1s6T7g4OtZbYrkR8DcWuAZlVYMOVQJ5BQLxC82PBs3wHsLcjwbxvLRcQVP8mvCGt3T+pvwQwwKFx2s0wTScTBfw8j1QGsP7bRLPKdf9s5P3pkT967drJWzy6dJvBjauzuCsPVZK2/8Xl+aWAbRLtV+Sr9UgcGDO+2g0jn6XVPEUkUq4QAXbB4C8O1RvbBkItB6XrH/sYtXkX7zdwonnp8m9xdeH0fFNakuSbcSobxrwAx/V+aqZccky52sfpZJeGfc/jn0UQyk7LTyYCHAyJFFsfNkl4+nIf1/xwDTlVs6822KnLNP/t0GZO7x1Aj2wGJC6cOmvlUicW+6sRsJWG5"
+  "signature": "p8zcE5X8nPzuPOxiE7jl4NN/ZBGfk71T+ZOnjvkAVsFffEnVoRtTycrFZW6ittoJ7BSov4UHIUZ/Yl/vln+FjU1Xzxyt0OjhotwRkLM5mw1JL+3DarDTAl5sXIFBe6vA+IIuJplzvYgwMOI82hGWyCcsJ7HyYL+FW3C1PjhpRFh0cmR7sTuq0qpYJgKCAAH4Er9YaYR7HlgPZy9mM8fea0ty+rEw7r4/6fDg18e1Oltt/0D6/Y2tMoAa8ZepjXkQUgSZXTUaGq+c/sCbiidQggh7BAwnt1LIRcWqrglxPd9T2n7CdUrbfhQhG1q2O77PIHVlHU/GU6CJ2wJfpAlPEHxyebbfiAol8HdJpD4zlqT4EoHK13TxYD5AKSV/dwoiqUjeuQsGCUCk6oW70iuyXITxUwzbLmKaoahnIN2wBqqme4VIUiEO3+Ha8stvTWhGQ9Ti96TWLfUnDTlN25Zqb5Htnsk6pxA80Eg2CumpRCgs6OYEa9KcFSJU232St/yc"
 }

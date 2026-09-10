@@ -3,7 +3,7 @@
 
 #define MyAppName "Logo Declinaisons"
 #ifndef MyAppVersion
-  #define MyAppVersion "1.4.2"
+  #define MyAppVersion "1.4.3"
 #endif
 #define MyAppPublisher "Pupille Studio"
 #define MyAppURL "https://logodeclinaisons.com"

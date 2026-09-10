@@ -20,12 +20,11 @@ import { handleCheckout } from '../../lib/checkout.js';
 // changelog) ; lue aussi par lib/download.js pour construire l'URL de l'installeur.
 // downloadUrl : page de téléchargement du site, montrée par les clients ≤ 1.3.0.
 export const LATEST = {
-            version: '1.4.2',
+            version: '1.4.3',
             releaseDate: '2026-09-10',
             downloadUrl: 'https://logotyps.fr/download',
             changelog: [
-            "🔑 Lien « Clé perdue ? » dans la fenêtre de licence : retrouvez vos achats Lemon Squeezy avec votre e-mail",
-            "🏷️ Libellés des licences annuelle et Studio"
+            "💳 Licence annuelle : lien « Gérer ou annuler mon abonnement » dans la fenêtre de licence"
         ]
 };
 
