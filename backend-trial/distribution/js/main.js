@@ -792,6 +792,19 @@ function setupEventListeners() {
         deactivateLicenseBtn.addEventListener('click', handleLicenseDeactivation);
     }
 
+    // « Clé perdue ? » : le portail Lemon Squeezy renvoie ses commandes (et clés) par e-mail.
+    const findLicenseLink = document.getElementById('find-license-link');
+    if (findLicenseLink) {
+        findLicenseLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            const url = 'https://app.lemonsqueezy.com/my-orders';
+            try {
+                if (window.cep && window.cep.util) window.cep.util.openURLInDefaultBrowser(url);
+                else window.open(url, '_blank');
+            } catch (err) { window.open(url, '_blank'); }
+        });
+    }
+
     // Fermer la modal en cliquant en dehors
     if (licenseModal) {
         licenseModal.addEventListener('click', (e) => {
@@ -803,6 +816,13 @@ function setupEventListeners() {
 
     // Les modales de mise a jour sont cablees dans js/updater.js (bindModals).
 
+}
+
+// Libellé du type de licence renvoyé par le backend (lifetime / annual / studio ;
+// 'monthly' pour les licences activées avant le 2026-09-10).
+function licenseTypeLabel(type) {
+    const key = { lifetime: 'lic_lifetime', annual: 'lic_annual', monthly: 'lic_monthly', studio: 'lic_studio' }[type] || 'lic_lifetime';
+    return typeof t === 'function' ? t(key) : (type || 'lifetime');
 }
 
 /**
@@ -833,7 +853,7 @@ async function openLicenseModal() {
 
         // Remplir les infos
         document.getElementById('license-type-display').textContent =
-            license.type === 'lifetime' ? 'Lifetime (à vie)' : 'Mensuelle';
+            licenseTypeLabel(license.type);
         document.getElementById('license-key-display').textContent =
             license.key.substring(0, 10) + '...';
     } else {

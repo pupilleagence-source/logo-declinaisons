@@ -13,7 +13,7 @@
  */
 
 const UpdateChecker = {
-    CURRENT_VERSION: '1.4.1',
+    CURRENT_VERSION: '1.4.2',
 
     BASE_URL: 'https://logotyps.vercel.app',
     MANIFEST_URL: 'https://logotyps.vercel.app/api/updates/manifest',
@@ -21,7 +21,7 @@ const UpdateChecker = {
     // Téléchargement direct de l'installeur (redirection 302 vers le fichier de la
     // dernière version) : l'utilisateur ne voit jamais GitHub.
     DOWNLOAD_URL: 'https://logotyps.vercel.app/api/download?platform=',
-    UPDATE_PAGE_URL: 'https://logotyps.fr/update',
+    UPDATE_PAGE_URL: 'https://logotyps.fr/download',
 
     SNOOZE_MS: 24 * 60 * 60 * 1000,
     // Au-delà, une mise à jour à chaud est considérée en échec (750 Ko à télécharger :

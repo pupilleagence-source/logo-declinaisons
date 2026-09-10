@@ -13,7 +13,7 @@
  */
 
 const UpdateChecker = {
-    CURRENT_VERSION: '1.4.1',
+    CURRENT_VERSION: '1.4.2',
 
     BASE_URL: 'https://logotyps.vercel.app',
     MANIFEST_URL: 'https://logotyps.vercel.app/api/updates/manifest',

@@ -1,10 +1,9 @@
 {
-  "version": "1.4.1",
+  "version": "1.4.2",
   "releaseDate": "2026-09-10",
   "changelog": [
-    "⬇️ Téléchargement direct de l'installeur depuis le panneau, sans passer par GitHub",
-    "🔑 Changement de poste après une mise à jour d'Illustrator : l'ancienne activation est libérée automatiquement",
-    "🌐 Page de téléchargement : logotyps.fr/update"
+    "🔑 Lien « Clé perdue ? » dans la fenêtre de licence : retrouvez vos achats Lemon Squeezy avec votre e-mail",
+    "🏷️ Libellés des licences annuelle et Studio"
   ],
   "hotUpdateFrom": "1.4.0",
   "assetsFingerprint": "2866e7f7a01e199c6602eeb41a8fe69faf21a6842f235a9a4fb53d96ae8f6a45",
@@ -12,18 +11,18 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "ee8853112f576212d665d3ec3729cdb4cbf61ea3c40fe879360cf4a696c6e449",
+      "sha256": "99a79dec44e3c6fd9bbf49795cc3faf22f1754aa49b1ff5821974932322bb475",
       "size": 2063
     },
     {
       "path": "css/styles.css",
-      "sha256": "c92096cc7619f0f5a7f328ff71b45bc02a76c5a3247e9f98def132047e5625e8",
-      "size": 37801
+      "sha256": "031bb097785d80cb50d997b1ab55cee20852d55d3c3ff81f5e987c64ad7faafa",
+      "size": 38066
     },
     {
       "path": "index.html",
-      "sha256": "012ea8580810ce17cf9ef25007dad6da2ba8dc8976c74910a09a3e256693e584",
-      "size": 30128
+      "sha256": "71154a69b928e64fdf0b65623bb194816186092e5e111f16105e9a8a4d30be46",
+      "size": 30359
     },
     {
       "path": "js/auto-updater.js",
@@ -37,8 +36,8 @@
     },
     {
       "path": "js/i18n.js",
-      "sha256": "9abd7652bc116f365e4d33f559cf224ab037dd3ec8997fa248b313a8d50318de",
-      "size": 46424
+      "sha256": "397cac716da695b5b7b24a0037d68d96c09d34d636c5025c8c51e885bebbfbd8",
+      "size": 47088
     },
     {
       "path": "js/idml-generator.js",
@@ -47,8 +46,8 @@
     },
     {
       "path": "js/main.js",
-      "sha256": "9d669ec47f5386465be6c5f5d00d139e8219738247a30fa3dbcf71e32b179fe7",
-      "size": 117760
+      "sha256": "739ff1473f91b60450a5552fa225da90c6b92d20335acc0b21f16fb45a557cdb",
+      "size": 118716
     },
     {
       "path": "js/pending-updates.js",
@@ -62,12 +61,12 @@
     },
     {
       "path": "js/updater.js",
-      "sha256": "0e724b898d596d66aa00bcb3c45825e7f327855d2b933cc0f36f53d279c34b03",
-      "size": 15901
+      "sha256": "1a0f5e531ba55420d391c27b938f098ac6d9ea5c8642fc5d14a449f6f333ce7a",
+      "size": 15903
     },
     {
       "path": "jsx/hostscript.jsx",
-      "sha256": "cb0b157771cd5a3524e3335e3e42638e058aff894f81af1b66bd9924b181c39a",
+      "sha256": "605ec1fbaa556f413b8848d6ee423213c1b80939b04b2990daed7b26d3b4f702",
       "size": 162780
     },
     {
@@ -86,5 +85,5 @@
       "size": 53002
     }
   ],
-  "signature": "BE6gG2yGPuUXrDGfmBhdhUldBQWIdYDRrQcI7Hcjgtb7J+q1upalL8NXen0qoo8BSK7w47Czg/KLC+oLFpbNH3PnmVvdPX9MaEHXHlwDcq8BQEtlMWMH3PNJIpHNrIRsosWc9spX/sDcDGEWX6p9nfwAHe8vFcNlElW1aFCgsiFtqU1DkxVnGlZuc4f8pvdE7sWYpeAuwqm+vlxG+ND03wP6bSKGMfazCa+nMjf1ijYDNDO3dTBFXN4kenZeu1n5QkPYTwcuKCcBNe13QP9ag3Fc1MCfqXIZ4X0iy1+bxhg7EfOcluM1OpHpJdtuErcSUxzoNOLODbrCEb1OJBJoMTZkseuj4tUtBvjDrcf5WFDZviqupaMWqnyfT/b07bcHM654TBjvz9jaLXcBpSQWxpHQNw1rYYkQL9TZypxiTDAxAt6Tpm7NsvC1FmYI2zluk7wBbt5VIKd6FYGl/cj3HJGiHxC5xtgkF7SXalEWW6oWoWP0YXKlEmVI6Dkcuz4H"
+  "signature": "tNGNWiCW3Q9B5YEdVYsoHGlpu4z3GxzfE5JEvlCjvi/dxcxIVKnncWmBVzsJGnZZwPDQANWZLI6F5hO9NmupbhhkKBtGDSVsM7TPq/PPserSf8F1qpAgQm80/B5bCqhdhbhWL/h0ei/E2ZGRXYdiJnAf9jElxhva/1UJd50Scvp1s6T7g4OtZbYrkR8DcWuAZlVYMOVQJ5BQLxC82PBs3wHsLcjwbxvLRcQVP8mvCGt3T+pvwQwwKFx2s0wTScTBfw8j1QGsP7bRLPKdf9s5P3pkT967drJWzy6dJvBjauzuCsPVZK2/8Xl+aWAbRLtV+Sr9UgcGDO+2g0jn6XVPEUkUq4QAXbB4C8O1RvbBkItB6XrH/sYtXkX7zdwonnp8m9xdeH0fFNakuSbcSobxrwAx/V+aqZccky52sfpZJeGfc/jn0UQyk7LTyYCHAyJFFsfNkl4+nIf1/xwDTlVs6822KnLNP/t0GZO7x1Aj2wGJC6cOmvlUicW+6sRsJWG5"
 }

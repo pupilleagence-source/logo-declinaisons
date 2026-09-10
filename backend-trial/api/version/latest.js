@@ -20,13 +20,12 @@ import { handleCheckout } from '../../lib/checkout.js';
 // changelog) ; lue aussi par lib/download.js pour construire l'URL de l'installeur.
 // downloadUrl : page de téléchargement du site, montrée par les clients ≤ 1.3.0.
 export const LATEST = {
-            version: '1.4.1',
+            version: '1.4.2',
             releaseDate: '2026-09-10',
             downloadUrl: 'https://logotyps.fr/download',
             changelog: [
-            "⬇️ Téléchargement direct de l'installeur depuis le panneau, sans passer par GitHub",
-            "🔑 Changement de poste après une mise à jour d'Illustrator : l'ancienne activation est libérée automatiquement",
-            "🌐 Page de téléchargement : logotyps.fr/download"
+            "🔑 Lien « Clé perdue ? » dans la fenêtre de licence : retrouvez vos achats Lemon Squeezy avec votre e-mail",
+            "🏷️ Libellés des licences annuelle et Studio"
         ]
 };
 
