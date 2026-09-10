@@ -57,6 +57,10 @@
       "dest": "/api/version/latest.js?download=1"
     },
     {
+      "src": "/api/checkout",
+      "dest": "/api/version/latest.js?checkout=1"
+    },
+    {
       "src": "/api/keepalive",
       "dest": "/api/keepalive/index.js"
     }
