@@ -26,7 +26,8 @@ function fakeRes() {
     check('variante présélectionnée = annuel', body.data.relationships.variant.data.id, '1077121');
     check('les 3 plans restent commutables', body.data.attributes.product_options.enabled_variants, [1077121, 1077127, 1077131]);
     check('code promo pré-rempli', body.data.attributes.checkout_data.discount_code, 'LANCEMENT');
-    check('retour vers la page de téléchargement après achat', body.data.attributes.product_options.redirect_url, 'https://logotyps.fr/download?achat=1');
+    check('retour vers la page de téléchargement avec la clé (variables Lemon Squeezy)', body.data.attributes.product_options.redirect_url, 'https://logotyps.fr/download?achat=1&key=[license_key]&email=[email]&order=[order_id]');
+    check('le bouton du reçu mène au même endroit', body.data.attributes.product_options.receipt_link_url, body.data.attributes.product_options.redirect_url);
     check('pas de checkout_data sans code', mod.buildCheckoutBody('lifetime').data.attributes.checkout_data, undefined);
     check('store', body.data.relationships.store.data.id, '240133');
 

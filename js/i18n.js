@@ -104,6 +104,9 @@ const I18N = {
             lic_deactivate: 'Désactiver',
             lic_lifetime: 'Lifetime (à vie)',
             lic_monthly: 'Mensuelle',
+            lic_annual: 'Annuelle',
+            lic_studio: 'Studio',
+            lic_find_key: 'Clé perdue ? Retrouvez vos achats Lemon Squeezy avec votre e-mail',
             lic_licensed: '✓ Licensed',
             lic_license_key_btn: 'License Key',
 
@@ -300,6 +303,9 @@ const I18N = {
             lic_deactivate: 'Deactivate',
             lic_lifetime: 'Lifetime',
             lic_monthly: 'Monthly',
+            lic_annual: 'Annual',
+            lic_studio: 'Studio',
+            lic_find_key: 'Lost your key? Find your Lemon Squeezy orders with your email',
             lic_licensed: '✓ Licensed',
             lic_license_key_btn: 'License Key',
 
@@ -485,6 +491,9 @@ const I18N = {
             lic_deactivate: 'Desactivar',
             lic_lifetime: 'De por vida',
             lic_monthly: 'Mensual',
+            lic_annual: 'Anual',
+            lic_studio: 'Studio',
+            lic_find_key: '¿Clave perdida? Encuentra tus compras Lemon Squeezy con tu e-mail',
             lic_licensed: '✓ Con licencia',
             lic_license_key_btn: 'Clave de licencia',
 
@@ -670,6 +679,9 @@ const I18N = {
             lic_deactivate: 'Disattiva',
             lic_lifetime: 'A vita',
             lic_monthly: 'Mensile',
+            lic_annual: 'Annuale',
+            lic_studio: 'Studio',
+            lic_find_key: 'Chiave persa? Ritrova i tuoi acquisti Lemon Squeezy con la tua e-mail',
             lic_licensed: '✓ Con licenza',
             lic_license_key_btn: 'Chiave di licenza',
 

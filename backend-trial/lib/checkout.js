@@ -27,6 +27,11 @@ export const PLANS = {
 };
 export const DEFAULT_PLAN = 'lifetime';
 const DOWNLOAD_PAGE = 'https://logotyps.fr/download';
+// Après paiement, Lemon Squeezy remplace [license_key], [email], [order_id] par les vraies
+// valeurs (variables de lien) : la page /download affiche la clé tout de suite. Le bouton
+// du reçu (e-mail) mène au même endroit. Sans ça, la redirection court-circuite la page
+// de confirmation de Lemon Squeezy et le client ne voit jamais sa clé.
+const THANK_YOU_URL = DOWNLOAD_PAGE + '?achat=1&key=[license_key]&email=[email]&order=[order_id]';
 
 export function normalizePlan(value) {
     const p = String(value || '').toLowerCase();
@@ -45,10 +50,10 @@ export function buildCheckoutBody(plan, code) {
     const attributes = {
         product_options: {
             enabled_variants: Object.values(PLANS),
-            redirect_url: DOWNLOAD_PAGE + '?achat=1',
+            redirect_url: THANK_YOU_URL,
             receipt_button_text: 'Télécharger le plugin',
-            receipt_link_url: DOWNLOAD_PAGE,
-            receipt_thank_you_note: 'Merci ! Installez le plugin depuis logotyps.fr/download, puis collez votre clé de licence dans le panneau Logotyps d\'Illustrator.'
+            receipt_link_url: THANK_YOU_URL,
+            receipt_thank_you_note: 'Merci ! Installez le plugin depuis logotyps.fr/download, puis collez votre clé de licence dans le panneau Logotyps d\'Illustrator. Vos clés restent consultables sur app.lemonsqueezy.com/my-orders.'
         },
         checkout_options: { embed: false, logo: true, media: true, desc: true, discount: true, button_color: '#FF6B35' },
         expires_at: null,

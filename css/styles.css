@@ -1552,6 +1552,21 @@ body.exporting #cancel-btn {
     margin: 0 0 var(--space-md) 0;
 }
 
+.license-find-key {
+    margin: 8px 0 0;
+    font-size: 11px;
+}
+
+.license-find-key a {
+    color: var(--text-muted, #737373);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+.license-find-key a:hover {
+    color: var(--accent-color, #FF6B35);
+}
+
 /* Bandeau "relancez Illustrator" apres une mise a jour a chaud. Fixe en bas ; le
    conteneur recoit un padding equivalent pour que la barre d'action reste cliquable. */
 body.restart-required .container {
