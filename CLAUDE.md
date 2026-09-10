@@ -617,6 +617,8 @@ Toutes les autres sont toujours présentes dans le code.
 
 - **Release `v1.4.2` publiée le 2026-09-10 (18 h 23, Paris)**, backend déployé dans la foulée : lien « Clé perdue ? » (→ app.lemonsqueezy.com/my-orders) dans la modale de licence, libellés annuel / Studio. Manifeste 1.4.2 signé, `hotUpdateFrom` 1.4.0 : **mise à jour à chaud proposée aux postes en 1.4.0 et 1.4.1**. Même jour : `/api/checkout` (plan présélectionné, autres commutables), page `/download` avec la clé après achat, tarifs 39 / 59 / 149 € sur le site.
 
+- **Release `v1.4.3` publiée le 2026-09-10 (soir)**, backend déployé : lien « Gérer ou annuler mon abonnement » (portail client `logotyps.lemonsqueezy.com/billing`) dans la modale de licence pour les licences annuelles ; le reçu mentionne le portail. Manifeste 1.4.3 signé, `hotUpdateFrom` 1.4.0.
+
 ### À faire, par ordre de priorité
 
 1. **Ouvrir le panneau dans Illustrator et vérifier les correctifs ci-dessus.** Aucun n'a tourné pour de vrai. Regarder en priorité : le compteur de plans de travail, la typo du panneau (elle doit changer visuellement), le remplissage des sliders.
