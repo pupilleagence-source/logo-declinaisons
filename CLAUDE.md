@@ -606,6 +606,7 @@ Toutes les autres sont toujours présentes dans le code.
 - Site : page `logotyps.fr/update` (EN/FR, version + nouveautés lues sur le backend, boutons macOS/Windows, 3 étapes), `package-lock.json` régénéré (il manquait Three.js → `npm ci` cassé). Le bouton « Télécharger maintenant » de la page d'accueil affiche toujours le message « plugin en test » : le pointer vers `/update` quand la vente ouvre (`usePluginTestingNotice` dans `HeroSection`, `page.tsx`, `FinalCTASection`).
 - Panneau 1.4.1 : modale installeur → téléchargement direct ; `previousHwid` envoyé à la réactivation ; libellé « Télécharger et installer ».
 - `tests/backend-download.test.js` (20 assertions).
+- **Release `v1.4.1` publiée le 2026-09-10 (16 h 37, Paris)** via `npm run release -- 1.4.1 … --deploy` (run `34489809147`), backend déployé dans la foulée. Vérifié en prod : `latest.js` 1.4.1 avec `downloadUrl` → `logotyps.fr/update` ; manifeste signé 1.4.1, `hotUpdateFrom` 1.4.0 → **un client 1.4.0 voit la modale « Télécharger et installer » (mode à chaud)** ; `js/updater.js` servi = octets du manifeste ; `/api/download` → 302 vers les assets 1.4.1, téléchargeables. **Première mise à jour à chaud réelle à observer sur les postes de test 1.4.0** (Windows et Mac).
 
 ### À faire, par ordre de priorité
 
