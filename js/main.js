@@ -792,6 +792,19 @@ function setupEventListeners() {
         deactivateLicenseBtn.addEventListener('click', handleLicenseDeactivation);
     }
 
+    // « Gérer ou annuler mon abonnement » : portail client de la boutique (lien magique e-mail).
+    const manageSubscriptionLink = document.getElementById('manage-subscription-link');
+    if (manageSubscriptionLink) {
+        manageSubscriptionLink.addEventListener('click', (e) => {
+            e.preventDefault();
+            const url = 'https://logotyps.lemonsqueezy.com/billing';
+            try {
+                if (window.cep && window.cep.util) window.cep.util.openURLInDefaultBrowser(url);
+                else window.open(url, '_blank');
+            } catch (err) { window.open(url, '_blank'); }
+        });
+    }
+
     // « Clé perdue ? » : le portail Lemon Squeezy renvoie ses commandes (et clés) par e-mail.
     const findLicenseLink = document.getElementById('find-license-link');
     if (findLicenseLink) {
@@ -854,6 +867,10 @@ async function openLicenseModal() {
         // Remplir les infos
         document.getElementById('license-type-display').textContent =
             licenseTypeLabel(license.type);
+        // Abonnement (annuel, ou mensuel d'avant le 2026-09-10) : lien vers le portail
+        // client Lemon Squeezy pour gérer / annuler. Rien à annuler pour une licence à vie.
+        const manageSub = document.getElementById('manage-subscription');
+        if (manageSub) manageSub.style.display = (license.type === 'annual' || license.type === 'monthly') ? 'block' : 'none';
         document.getElementById('license-key-display').textContent =
             license.key.substring(0, 10) + '...';
     } else {

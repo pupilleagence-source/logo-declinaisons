@@ -53,7 +53,7 @@ export function buildCheckoutBody(plan, code) {
             redirect_url: THANK_YOU_URL,
             receipt_button_text: 'Télécharger le plugin',
             receipt_link_url: THANK_YOU_URL,
-            receipt_thank_you_note: 'Merci ! Installez le plugin depuis logotyps.fr/download, puis collez votre clé de licence dans le panneau Logotyps d\'Illustrator. Vos clés restent consultables sur app.lemonsqueezy.com/my-orders.'
+            receipt_thank_you_note: 'Merci ! Installez le plugin depuis logotyps.fr/download, puis collez votre clé de licence dans le panneau Logotyps d\'Illustrator. Vos clés restent consultables sur app.lemonsqueezy.com/my-orders ; abonnement annuel gérable ou annulable à tout moment sur logotyps.lemonsqueezy.com/billing.'
         },
         checkout_options: { embed: false, logo: true, media: true, desc: true, discount: true, button_color: '#FF6B35' },
         expires_at: null,
