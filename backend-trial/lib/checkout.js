@@ -19,7 +19,9 @@ const API = 'https://api.lemonsqueezy.com/v1/checkouts';
 const STORE_ID = '240133';
 const PUBLIC_BUY = 'https://logotyps.lemonsqueezy.com/checkout/buy/31470257-06a8-4239-9d09-a3e119eed69e';
 
-// Variantes du produit « License » (communes aux modes test et réel).
+// Variantes du produit « License » — ids du MODE TEST. Le produit doit être copié en mode
+// réel (« Copy to Live Mode ») et la copie a d'autres ids : les remplacer ici, dans
+// license-flow.js (VARIANT_IDS), PUBLIC_BUY et les tests avant de vendre (CLAUDE.md §6).
 export const PLANS = {
     annual: 1077121,
     lifetime: 1077127,
