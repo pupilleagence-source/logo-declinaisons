@@ -212,6 +212,8 @@ Tout passe par **`evalExtendScript(fnName, params, timeout)`** — `js/main.js:1
 
 **Règle à retenir : dans `jsx/`, ne jamais supposer que `app.activeDocument` est le document de l'utilisateur.** Passer par `resolveSourceDocument()`.
 
+**Transfert sans presse-papiers (2026-09-16, non encore publié).** Le même message « Impossible de transférer certains éléments » est réapparu sur un **PC d'entreprise verrouillé** (Citrix + suite de sécurité) avec des fichiers qui passent ailleurs : `transferElementToDocument()` faisait `app.copy()` / `app.paste()`, donc dépendait du presse-papiers système, que les gestionnaires de presse-papiers, les DLP et les sessions distantes interceptent. Depuis, la voie normale est `duplicateIntoDocument()` : `element.duplicate(calqueCible, ElementPlacement.PLACEATBEGINNING)` directement dans le document d'export (vérifié par le compte de `pageItems`), le copier-coller ne reste qu'en repli (`transferViaClipboard()`), et la **cause réelle** de chaque échec est remontée dans le message (« icône (duplication directe refusée (…) ; copier-coller refusé (…)) »). À valider dans Illustrator sur ce poste (le panneau doit être rouvert), puis à sortir en **1.4.4** à chaud.
+
 ### 5.2 Le bouton d'action unique
 
 Il n'y a **qu'un seul bouton d'action** depuis le 2026-09-04 : `#export-btn`, câblé sur `handleAction()`. Son libellé bascule tout seul.
