@@ -1513,28 +1513,59 @@ function transferTargetLayer(doc) {
 }
 
 /**
+ * Document propriétaire d'un élément : remonte calque -> (sous-calques) -> Document.
+ * Sert à vérifier qu'une copie est bien arrivée dans le document cible.
+ * ⚠️ NE PAS se fier à targetDoc.pageItems.length pour ça : Illustrator ne rafraîchit pas
+ * ce compteur tout de suite après la duplication d'un GROUPE (mesuré le 2026-09-17 dans
+ * Illustrator : « pageItems 1 -> 1 » alors que la copie est bien dans la cible). Ce faux
+ * négatif supprimait une copie réussie — la version verticale, qui est un groupe — puis
+ * retombait sur le presse-papiers.
+ */
+function ownerDocumentOf(item) {
+    try {
+        var p = item.layer;
+        var guard = 0;
+        while (p && p.typename !== "Document" && guard < 50) {
+            p = p.parent;
+            guard++;
+        }
+        return (p && p.typename === "Document") ? p : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+/**
  * Voie normale depuis la 1.4.4 : duplique l'élément directement dans un calque du
  * document cible, sans presse-papiers. Le copier-coller (ancienne voie) dépend du
  * presse-papiers du système, que les gestionnaires de presse-papiers, les suites de
  * sécurité d'entreprise et les sessions Citrix / Bureau à distance interceptent :
  * les transferts échouaient sur certains postes seulement, avec les mêmes fichiers.
+ * Mesuré dans Illustrator : fonctionne aussi pour un élément d'un calque verrouillé ou
+ * masqué (là où le copier-coller échoue : « Cannot modify a layer that is locked »).
  * @return {{item: PageItem|null, error: string}}
  */
 function duplicateIntoDocument(element, sourceDoc, targetDoc) {
     try {
         app.activeDocument = sourceDoc;
         var layer = transferTargetLayer(targetDoc);
-        var before = targetDoc.pageItems.length;
         var dup = element.duplicate(layer, ElementPlacement.PLACEATBEGINNING);
         if (!dup || !dup.typename) {
             return { item: null, error: "duplication directe sans résultat" };
         }
-        if (targetDoc.pageItems.length <= before) {
-            // La copie n'est pas arrivée dans le document cible (restée dans la source) :
-            // on la retire et on laisse le repli presse-papiers essayer.
-            try { dup.remove(); } catch (e) {}
-            return { item: null, error: "la copie n'a pas atteint le nouveau document" };
+
+        var owner = ownerDocumentOf(dup);
+        if (owner && !isSameDocument(owner, targetDoc)) {
+            // La copie est restée dans un autre document : tenter de la déplacer.
+            try { dup.move(layer, ElementPlacement.PLACEATBEGINNING); } catch (moveErr) {}
+            owner = ownerDocumentOf(dup);
+            if (owner && !isSameDocument(owner, targetDoc)) {
+                try { dup.remove(); } catch (e) {}
+                return { item: null, error: "la copie est restée dans « " + owner.name + " »" };
+            }
         }
+        // Propriétaire = cible, ou indéterminable : duplicate() vers un calque de la cible
+        // n'a pas levé d'exception, on fait confiance (mesuré : la copie arrive toujours).
         dup.hidden = true;
         return { item: dup, error: "" };
     } catch (e) {
@@ -1548,20 +1579,26 @@ function duplicateIntoDocument(element, sourceDoc, targetDoc) {
  */
 function transferViaClipboard(element, sourceDoc, targetDoc) {
     var duplicate = null;
+    var step = "préparation";
     try {
         var originalSelection = sourceDoc.selection;
         app.activeDocument = sourceDoc;
+        step = "duplication";
         duplicate = element.duplicate();
         duplicate.hidden = false;
+        step = "sélection";
         sourceDoc.selection = null;
         duplicate.selected = true;
+        step = "copie";
         app.copy();
+        step = "collage";
         app.activeDocument = targetDoc;
         app.paste();
         var transferred = null;
         if (targetDoc.selection && targetDoc.selection.length > 0) {
             transferred = targetDoc.selection[0];
         }
+        step = "nettoyage";
         app.activeDocument = sourceDoc;
         try { duplicate.remove(); } catch (e) {}
         duplicate = null;
@@ -1577,7 +1614,7 @@ function transferViaClipboard(element, sourceDoc, targetDoc) {
             if (duplicate) duplicate.remove();
             sourceDoc.selection = null;
         } catch (cleanupError) {}
-        return { item: null, error: "copier-coller refusé (" + (e.message || e.toString()) + ")" };
+        return { item: null, error: "copier-coller refusé à l'étape « " + step + " » (" + (e.message || e.toString()) + ")" };
     }
 }
 

@@ -7,7 +7,7 @@
   "scripts": {
     "build:zxp": "node build-zxp.js",
     "release": "node scripts/release.js",
-    "test": "node tests/output-folder.test.js && node tests/idml-fallback.test.js && node tests/font-style.test.js && node tests/font-style-template.test.js && node tests/presentation-status.test.js && node tests/json-polyfill.test.js && node tests/static-crosscheck.test.js && node tests/release-script.test.js && node tests/hot-update.test.js && node tests/backend-license.test.js && node tests/backend-download.test.js && node tests/backend-checkout.test.js"
+    "test": "node tests/output-folder.test.js && node tests/idml-fallback.test.js && node tests/font-style.test.js && node tests/font-style-template.test.js && node tests/presentation-status.test.js && node tests/json-polyfill.test.js && node tests/transfer.test.js && node tests/static-crosscheck.test.js && node tests/release-script.test.js && node tests/hot-update.test.js && node tests/backend-license.test.js && node tests/backend-download.test.js && node tests/backend-checkout.test.js"
   },
   "cep": {
     "name": "Logo Déclinaisons",
