@@ -191,7 +191,13 @@ const quiet = { log() {}, warn() {}, error() {} };
     check('instance libérée chez LS', ls.state.instances.length, 0);
     check('Redis vidé', store.m.size, 0);
     r = await deactivateLicense({ licenseKey: KEY, hwid: HW }, deps(ls, store));
-    check('déjà désactivé → 404', r.status, 404);
+    check('déjà désactivé → 200 idempotent, rien supprimé', [r.status, r.body.success, r.body.deleted, r.body.released], [200, true, false, false]);
+    // Enregistrement serveur disparu (clé de test refusée, révocation) mais instance encore
+    // chez LS au nom du poste : succès + instance libérée.
+    ls = fakeLemon({ instances: [{ id: 'orph-1', name: HW, createdAt: '2026-01-01' }] }); store = fakeStore();
+    r = await deactivateLicense({ licenseKey: KEY, hwid: HW }, deps(ls, store));
+    check('sans enregistrement : succès et instance orpheline libérée', [r.status, r.body.success, r.body.released], [200, true, true]);
+    check('instance retirée chez LS', ls.state.instances.length, 0);
     await activateLicense({ licenseKey: KEY, email: 'e', hwid: HW }, deps(ls, store));
     ls.state.instances = []; // instance déjà partie côté LS
     r = await deactivateLicense({ licenseKey: KEY, hwid: HW }, deps(ls, store));

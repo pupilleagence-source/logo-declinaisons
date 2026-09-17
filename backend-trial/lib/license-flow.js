@@ -218,7 +218,30 @@ export async function deactivateLicense(body, { ls, store, log = console }) {
     if (!licenseKey || !hwid) return { status: 400, body: { success: false, message: 'Paramètres manquants (licenseKey et hwid requis)' } };
 
     const record = await readRecord(store, hwid);
-    if (!record) return { status: 404, body: { success: false, message: 'Aucune licence trouvée pour cet appareil' } };
+    if (!record) {
+        // Pas d'enregistrement pour ce poste : déjà désactivé, ou enregistrement supprimé
+        // côté serveur (clé de test refusée, révocation). Le but « ce poste n'a plus de
+        // licence » est atteint : succès, idempotent. Avant le 2026-09-17 on répondait 404
+        // et le panneau restait bloqué sur « Licensed » sans pouvoir se désactiver.
+        // On libère tout de même une éventuelle instance orpheline au nom de ce poste.
+        const cleanKey = String(licenseKey).trim();
+        let released = false;
+        try {
+            const v = await ls.validate(cleanKey);
+            const keyId = v.data && v.data.license_key && v.data.license_key.id;
+            const instances = keyId ? await ls.listInstances(keyId) : null;
+            if (instances) {
+                for (const inst of instances.filter(i => i.name === hwid)) {
+                    const d = await ls.deactivate(cleanKey, inst.id);
+                    if (d.data.deactivated) released = true;
+                }
+            }
+        } catch (e) {
+            log.warn('⚠️ Recherche d\'instance orpheline impossible :', e.message);
+        }
+        log.log('ℹ️ Aucune licence enregistrée pour ce poste' + (released ? ', instance orpheline libérée' : ''));
+        return { status: 200, body: { success: true, message: 'Aucune licence active sur ce poste : rien à désactiver.', deleted: false, released } };
+    }
 
     if (record.instanceId) {
         const d = await ls.deactivate(record.licenseKey, record.instanceId);
