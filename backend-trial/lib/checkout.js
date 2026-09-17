@@ -17,15 +17,15 @@
 
 const API = 'https://api.lemonsqueezy.com/v1/checkouts';
 const STORE_ID = '240133';
-const PUBLIC_BUY = 'https://logotyps.lemonsqueezy.com/checkout/buy/31470257-06a8-4239-9d09-a3e119eed69e';
+const PUBLIC_BUY = 'https://logotyps.lemonsqueezy.com/checkout/buy/2abc04b9-663c-4a1d-ad3a-45bd95228691';
 
-// Variantes du produit « License » — ids du MODE TEST. Le produit doit être copié en mode
-// réel (« Copy to Live Mode ») et la copie a d'autres ids : les remplacer ici, dans
-// license-flow.js (VARIANT_IDS), PUBLIC_BUY et les tests avant de vendre (CLAUDE.md §6).
+// Variantes du produit « License » en MODE RÉEL (produit 1368375, boutique activée le
+// 2026-09-17). Les ids du mode test étaient 1077121 / 1077127 / 1077131 (produit 684890) :
+// un checkout créé avec une clé API de test doit utiliser ceux-là, pas ceux-ci.
 export const PLANS = {
-    annual: 1077121,
-    lifetime: 1077127,
-    studio: 1077131
+    annual: 2138293,
+    lifetime: 2138292,
+    studio: 2138295
 };
 export const DEFAULT_PLAN = 'lifetime';
 const DOWNLOAD_PAGE = 'https://logotyps.fr/download';

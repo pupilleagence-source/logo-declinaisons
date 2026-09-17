@@ -23,8 +23,8 @@ function fakeRes() {
 
     console.log('\n--- corps envoyé à Lemon Squeezy ---');
     const body = mod.buildCheckoutBody('annual', 'LANCEMENT');
-    check('variante présélectionnée = annuel', body.data.relationships.variant.data.id, '1077121');
-    check('les 3 plans restent commutables', body.data.attributes.product_options.enabled_variants, [1077121, 1077127, 1077131]);
+    check('variante présélectionnée = annuel', body.data.relationships.variant.data.id, '2138293');
+    check('les 3 plans restent commutables', body.data.attributes.product_options.enabled_variants, [2138293, 2138292, 2138295]);
     check('code promo pré-rempli', body.data.attributes.checkout_data.discount_code, 'LANCEMENT');
     check('retour vers la page de téléchargement avec la clé (variables Lemon Squeezy)', body.data.attributes.product_options.redirect_url, 'https://logotyps.fr/download?achat=1&key=[license_key]&email=[email]&order=[order_id]');
     check('le bouton du reçu mène au même endroit', body.data.attributes.product_options.receipt_link_url, body.data.attributes.product_options.redirect_url);
@@ -43,7 +43,7 @@ function fakeRes() {
     let url = await mod.createCheckoutUrl('studio', '', { fetchImpl: okFetch, apiKey: 'K' });
     check('URL du checkout créé', url, 'https://logotyps.lemonsqueezy.com/checkout/custom/abc?signature=x');
     check('POST sur /v1/checkouts avec Bearer', [calls[0].init.method, calls[0].init.headers.Authorization, calls[0].url], ['POST', 'Bearer K', 'https://api.lemonsqueezy.com/v1/checkouts']);
-    check('variante studio dans le corps', JSON.parse(calls[0].init.body).data.relationships.variant.data.id, '1077131');
+    check('variante studio dans le corps', JSON.parse(calls[0].init.body).data.relationships.variant.data.id, '2138295');
     check('sans clé API → null (repli)', await mod.createCheckoutUrl('annual', '', { fetchImpl: okFetch, apiKey: '' }), null);
     check('API en erreur → null', await mod.createCheckoutUrl('annual', '', { fetchImpl: async () => ({ ok: false, json: async () => ({ errors: [{}] }) }), apiKey: 'K' }), null);
     check('réseau en panne → null', await mod.createCheckoutUrl('annual', '', { fetchImpl: async () => { throw new Error('ECONNRESET'); }, apiKey: 'K' }), null);
@@ -54,11 +54,11 @@ function fakeRes() {
     let r = await call({ plan: 'annual' }, { fetchImpl: okFetch, apiKey: 'K' });
     check('annual → 302 vers le checkout créé', [r.code, r.headers.location], [302, 'https://logotyps.lemonsqueezy.com/checkout/custom/abc?signature=x']);
     r = await call({ plan: 'lifetime', code: 'lancement' }, { fetchImpl: async () => { throw new Error('down'); }, apiKey: 'K' });
-    check('API en panne → repli sur le lien public de la variante + code', [r.code, r.headers.location], [302, 'https://logotyps.lemonsqueezy.com/checkout/buy/31470257-06a8-4239-9d09-a3e119eed69e?enabled=1077127&checkout[discount_code]=LANCEMENT']);
+    check('API en panne → repli sur le lien public de la variante + code', [r.code, r.headers.location], [302, 'https://logotyps.lemonsqueezy.com/checkout/buy/2abc04b9-663c-4a1d-ad3a-45bd95228691?enabled=2138292&checkout[discount_code]=LANCEMENT']);
     r = await call({ plan: 'studio' }, { fetchImpl: okFetch, apiKey: '' });
-    check('sans clé API → repli public studio', r.headers.location, 'https://logotyps.lemonsqueezy.com/checkout/buy/31470257-06a8-4239-9d09-a3e119eed69e?enabled=1077131');
+    check('sans clé API → repli public studio', r.headers.location, 'https://logotyps.lemonsqueezy.com/checkout/buy/2abc04b9-663c-4a1d-ad3a-45bd95228691?enabled=2138295');
     r = await call({}, { fetchImpl: okFetch, apiKey: 'K' });
-    check('sans plan → lifetime par défaut', JSON.parse(calls[calls.length - 1].init.body).data.relationships.variant.data.id, '1077127');
+    check('sans plan → lifetime par défaut', JSON.parse(calls[calls.length - 1].init.body).data.relationships.variant.data.id, '2138292');
     r = await call({ plan: 'annual', lang: 'en' }, { fetchImpl: okFetch, apiKey: 'K' });
     check('?lang=en transmis au checkout créé', JSON.parse(calls[calls.length - 1].init.body).data.attributes.product_options.receipt_button_text, 'Download the plugin');
     r = await call({ plan: 'gold' }, { fetchImpl: okFetch, apiKey: 'K' });

@@ -27,7 +27,7 @@ function fakeStore() {
 function fakeLemon({ keyStatus = 'active', limit = 3, instances = [], keyId = 42, validateInactiveAsInvalid = false, apiKey = true } = {}) {
     const calls = { validate: 0, activate: 0, deactivate: 0, listInstances: 0 };
     const state = { instances: instances.map(i => Object.assign({}, i)), nextId: 1, keyStatus };
-    const meta = { variant_id: 1077127, customer_email: 'c@x.fr' };
+    const meta = { variant_id: 2138292, customer_email: 'c@x.fr' };
     const lk = () => ({ id: keyId, status: state.keyStatus, activation_limit: limit, activation_usage: state.instances.length });
     const keyError = () => state.keyStatus === 'disabled' ? 'This license key is disabled.' : state.keyStatus === 'expired' ? 'This license key has expired.' : state.keyStatus === 'missing' ? 'license_key not found.' : null;
     return {
