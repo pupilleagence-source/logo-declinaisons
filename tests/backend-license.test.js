@@ -24,11 +24,11 @@ function fakeStore() {
 }
 
 // Faux Lemon Squeezy : une clé, des instances nommées, compteur d'activations.
-function fakeLemon({ keyStatus = 'active', limit = 3, instances = [], keyId = 42, validateInactiveAsInvalid = false, apiKey = true } = {}) {
+function fakeLemon({ keyStatus = 'active', limit = 3, instances = [], keyId = 42, validateInactiveAsInvalid = false, apiKey = true, testMode = false } = {}) {
     const calls = { validate: 0, activate: 0, deactivate: 0, listInstances: 0 };
-    const state = { instances: instances.map(i => Object.assign({}, i)), nextId: 1, keyStatus };
+    const state = { instances: instances.map(i => Object.assign({}, i)), nextId: 1, keyStatus, testMode };
     const meta = { variant_id: 2138292, customer_email: 'c@x.fr' };
-    const lk = () => ({ id: keyId, status: state.keyStatus, activation_limit: limit, activation_usage: state.instances.length });
+    const lk = () => ({ id: keyId, status: state.keyStatus, activation_limit: limit, activation_usage: state.instances.length, test_mode: state.testMode });
     const keyError = () => state.keyStatus === 'disabled' ? 'This license key is disabled.' : state.keyStatus === 'expired' ? 'This license key has expired.' : state.keyStatus === 'missing' ? 'license_key not found.' : null;
     return {
         calls, state,
@@ -247,6 +247,31 @@ const quiet = { log() {}, warn() {}, error() {} };
     check('listInstances : Bearer + filtre', [seen[2].init.headers.Authorization, /license-key-instances\?filter\[license_key_id\]=42/.test(seen[2].url)], ['Bearer K', true]);
     const noKey = lemon.createLemonClient({ apiKey: '', fetchImpl: async () => { throw new Error('ne doit pas être appelé'); } });
     check('sans clé API → null sans appel', await noKey.listInstances(42), null);
+
+    console.log('\n--- Clé de mode test : refusée à l activation et à la vérification ---');
+    ls = fakeLemon({ testMode: true }); store = fakeStore();
+    r = await activateLicense({ licenseKey: KEY, email: 'e', hwid: HW }, deps(ls, store));
+    check('activation refusée (400) avec le message mode test', [r.status, r.body.success, /mode test/.test(r.body.message)], [400, false, true]);
+    check('aucune instance créée chez LS', ls.state.instances.length, 0);
+    check('rien en Redis', store.m.size, 0);
+    // Clé activée à l époque du mode test, toujours enregistrée : la vérification périodique la refuse.
+    ls = fakeLemon(); store = fakeStore();
+    await activateLicense({ licenseKey: KEY, email: 'e', hwid: HW }, deps(ls, store));
+    ls.state.testMode = true;
+    r = await validateLicense({ hwid: HW }, deps(ls, store));
+    check('vérification : invalide + message mode test', [r.status, r.body.valid, /mode test/.test(r.body.message)], [200, false, true]);
+    check('enregistrement supprimé (retour en essai)', store.m.has('license:' + HW), false);
+    // Re-clic sur Activer avec l enregistrement encore présent : refusé aussi, enregistrement purgé.
+    ls = fakeLemon(); store = fakeStore();
+    await activateLicense({ licenseKey: KEY, email: 'e', hwid: HW }, deps(ls, store));
+    ls.state.testMode = true;
+    r = await activateLicense({ licenseKey: KEY, email: 'e', hwid: HW }, deps(ls, store));
+    check('réactivation refusée (400)', [r.status, /mode test/.test(r.body.message)], [400, true]);
+    check('enregistrement purgé', store.m.has('license:' + HW), false);
+    // Une clé réelle n est pas concernée.
+    ls = fakeLemon(); store = fakeStore();
+    r = await activateLicense({ licenseKey: KEY, email: 'e', hwid: HW }, deps(ls, store));
+    check('clé réelle toujours acceptée', [r.status, r.body.success], [200, true]);
 
     console.log(`\n${pass} OK, ${fail} echec(s)\n`);
     process.exit(fail ? 1 : 0);

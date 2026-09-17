@@ -28,6 +28,15 @@ export function licenseTypeFor(variantId) {
 
 const OFFLINE_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 
+// L'API de licence de Lemon Squeezy (validate / activate) ne distingue pas les modes :
+// une clé achetée en MODE TEST reste « valide » après le passage de la boutique en réel
+// (constaté le 2026-09-17). Seul le propriétaire de la boutique peut en créer, mais elle
+// ne doit pas déverrouiller le produit vendu : refusée à l'activation et à la vérification.
+export const TEST_KEY_MESSAGE = 'Cette clé provient du mode test de la boutique et ne peut pas activer le plugin. Utilisez une clé achetée sur logotyps.fr.';
+export function isTestModeKey(lsData) {
+    return !!(lsData && lsData.license_key && lsData.license_key.test_mode === true);
+}
+
 function key(hwid) { return 'license:' + hwid; }
 
 async function readRecord(store, hwid) {
@@ -72,6 +81,10 @@ export async function activateLicense(body, { ls, store, now = Date.now, log = c
     const existing = await readRecord(store, hwid);
     if (existing && existing.licenseKey === cleanKey && existing.instanceId) {
         const v = await ls.validate(cleanKey, existing.instanceId);
+        if (isTestModeKey(v.data)) {
+            await store.del(key(hwid));
+            return { status: 400, body: { success: false, message: TEST_KEY_MESSAGE } };
+        }
         if (v.data.valid) {
             const record = buildRecord(Object.assign({}, existing, base), v.data, existing.instanceId, now());
             await store.set(key(hwid), JSON.stringify(record));
@@ -102,6 +115,9 @@ export async function activateLicense(body, { ls, store, now = Date.now, log = c
     //    Une clé jamais activée peut être rapportée non valide par cet appel : on ne
     //    bloque que sur une erreur qui condamne la clé, sinon activate tranchera.
     const v = await ls.validate(cleanKey);
+    if (isTestModeKey(v.data)) {
+        return { status: 400, body: { success: false, message: TEST_KEY_MESSAGE } };
+    }
     if (!v.data.valid && isKeyDead(v.data.error)) {
         return { status: 400, body: { success: false, message: humanizeLemonError(v.data.error) } };
     }
@@ -129,6 +145,10 @@ export async function activateLicense(body, { ls, store, now = Date.now, log = c
         return { status: 400, body: { success: false, message: humanizeLemonError(a.data.error, 'Impossible d\'activer la licence') } };
     }
     const instanceId = a.data.instance && a.data.instance.id;
+    if (isTestModeKey(a.data)) {
+        if (instanceId) { try { await ls.deactivate(cleanKey, instanceId); } catch (e) {} }
+        return { status: 400, body: { success: false, message: TEST_KEY_MESSAGE } };
+    }
     const record = buildRecord(Object.assign({}, base, { licenseKeyId }), a.data, instanceId, now());
     await store.set(key(hwid), JSON.stringify(record));
     log.log('✓ Licence activée, nouvelle instance créée (' + record.licenseType + ')');
@@ -159,6 +179,12 @@ export async function validateLicense(body, { ls, store, now = Date.now, log = c
             }
             log.log('ℹ️ Licence non valide côté Lemon Squeezy : ' + (v.data.error || '?'));
             return { status: 200, body: { valid: false, message: 'Licence révoquée ou expirée' } };
+        }
+
+        if (isTestModeKey(v.data)) {
+            await store.del(key(hwid));
+            log.log('ℹ️ Clé de mode test refusée pour ce poste');
+            return { status: 200, body: { valid: false, message: TEST_KEY_MESSAGE } };
         }
 
         let instanceId = record.instanceId;
