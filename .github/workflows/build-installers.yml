@@ -111,8 +111,8 @@ jobs:
           # Create the release with both installers attached
           gh release create "$TAG" \
             --repo "$RELEASES_REPO" \
-            --title "Logo Declinaisons ${VERSION}" \
-            --notes "Logo Declinaisons v${VERSION}
+            --title "Logotyps ${VERSION}" \
+            --notes "Logotyps v${VERSION}
 
           ## Downloads
 
@@ -124,6 +124,6 @@ jobs:
           - **macOS**: double-click the .pkg and follow the installer
           - **Windows**: run the .exe as Administrator
 
-          The extension will appear in Adobe Illustrator under *Window > Extensions > Logo Déclinaisons*." \
+          The extension will appear in Adobe Illustrator under *Window > Extensions > Logotyps*." \
             artifacts/mac/*.pkg \
             artifacts/windows/*.exe

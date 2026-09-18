@@ -1,11 +1,11 @@
 #!/bin/bash
-# Build & sign a macOS .pkg installer for Logo Declinaisons CEP extension
+# Build & sign a macOS .pkg installer for the Logotyps (formerly Logo Declinaisons) CEP extension
 # Runs on macOS (GitHub Actions runner or local Mac)
 
 set -e
 
 # Config
-APP_NAME="Logo Declinaisons"
+APP_NAME="Logotyps"
 BUNDLE_ID="com.graphiste.logodeclinaisons"
 VERSION="${VERSION:-1.4.3}"
 INSTALL_DIR="/Library/Application Support/Adobe/CEP/extensions/logo-declinaisons"
@@ -154,9 +154,9 @@ DIST
 RESOURCES_DIR=$(mktemp -d)
 cat > "$RESOURCES_DIR/welcome.html" << 'WELCOME'
 <html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:20px;">
-<h2 style="color:#FF6B35;">Logo Declinaisons</h2>
-<p>Ce programme va installer l'extension <strong>Logo Declinaisons</strong> pour Adobe Illustrator.</p>
-<p style="color:#666;font-size:13px;">L'extension sera disponible dans :<br><em>Fenêtre > Extensions > Logo Déclinaisons</em></p>
+<h2 style="color:#FF6B35;">Logotyps</h2>
+<p>Ce programme va installer l'extension <strong>Logotyps</strong> pour Adobe Illustrator.</p>
+<p style="color:#666;font-size:13px;">L'extension sera disponible dans :<br><em>Fenêtre > Extensions > Logotyps</em></p>
 </body></html>
 WELCOME
 
@@ -164,7 +164,7 @@ cat > "$RESOURCES_DIR/conclusion.html" << 'CONCLUSION'
 <html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:20px;">
 <h2 style="color:#2D8659;">Installation terminée !</h2>
 <p>Redémarrez Adobe Illustrator pour voir l'extension.</p>
-<p style="color:#666;font-size:13px;">Vous la trouverez dans :<br><em>Fenêtre > Extensions > Logo Déclinaisons</em></p>
+<p style="color:#666;font-size:13px;">Vous la trouverez dans :<br><em>Fenêtre > Extensions > Logotyps</em></p>
 </body></html>
 CONCLUSION
 

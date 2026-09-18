@@ -87,7 +87,7 @@ documentSettings: {
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-    console.log('Initializing Logo Déclinaisons...');
+    console.log('Initializing Logotyps...');
 
     try {
         // Initialiser i18n (applique la langue sauvegardée)

@@ -1,5 +1,5 @@
 /**
- * Logo Déclinaisons - ExtendScript
+ * Logotyps (ex-Logo Déclinaisons) - ExtendScript
  * Code côté Illustrator
  */
 

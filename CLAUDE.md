@@ -15,6 +15,7 @@
 
 **Logo Déclinaisons** est un plugin **Adobe Illustrator CEP** (panneau HTML/JS + ExtendScript) commercialisé sous licence Lemon Squeezy. L'utilisateur sélectionne un logo dans son document `.ai`, le plugin génère automatiquement toutes les déclinaisons (icône / typo / horizontal / vertical / 3 customs) × (fit-content / carré) × (original / N&B / monochrome / monochrome clair / couleurs custom), les exporte (PNG/JPG/SVG/AI/PDF), et peut produire une **présentation InDesign `.idml`** avec des **mockups Photoshop** rendus via BridgeTalk.
 
+- **Nom visible : « Logotyps » depuis le 2026-09-18** (`<Menu>` de `CSXS/manifest.xml`, titre d'`index.html`, installeurs, notes de release, étapes du site). « Logo Déclinaisons » reste le nom du dépôt, du dossier d'extension `logo-declinaisons`, de l'`ExtensionBundleId` `com.graphiste.logodeclinaisons` et de l'`AppId` Inno Setup : **ne jamais les renommer**, ce sont les identités techniques (mise à jour à chaud, désinstallation, dossier chargé par Illustrator). Le menu Fenêtre › Extensions change chez les clients avec la 1.4.4 (le manifeste est mis à jour à chaud, Illustrator le relit au relancement).
 - **Auteur unique** : Pupille Studio (`pupille.agence@gmail.com`)
 - **Repo** : `github.com/pupilleagence-source/logo-declinaisons` — ⚠️ **PUBLIC** (vérifié le 2026-09-04 : `isPrivate: false`). Tout l'historique est lisible par n'importe qui. 34 commits sur `master`, oct. 2025 → sept. 2026
 - **Releases** : publiées dans un **repo séparé public** `pupilleagence-source/logo-declinaisons-releases`

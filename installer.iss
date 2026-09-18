@@ -1,7 +1,7 @@
-; Inno Setup script - Logo Declinaisons
+; Inno Setup script - Logotyps (ex-Logo Declinaisons ; meme AppId, meme dossier d'extension)
 ; Cree un installeur .exe pour Adobe Illustrator CEP extension
 
-#define MyAppName "Logo Declinaisons"
+#define MyAppName "Logotyps"
 #ifndef MyAppVersion
   #define MyAppVersion "1.4.3"
 #endif
@@ -82,7 +82,7 @@ french.SetupAppTitle=Installation de {#MyAppName}
 french.SetupWindowTitle=Installation de {#MyAppName}
 
 [CustomMessages]
-french.FinishedLabel=L'installation de {#MyAppName} est terminee.%n%nRedemarrez Adobe Illustrator, puis allez dans :%nFenetre > Extensions > Logo Declinaisons
+french.FinishedLabel=L'installation de {#MyAppName} est terminee.%n%nRedemarrez Adobe Illustrator, puis allez dans :%nFenetre > Extensions > Logotyps
 
 [Code]
 function NeedsAddPath(Param: string): boolean;
