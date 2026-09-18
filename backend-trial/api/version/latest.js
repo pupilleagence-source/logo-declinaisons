@@ -20,14 +20,13 @@ import { handleCheckout } from '../../lib/checkout.js';
 // changelog) ; lue aussi par lib/download.js pour construire l'URL de l'installeur.
 // downloadUrl : page de téléchargement du site, montrée par les clients ≤ 1.3.0.
 export const LATEST = {
-            version: '1.4.4',
+            version: '1.4.5',
             releaseDate: '2026-09-18',
             downloadUrl: 'https://logotyps.fr/download',
             changelog: [
-            "Le plugin s'appelle désormais Logotyps dans Fenêtre > Extensions",
-            "Génération fiable sur les postes verrouillés (Citrix, sécurité d'entreprise) : plus de passage par le presse-papiers",
-            "Message d'erreur précis si un élément ne peut pas être transféré",
-            "Bouton Désactiver et badge de licence corrigés"
+            "Les fichiers SVG et PDF sont toujours rangés dans leur dossier, quelle que soit la préférence d'export d'Illustrator",
+            "Noms des fichiers SVG et PDF corrigés (plus de nom doublé)",
+            "Libellé de la monochromie light corrigé : fond noir pour le JPG"
         ]
 };
 

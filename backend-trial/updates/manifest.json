@@ -1,11 +1,10 @@
 {
-  "version": "1.4.4",
+  "version": "1.4.5",
   "releaseDate": "2026-09-18",
   "changelog": [
-    "Le plugin s'appelle désormais Logotyps dans Fenêtre > Extensions",
-    "Génération fiable sur les postes verrouillés (Citrix, sécurité d'entreprise) : plus de passage par le presse-papiers",
-    "Message d'erreur précis si un élément ne peut pas être transféré",
-    "Bouton Désactiver et badge de licence corrigés"
+    "Les fichiers SVG et PDF sont toujours rangés dans leur dossier, quelle que soit la préférence d'export d'Illustrator",
+    "Noms des fichiers SVG et PDF corrigés (plus de nom doublé)",
+    "Libellé de la monochromie light corrigé : fond noir pour le JPG"
   ],
   "hotUpdateFrom": "1.4.0",
   "assetsFingerprint": "2866e7f7a01e199c6602eeb41a8fe69faf21a6842f235a9a4fb53d96ae8f6a45",
@@ -13,7 +12,7 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "5cc011338276c8429ffef936217208739caa2312677e3ef3f8a44040ad60c153",
+      "sha256": "9543653c087b2b8f25baca7142ed91d6d8d881876785482261a109e1baf531ec",
       "size": 2053
     },
     {
@@ -23,7 +22,7 @@
     },
     {
       "path": "index.html",
-      "sha256": "1c2c3d319337c4eaa0af0be9ccca2d055842b8084f6e98d77f7a0306aea88767",
+      "sha256": "11c6ddc545addc8a0465a0f083784aabb70ac3371deedf30426b080e30fa7b44",
       "size": 30634
     },
     {
@@ -38,7 +37,7 @@
     },
     {
       "path": "js/i18n.js",
-      "sha256": "4d3e0a1005ed1dab81190ac273ceed213a4cc8eeb2adf52648a7c58c1df7bf6b",
+      "sha256": "96ab9c734a28c9ac03a4086cc0cfda50d5e96a501004b06961f417bb0005964c",
       "size": 47484
     },
     {
@@ -63,13 +62,13 @@
     },
     {
       "path": "js/updater.js",
-      "sha256": "7cf95ab490a54e3dfb2ad3dee012f1acc3b5bc544badb90f8c08e6bd6ba6142c",
+      "sha256": "6420fc174e474bf2b1ae95533b6aab4184ae2a5a10c6f2a201e3871e18153121",
       "size": 15903
     },
     {
       "path": "jsx/hostscript.jsx",
-      "sha256": "e11397c7e2c78d4bb8afa8eca9ba757fe7efbf6a79d3c50c1b718923751e4875",
-      "size": 166786
+      "sha256": "e98c89f492abd4d71827fbbd50eb6a16cc9b019c589110d0137ed679326a2d4e",
+      "size": 169623
     },
     {
       "path": "lib/CSInterface.js",
@@ -87,5 +86,5 @@
       "size": 53002
     }
   ],
-  "signature": "WgRf+srfL6y/cSbpGrGrdfgW/lY95TaWWle1P6wVmYFXo0B3jWZ7mVyt/zN1ZzcX3UyjuCalWFs4ECMA+RPKPXS1kQTgvIieA+1tgRrRwC2tdH7AT8V+WcTDHPnX04Hdw8EutmAcSUGtooZKrMWbphQYAs+dmfoAwfgUIw+uGLaLIjsVlukW6siGQ/b83JvKC97ibDk4LqBLevL5Td2x/RKh/MYplTx2soA2lfpFwkeB+V6N4G+WGiqvp+yVgXoAgHBwG1itzaxTWPpnsWX7fZ1uE9APSeBamCHAuUtseHMO5capm9d26Yut/Lv0wA7blRh90MBERzgZ/miwzwBTRVkgRA6Ql5PtED8cZgiDgxV4TDN1Xq0Abk8qp4kKfTUDQV8bD9MUYO9gRUzjs8Tax6NKgIZrSMLVDWGaJM1KndRGlCspXHwBkOpsthDNY1mtOxpE2Z0GhFO4z4o51dIverj4ygOdIUampLsqFoNMP519r259nSLxcAVZ++gQ7jnl"
+  "signature": "ixMes7Lugwrxc9BVOl88gNpH+JMyg2B17InmXXrysk7y39X9HfU7nQcqKTiTzHGeVVJOxwLDJMYUCnzToD/XD1INhSzuWoPO1sHa89vDg2CwkirJxoMidVgu3Sm9pEznTx3B8iqoGhfTIui8pRAgAN1bWM/+HSqQ52bJWXM4THO5XTIzZKXz1ftrCi9nUdMf6NPzO1yxy0r5kqkZHy+NO2NdnnMnLmu4VRzTO2Zdy3tCn78K8P5KpGE7t34Qogb4wCMDLd1a2DfJ5+ibz+C35JUMqR9xxJpCYPhvZwgId6WxRJwEqzMulKHXBn3hrQInC5ZfedIkJgNEThC+KEbpJD8Um8euzyASDXAMeBI3aJYpOMZY6GVAn5WbhazrUQl64KJWPgcYAwaNyBFve/8Qoo/9TjGUwmDdHU09TPinZv0M5mZrscUDq6WLNfE12/RZDGKnmsHUIRibQVOZdbBaic16CIAhil+2e4y/GreqwpCqpJO+nAIO14InJZM713Rw"
 }
