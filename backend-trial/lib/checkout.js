@@ -41,14 +41,14 @@ const THANK_YOU_URL = DOWNLOAD_PAGE + '?achat=1&key=[license_key]&email=[email]&
 // sont pas remplaçables : ils doivent rester bilingues dans le dashboard.
 export const TEXTS = {
     fr: {
-        name: 'Logotyps — plugin Illustrator',
-        description: 'Toutes les déclinaisons de votre logo, exportées et rangées, plus la charte graphique InDesign avec 9 mockups : un clic dans Illustrator. Licence à vie (3 postes), annuelle (3 postes, annulable à tout moment) ou Studio (15 postes). Prix TTC. Clé de licence affichée juste après le paiement et envoyée par e-mail. Satisfait ou remboursé 14 jours.\n\nConditions d\'utilisation : logotyps.fr/terms — Confidentialité : logotyps.fr/privacy',
+        name: 'Logotyps, plugin Illustrator',
+        description: 'Toutes les déclinaisons de votre logo, exportées et rangées, plus la charte graphique InDesign avec 9 mockups : un clic dans Illustrator. Licence à vie (3 postes), annuelle (3 postes, annulable à tout moment) ou Studio (15 postes). Prix TTC. Clé de licence affichée juste après le paiement et envoyée par e-mail. Satisfait ou remboursé 14 jours.\n\nConditions d\'utilisation : logotyps.fr/terms · Confidentialité : logotyps.fr/privacy',
         receiptButton: 'Télécharger le plugin',
         thankYou: 'Merci ! Installez le plugin depuis logotyps.fr/download, puis collez votre clé de licence dans le panneau Logotyps d\'Illustrator. Vos clés restent consultables sur app.lemonsqueezy.com/my-orders ; abonnement annuel gérable ou annulable à tout moment sur logotyps.lemonsqueezy.com/billing.'
     },
     en: {
-        name: 'Logotyps — Illustrator plugin',
-        description: 'Every variation of your logo, exported and organized, plus the InDesign brand guide with 9 mockups: one click in Illustrator. Lifetime (3 computers), annual (3 computers, cancel anytime) or Studio (15 computers) license. Prices include VAT. License key shown right after payment and sent by email. 14-day money-back guarantee.\n\nTerms of use: logotyps.fr/terms — Privacy: logotyps.fr/privacy',
+        name: 'Logotyps, Illustrator plugin',
+        description: 'Every variation of your logo, exported and organized, plus the InDesign brand guide with 9 mockups: one click in Illustrator. Lifetime (3 computers), annual (3 computers, cancel anytime) or Studio (15 computers) license. Prices include VAT. License key shown right after payment and sent by email. 14-day money-back guarantee.\n\nTerms of use: logotyps.fr/terms · Privacy: logotyps.fr/privacy',
         receiptButton: 'Download the plugin',
         thankYou: 'Thank you! Install the plugin from logotyps.fr/download, then paste your license key in the Logotyps panel inside Illustrator. Your keys stay available on app.lemonsqueezy.com/my-orders; the annual plan can be managed or cancelled at any time on logotyps.lemonsqueezy.com/billing.'
     }

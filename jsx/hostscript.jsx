@@ -2198,8 +2198,10 @@ function generateArtboards(paramsJSON) {
                     for (var fmt in params.exportFormats) {
                         if (!params.exportFormats[fmt]) continue;
 
-                        // 🔧 PDF et SVG créent automatiquement leur sous-dossier via exportForScreens
-                        // PNG et JPG nécessitent la création manuelle du dossier
+                        // PDF et SVG : export « pour les écrans » vers le dossier couleur, puis
+                        // settleScreensExport() range le fichier dans SVG/ ou PDF/ (la création du
+                        // sous-dossier par Illustrator dépend d'une préférence utilisateur).
+                        // PNG et JPG : le dossier format est créé ici.
                         var exportPath;
                         if (fmt === "pdf" || fmt === "svg") {
                             // Utiliser directement colorFolder - exportForScreens créera le sous-dossier
@@ -2966,6 +2968,49 @@ function exportArtboardWithPrefix(doc, artboardName, folderPath, format, exportS
     }
 }
 
+/**
+ * Range un export « pour les écrans » (SVG / PDF) dans <dossierCouleur>/<FMT>/<nom>.<ext>,
+ * quel que soit l'état de la préférence Illustrator « Créer des sous-dossiers » d'Export
+ * pour les écrans (File > Export > Export for Screens). Jusqu'au 2026-09-18 le code comptait
+ * sur cette préférence pour créer le dossier SVG/ ou PDF/ : sur un poste où elle est
+ * désactivée (constaté chez un client), les SVG atterrissaient à la racine du dossier
+ * couleur. Rattrape aussi l'ancien nom doublé (« nomnom.svg », préfixe = nom du plan de
+ * travail) et un dossier FMT/FMT imbriqué.
+ * @return {boolean} true si le fichier est au bon endroit à la sortie
+ */
+function settleScreensExport(folderPath, fmt, artboardName, safeFilename) {
+    var upper = fmt.toUpperCase();
+    var ext = "." + fmt.toLowerCase();
+    var fmtFolder = new Folder(folderPath + "/" + upper);
+    if (!fmtFolder.exists) fmtFolder.create();
+    var canonical = new File(fmtFolder.fsName + "/" + safeFilename + ext);
+    if (canonical.exists) return true;
+
+    var places = [fmtFolder.fsName, folderPath, fmtFolder.fsName + "/" + upper];
+    var names = [safeFilename, artboardName, safeFilename + safeFilename, artboardName + artboardName];
+    for (var p = 0; p < places.length; p++) {
+        for (var n = 0; n < names.length; n++) {
+            var candidate = new File(places[p] + "/" + names[n] + ext);
+            if (!candidate.exists) continue;
+            if (candidate.fsName === canonical.fsName) return true;
+            var copied = false;
+            try { copied = candidate.copy(canonical.fsName); } catch (e) { copied = false; }
+            if (copied && canonical.exists) {
+                try { candidate.remove(); } catch (e) {}
+                try {
+                    var nested = new Folder(fmtFolder.fsName + "/" + upper);
+                    if (nested.exists && nested.getFiles().length === 0) nested.remove();
+                } catch (e) {}
+                $.writeln("   📁 " + upper + " rangé : " + canonical.fsName);
+                return true;
+            }
+            $.writeln("⚠️ Impossible de déplacer " + candidate.fsName + " vers " + canonical.fsName);
+            return false;
+        }
+    }
+    return false;
+}
+
 function exportForScreensSVG(doc, artboardIndex, baseFilePath, artboardName) {
     try {
         var exportOptions = new ExportForScreensOptionsWebOptimizedSVG();
@@ -2982,7 +3027,8 @@ function exportForScreensSVG(doc, artboardIndex, baseFilePath, artboardName) {
         itemsToExport.document = false;
         
         var fileSpec = new File(baseFilePath + ".svg");
-        doc.exportForScreens(fileSpec.parent, ExportForScreensType.SE_SVG, exportOptions, itemsToExport, artboardName);
+        // Préfixe vide : avec artboardName en préfixe, Illustrator produisait « nomnom.svg ».
+        doc.exportForScreens(fileSpec.parent, ExportForScreensType.SE_SVG, exportOptions, itemsToExport, "");
     } catch (e) {
         try {
             var opts = new ExportOptionsSVG();
@@ -2994,6 +3040,8 @@ function exportForScreensSVG(doc, artboardIndex, baseFilePath, artboardName) {
             doc.exportFile(new File(baseFilePath + ".svg"), ExportType.SVG, opts);
         } catch (fallbackError) {}
     }
+    var svgSpec = new File(baseFilePath + ".svg");
+    settleScreensExport(svgSpec.parent.fsName, "svg", artboardName, svgSpec.name.replace(/\.svg$/i, ""));
 }
 
 function exportForScreensPDF(doc, artboardIndex, baseFilePath, artboardName) {
@@ -3004,7 +3052,7 @@ function exportForScreensPDF(doc, artboardIndex, baseFilePath, artboardName) {
         itemsToExport.document = false;
 
         var fileSpec = new File(baseFilePath + ".pdf");
-        doc.exportForScreens(fileSpec.parent, ExportForScreensType.SE_PDF, exportOptions, itemsToExport, artboardName);
+        doc.exportForScreens(fileSpec.parent, ExportForScreensType.SE_PDF, exportOptions, itemsToExport, "");
     } catch (e) {
         try {
             var saveOpts = new PDFSaveOptions();
@@ -3018,6 +3066,8 @@ function exportForScreensPDF(doc, artboardIndex, baseFilePath, artboardName) {
             doc.saveAs(new File(baseFilePath + ".pdf"), saveOpts);
         } catch (fallbackError) {}
     }
+    var pdfSpec = new File(baseFilePath + ".pdf");
+    settleScreensExport(pdfSpec.parent.fsName, "pdf", artboardName, pdfSpec.name.replace(/\.pdf$/i, ""));
 }
 
 /**

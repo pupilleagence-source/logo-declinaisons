@@ -30,9 +30,9 @@ function fakeRes() {
     check('le bouton du reçu mène au même endroit', body.data.attributes.product_options.receipt_link_url, body.data.attributes.product_options.redirect_url);
     check('pas de checkout_data sans code', mod.buildCheckoutBody('lifetime').data.attributes.checkout_data, undefined);
     check('store', body.data.relationships.store.data.id, '240133');
-    check('français par défaut : nom et description remplacés', [body.data.attributes.product_options.name, /charte graphique/.test(body.data.attributes.product_options.description)], ['Logotyps — plugin Illustrator', true]);
+    check('français par défaut : nom et description remplacés', [body.data.attributes.product_options.name, /charte graphique/.test(body.data.attributes.product_options.description)], ['Logotyps, plugin Illustrator', true]);
     const en = mod.buildCheckoutBody('annual', '', 'en');
-    check('lang=en : description, bouton et mot du reçu en anglais', [en.data.attributes.product_options.name, /brand guide/.test(en.data.attributes.product_options.description), en.data.attributes.product_options.receipt_button_text, /Thank you/.test(en.data.attributes.product_options.receipt_thank_you_note)], ['Logotyps — Illustrator plugin', true, 'Download the plugin', true]);
+    check('lang=en : description, bouton et mot du reçu en anglais', [en.data.attributes.product_options.name, /brand guide/.test(en.data.attributes.product_options.description), en.data.attributes.product_options.receipt_button_text, /Thank you/.test(en.data.attributes.product_options.receipt_thank_you_note)], ['Logotyps, Illustrator plugin', true, 'Download the plugin', true]);
     check('les conditions du site sont citées dans la description (fr + en)', [/logotyps\.fr\/terms/.test(body.data.attributes.product_options.description), /logotyps\.fr\/terms/.test(en.data.attributes.product_options.description)], [true, true]);
     check('lang inconnue → français', mod.normalizeLang('de'), 'fr');
     check('lang en-US → anglais', mod.normalizeLang('en-US'), 'en');
