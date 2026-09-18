@@ -20,11 +20,14 @@ import { handleCheckout } from '../../lib/checkout.js';
 // changelog) ; lue aussi par lib/download.js pour construire l'URL de l'installeur.
 // downloadUrl : page de téléchargement du site, montrée par les clients ≤ 1.3.0.
 export const LATEST = {
-            version: '1.4.3',
-            releaseDate: '2026-09-10',
+            version: '1.4.4',
+            releaseDate: '2026-09-18',
             downloadUrl: 'https://logotyps.fr/download',
             changelog: [
-            "💳 Licence annuelle : lien « Gérer ou annuler mon abonnement » dans la fenêtre de licence"
+            "Le plugin s'appelle désormais Logotyps dans Fenêtre > Extensions",
+            "Génération fiable sur les postes verrouillés (Citrix, sécurité d'entreprise) : plus de passage par le presse-papiers",
+            "Message d'erreur précis si un élément ne peut pas être transféré",
+            "Bouton Désactiver et badge de licence corrigés"
         ]
 };
 

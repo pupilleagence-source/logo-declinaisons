@@ -1,8 +1,11 @@
 {
-  "version": "1.4.3",
-  "releaseDate": "2026-09-10",
+  "version": "1.4.4",
+  "releaseDate": "2026-09-18",
   "changelog": [
-    "💳 Licence annuelle : lien « Gérer ou annuler mon abonnement » dans la fenêtre de licence"
+    "Le plugin s'appelle désormais Logotyps dans Fenêtre > Extensions",
+    "Génération fiable sur les postes verrouillés (Citrix, sécurité d'entreprise) : plus de passage par le presse-papiers",
+    "Message d'erreur précis si un élément ne peut pas être transféré",
+    "Bouton Désactiver et badge de licence corrigés"
   ],
   "hotUpdateFrom": "1.4.0",
   "assetsFingerprint": "2866e7f7a01e199c6602eeb41a8fe69faf21a6842f235a9a4fb53d96ae8f6a45",
@@ -10,8 +13,8 @@
   "files": [
     {
       "path": "CSXS/manifest.xml",
-      "sha256": "385362d334cda745788bffbd6f8ec7e08488cf0d265f72fb3cc20f7357ac6139",
-      "size": 2063
+      "sha256": "5cc011338276c8429ffef936217208739caa2312677e3ef3f8a44040ad60c153",
+      "size": 2053
     },
     {
       "path": "css/styles.css",
@@ -20,8 +23,8 @@
     },
     {
       "path": "index.html",
-      "sha256": "f49285ba4422023387f894e38ddc220e4a53b54d956d781f44cefd1956094213",
-      "size": 30644
+      "sha256": "1c2c3d319337c4eaa0af0be9ccca2d055842b8084f6e98d77f7a0306aea88767",
+      "size": 30634
     },
     {
       "path": "js/auto-updater.js",
@@ -45,8 +48,8 @@
     },
     {
       "path": "js/main.js",
-      "sha256": "a3eb0ced638521f6dfc61065681c7980382fb03235ea67625328cb9a44c0da68",
-      "size": 119732
+      "sha256": "1201dd9e80e29ce82d83e2f340405c235c842ef49615006d6505af63712f6a68",
+      "size": 119976
     },
     {
       "path": "js/pending-updates.js",
@@ -55,18 +58,18 @@
     },
     {
       "path": "js/trial.js",
-      "sha256": "31cdea0bb75a5af4fb095638e33b3803d2dcc2ad0ab7d06482e5c0cb1ade6df1",
-      "size": 28014
+      "sha256": "0b5e44b058ee127325f17f74603ee38ba225d39a3ae4e304a5b0dd6e550debab",
+      "size": 28305
     },
     {
       "path": "js/updater.js",
-      "sha256": "38dc4edaa6c3c20dde11e7329147c11d7023251f651c712253bd86f43ad42d80",
+      "sha256": "7cf95ab490a54e3dfb2ad3dee012f1acc3b5bc544badb90f8c08e6bd6ba6142c",
       "size": 15903
     },
     {
       "path": "jsx/hostscript.jsx",
-      "sha256": "ada61a5664b21fe77783cb6fde65d5220c08c281febd240a030230b53873a1dd",
-      "size": 162780
+      "sha256": "e11397c7e2c78d4bb8afa8eca9ba757fe7efbf6a79d3c50c1b718923751e4875",
+      "size": 166786
     },
     {
       "path": "lib/CSInterface.js",
@@ -84,5 +87,5 @@
       "size": 53002
     }
   ],
-  "signature": "p8zcE5X8nPzuPOxiE7jl4NN/ZBGfk71T+ZOnjvkAVsFffEnVoRtTycrFZW6ittoJ7BSov4UHIUZ/Yl/vln+FjU1Xzxyt0OjhotwRkLM5mw1JL+3DarDTAl5sXIFBe6vA+IIuJplzvYgwMOI82hGWyCcsJ7HyYL+FW3C1PjhpRFh0cmR7sTuq0qpYJgKCAAH4Er9YaYR7HlgPZy9mM8fea0ty+rEw7r4/6fDg18e1Oltt/0D6/Y2tMoAa8ZepjXkQUgSZXTUaGq+c/sCbiidQggh7BAwnt1LIRcWqrglxPd9T2n7CdUrbfhQhG1q2O77PIHVlHU/GU6CJ2wJfpAlPEHxyebbfiAol8HdJpD4zlqT4EoHK13TxYD5AKSV/dwoiqUjeuQsGCUCk6oW70iuyXITxUwzbLmKaoahnIN2wBqqme4VIUiEO3+Ha8stvTWhGQ9Ti96TWLfUnDTlN25Zqb5Htnsk6pxA80Eg2CumpRCgs6OYEa9KcFSJU232St/yc"
+  "signature": "WgRf+srfL6y/cSbpGrGrdfgW/lY95TaWWle1P6wVmYFXo0B3jWZ7mVyt/zN1ZzcX3UyjuCalWFs4ECMA+RPKPXS1kQTgvIieA+1tgRrRwC2tdH7AT8V+WcTDHPnX04Hdw8EutmAcSUGtooZKrMWbphQYAs+dmfoAwfgUIw+uGLaLIjsVlukW6siGQ/b83JvKC97ibDk4LqBLevL5Td2x/RKh/MYplTx2soA2lfpFwkeB+V6N4G+WGiqvp+yVgXoAgHBwG1itzaxTWPpnsWX7fZ1uE9APSeBamCHAuUtseHMO5capm9d26Yut/Lv0wA7blRh90MBERzgZ/miwzwBTRVkgRA6Ql5PtED8cZgiDgxV4TDN1Xq0Abk8qp4kKfTUDQV8bD9MUYO9gRUzjs8Tax6NKgIZrSMLVDWGaJM1KndRGlCspXHwBkOpsthDNY1mtOxpE2Z0GhFO4z4o51dIverj4ygOdIUampLsqFoNMP519r259nSLxcAVZ++gQ7jnl"
 }

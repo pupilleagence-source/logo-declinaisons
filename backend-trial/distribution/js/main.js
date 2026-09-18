@@ -87,7 +87,7 @@ documentSettings: {
 document.addEventListener('DOMContentLoaded', init);
 
 async function init() {
-    console.log('Initializing Logo Déclinaisons...');
+    console.log('Initializing Logotyps...');
 
     try {
         // Initialiser i18n (applique la langue sauvegardée)
@@ -1070,8 +1070,10 @@ async function handleLicenseDeactivation() {
                 errorDiv.textContent = forceResult.message || 'Erreur lors de la désactivation.';
                 errorDiv.style.display = 'block';
             }
-        } else if (response.ok && data.success) {
-            // Désactivation normale réussie
+        } else if ((response.ok && data.success) || response.status === 404) {
+            // Désactivation réussie — ou 404 « aucune licence pour cet appareil » d'un
+            // ancien backend : le serveur n'a déjà plus rien pour ce poste, on efface la
+            // copie locale au lieu de laisser le panneau bloqué sur « Licensed ».
             localStorage.removeItem('_license');
             localStorage.removeItem('_trial_cache');
             // Supprimer aussi ~/.logotyps-license : sans ça getStoredLicense() le relit

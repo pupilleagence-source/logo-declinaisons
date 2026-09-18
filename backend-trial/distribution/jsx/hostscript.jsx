@@ -1,5 +1,5 @@
 /**
- * Logo Déclinaisons - ExtendScript
+ * Logotyps (ex-Logo Déclinaisons) - ExtendScript
  * Code côté Illustrator
  */
 
@@ -82,7 +82,7 @@ if (typeof JSON.parse !== 'function') {
 // compare a UpdateChecker.CURRENT_VERSION : apres une mise a jour a chaud, les
 // fichiers sur disque sont neufs mais Illustrator garde l'ancien hostscript en
 // memoire jusqu'a son relancement. Bumpee par scripts/release.js.
-var HOSTSCRIPT_VERSION = '1.4.3';
+var HOSTSCRIPT_VERSION = '1.4.4';
 function getHostscriptVersion() {
     return HOSTSCRIPT_VERSION;
 }
@@ -1489,94 +1489,172 @@ function padZero(num) {
 }
 
 /**
- * Transfère un élément d'un document source vers un document cible
- * @param {PageItem} element - L'élément à transférer (référence dans sourceDoc)
- * @param {Document} sourceDoc - Le document source
- * @param {Document} targetDoc - Le document cible
- * @param {string} elementName - Nom de l'élément (pour logs)
- * @return {PageItem|null} Nouvelle référence de l'élément dans targetDoc, ou null si erreur
+ * Choisit le calque du document cible qui recevra les éléments transférés : le calque
+ * actif s'il est modifiable, sinon le premier calque visible et déverrouillé, sinon un
+ * calque neuf.
  */
-function transferElementToDocument(element, sourceDoc, targetDoc, elementName) {
+function transferTargetLayer(doc) {
+    var layer = null;
+    try { layer = doc.activeLayer; } catch (e) { layer = null; }
+    if (!layer || layer.locked || !layer.visible) {
+        layer = null;
+        for (var i = 0; i < doc.layers.length; i++) {
+            if (!doc.layers[i].locked && doc.layers[i].visible) {
+                layer = doc.layers[i];
+                break;
+            }
+        }
+    }
+    if (!layer) {
+        layer = doc.layers.add();
+        layer.name = "Logotyps";
+    }
+    return layer;
+}
+
+/**
+ * Document propriétaire d'un élément : remonte calque -> (sous-calques) -> Document.
+ * Sert à vérifier qu'une copie est bien arrivée dans le document cible.
+ * ⚠️ NE PAS se fier à targetDoc.pageItems.length pour ça : Illustrator ne rafraîchit pas
+ * ce compteur tout de suite après la duplication d'un GROUPE (mesuré le 2026-09-17 dans
+ * Illustrator : « pageItems 1 -> 1 » alors que la copie est bien dans la cible). Ce faux
+ * négatif supprimait une copie réussie — la version verticale, qui est un groupe — puis
+ * retombait sur le presse-papiers.
+ */
+function ownerDocumentOf(item) {
     try {
-        $.writeln("📦 Transfert de l'élément '" + elementName + "' vers le nouveau document...");
-
-        // Validation de l'élément
-        var validation = validateElement(element);
-        if (!validation.valid) {
-            $.writeln("❌ Élément invalide: " + validation.error);
-            return null;
+        var p = item.layer;
+        var guard = 0;
+        while (p && p.typename !== "Document" && guard < 50) {
+            p = p.parent;
+            guard++;
         }
-
-        // Sauvegarder la sélection actuelle du document source
-        var originalSelection = sourceDoc.selection;
-
-        // Activer le document source
-        app.activeDocument = sourceDoc;
-
-        // Dupliquer l'élément pour ne pas toucher à l'original stocké
-        var duplicate = element.duplicate();
-        duplicate.hidden = false;
-
-        // Sélectionner le duplicate
-        sourceDoc.selection = null; // Clear selection
-        duplicate.selected = true;
-
-        // Copier dans le clipboard
-        app.copy();
-        $.writeln("   ✓ Élément copié dans le clipboard");
-
-        // Activer le document cible
-        app.activeDocument = targetDoc;
-
-        // Coller dans le document cible
-        app.paste();
-        $.writeln("   ✓ Élément collé dans le document cible");
-
-        // Récupérer la référence du nouvel élément (devrait être sélectionné après paste)
-        var transferred = null;
-        if (targetDoc.selection && targetDoc.selection.length > 0) {
-            transferred = targetDoc.selection[0];
-            $.writeln("   ✓ Référence récupérée dans le document cible");
-        } else {
-            $.writeln("⚠️ Impossible de récupérer la référence après paste");
-            return null;
-        }
-
-        // Cacher l'élément transféré (il sera dupliqué et montré lors de la génération)
-        transferred.hidden = true;
-
-        // Retourner au document source et nettoyer
-        app.activeDocument = sourceDoc;
-
-        // Supprimer le duplicate temporaire du document source
-        try {
-            duplicate.remove();
-            $.writeln("   ✓ Duplicate temporaire nettoyé");
-        } catch (e) {
-            $.writeln("⚠️ Erreur nettoyage duplicate: " + e.toString());
-        }
-
-        // Restaurer la sélection originale
-        sourceDoc.selection = originalSelection;
-
-        $.writeln("✅ Transfert de '" + elementName + "' réussi");
-        return transferred;
-
+        return (p && p.typename === "Document") ? p : null;
     } catch (e) {
-        $.writeln("❌ Erreur lors du transfert de '" + elementName + "': " + e.toString());
-
-        // Tentative de nettoyage en cas d'erreur
-        try {
-            app.activeDocument = sourceDoc;
-            sourceDoc.selection = null;
-        } catch (cleanupError) {
-            $.writeln("⚠️ Erreur lors du nettoyage après échec: " + cleanupError.toString());
-        }
-
         return null;
     }
 }
 
+/**
+ * Voie normale depuis la 1.4.4 : duplique l'élément directement dans un calque du
+ * document cible, sans presse-papiers. Le copier-coller (ancienne voie) dépend du
+ * presse-papiers du système, que les gestionnaires de presse-papiers, les suites de
+ * sécurité d'entreprise et les sessions Citrix / Bureau à distance interceptent :
+ * les transferts échouaient sur certains postes seulement, avec les mêmes fichiers.
+ * Mesuré dans Illustrator : fonctionne aussi pour un élément d'un calque verrouillé ou
+ * masqué (là où le copier-coller échoue : « Cannot modify a layer that is locked »).
+ * @return {{item: PageItem|null, error: string}}
+ */
+function duplicateIntoDocument(element, sourceDoc, targetDoc) {
+    try {
+        app.activeDocument = sourceDoc;
+        var layer = transferTargetLayer(targetDoc);
+        var dup = element.duplicate(layer, ElementPlacement.PLACEATBEGINNING);
+        if (!dup || !dup.typename) {
+            return { item: null, error: "duplication directe sans résultat" };
+        }
+
+        var owner = ownerDocumentOf(dup);
+        if (owner && !isSameDocument(owner, targetDoc)) {
+            // La copie est restée dans un autre document : tenter de la déplacer.
+            try { dup.move(layer, ElementPlacement.PLACEATBEGINNING); } catch (moveErr) {}
+            owner = ownerDocumentOf(dup);
+            if (owner && !isSameDocument(owner, targetDoc)) {
+                try { dup.remove(); } catch (e) {}
+                return { item: null, error: "la copie est restée dans « " + owner.name + " »" };
+            }
+        }
+        // Propriétaire = cible, ou indéterminable : duplicate() vers un calque de la cible
+        // n'a pas levé d'exception, on fait confiance (mesuré : la copie arrive toujours).
+        dup.hidden = true;
+        return { item: dup, error: "" };
+    } catch (e) {
+        return { item: null, error: "duplication directe refusée (" + (e.message || e.toString()) + ")" };
+    }
+}
+
+/**
+ * Repli : transfert par copier-coller (comportement d'avant la 1.4.4).
+ * @return {{item: PageItem|null, error: string}}
+ */
+function transferViaClipboard(element, sourceDoc, targetDoc) {
+    var duplicate = null;
+    var step = "préparation";
+    try {
+        var originalSelection = sourceDoc.selection;
+        app.activeDocument = sourceDoc;
+        step = "duplication";
+        duplicate = element.duplicate();
+        duplicate.hidden = false;
+        step = "sélection";
+        sourceDoc.selection = null;
+        duplicate.selected = true;
+        step = "copie";
+        app.copy();
+        step = "collage";
+        app.activeDocument = targetDoc;
+        app.paste();
+        var transferred = null;
+        if (targetDoc.selection && targetDoc.selection.length > 0) {
+            transferred = targetDoc.selection[0];
+        }
+        step = "nettoyage";
+        app.activeDocument = sourceDoc;
+        try { duplicate.remove(); } catch (e) {}
+        duplicate = null;
+        try { sourceDoc.selection = originalSelection; } catch (e) {}
+        if (!transferred) {
+            return { item: null, error: "rien n'est sélectionné après le collage, presse-papiers indisponible ?" };
+        }
+        transferred.hidden = true;
+        return { item: transferred, error: "" };
+    } catch (e) {
+        try {
+            app.activeDocument = sourceDoc;
+            if (duplicate) duplicate.remove();
+            sourceDoc.selection = null;
+        } catch (cleanupError) {}
+        return { item: null, error: "copier-coller refusé à l'étape « " + step + " » (" + (e.message || e.toString()) + ")" };
+    }
+}
+
+/**
+ * Transfère un élément d'un document source vers un document cible.
+ * Voie normale : duplication directe (sans presse-papiers) ; repli : copier-coller.
+ * @param {PageItem} element - L'élément à transférer (référence dans sourceDoc)
+ * @param {Document} sourceDoc - Le document source
+ * @param {Document} targetDoc - Le document cible
+ * @param {string} elementName - Nom de l'élément (logs et message utilisateur)
+ * @param {Array} [reasons] - Si fourni, reçoit "nom (cause)" en cas d'échec
+ * @return {PageItem|null} Nouvelle référence de l'élément dans targetDoc, ou null si erreur
+ */
+function transferElementToDocument(element, sourceDoc, targetDoc, elementName, reasons) {
+    $.writeln("📦 Transfert de l'élément '" + elementName + "' vers le nouveau document...");
+
+    var validation = validateElement(element);
+    if (!validation.valid) {
+        $.writeln("❌ Élément invalide: " + validation.error);
+        if (reasons) reasons.push(elementName + " (" + validation.error + ")");
+        return null;
+    }
+
+    var direct = duplicateIntoDocument(element, sourceDoc, targetDoc);
+    if (direct.item) {
+        $.writeln("✅ Transfert direct de '" + elementName + "' réussi");
+        return direct.item;
+    }
+    $.writeln("⚠️ Transfert direct impossible (" + direct.error + "), repli sur le presse-papiers");
+
+    var viaClipboard = transferViaClipboard(element, sourceDoc, targetDoc);
+    if (viaClipboard.item) {
+        $.writeln("✅ Transfert de '" + elementName + "' réussi par le presse-papiers");
+        return viaClipboard.item;
+    }
+
+    $.writeln("❌ Échec du transfert de '" + elementName + "': " + viaClipboard.error);
+    if (reasons) reasons.push(elementName + " (" + direct.error + " ; " + viaClipboard.error + ")");
+    return null;
+}
 // Générer les artboards
 function generateArtboards(paramsJSON) {
     var sourceDoc = null;
@@ -1649,6 +1727,7 @@ function generateArtboards(paramsJSON) {
 
         var typesList = ['horizontal', 'vertical', 'icon', 'text', 'custom1', 'custom2', 'custom3'];
         var transferErrors = [];
+        var transferReasons = []; // "nom (cause)" pour le message utilisateur
 
         for (var t = 0; t < typesList.length; t++) {
             var selType = typesList[t];
@@ -1681,7 +1760,8 @@ function generateArtboards(paramsJSON) {
                     storedSelections[selType],
                     sourceDoc,
                     targetDoc,
-                    typeName
+                    typeName,
+                    transferReasons
                 );
 
                 if (!transferred) {
@@ -1732,7 +1812,8 @@ function generateArtboards(paramsJSON) {
 
         // Vérifier s'il y a eu des erreurs de transfert
         if (transferErrors.length > 0) {
-            var errorMsg = "Impossible de transférer certains éléments : " + transferErrors.join(", ");
+            var errorMsg = "Impossible de transférer certains éléments : " +
+                (transferReasons.length > 0 ? transferReasons.join(" ; ") : transferErrors.join(", "));
             $.writeln("❌ " + errorMsg);
 
             // Compter ce qui a réellement été transféré.

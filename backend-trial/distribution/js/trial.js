@@ -493,7 +493,10 @@ const Trial = {
      * Cache le statut localement (avec expiration)
      */
     cacheStatus: function(status) {
-        const expiry = Date.now() + (this.config.gracePeriodDays * 24 * 60 * 60 * 1000);
+        // L'appelant fixe l'expiration (24 h pour le badge de licence) ; à défaut, la
+        // période de grâce. Avant le 2026-09-17 l'expiration reçue était ignorée et le
+        // badge restait « Licensed » 7 jours sans jamais revalider (CLAUDE.md §10.9).
+        const expiry = status.expiry || (Date.now() + (this.config.gracePeriodDays * 24 * 60 * 60 * 1000));
 
         const cache = {
             generationsUsed: status.generationsUsed || 0,

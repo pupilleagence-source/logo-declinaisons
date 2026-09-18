@@ -7,7 +7,7 @@ set -e
 # Config
 APP_NAME="Logotyps"
 BUNDLE_ID="com.graphiste.logodeclinaisons"
-VERSION="${VERSION:-1.4.3}"
+VERSION="${VERSION:-1.4.4}"
 INSTALL_DIR="/Library/Application Support/Adobe/CEP/extensions/logo-declinaisons"
 PKG_OUTPUT="dist/LogoDeclinaisons-${VERSION}-mac.pkg"
 
